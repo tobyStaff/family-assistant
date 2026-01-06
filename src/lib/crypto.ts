@@ -154,3 +154,13 @@ export function decrypt(encryptedContent: string, iv: string): string {
 
   return decrypted;
 }
+
+/**
+ * Clear module-level caches. Used for testing purposes only.
+ * @internal
+ */
+export function __clearCacheForTesting(): void {
+  cachedSalt = null;
+  cachedKey = null;
+  cachedSecret = null;
+}

@@ -20,6 +20,10 @@ export const envSchema = z.object({
 
   // Database
   DB_PATH: z.string().default('./data/inbox.db'),
+
+  // AI Provider Configuration
+  AI_PROVIDER: z.enum(['openai', 'anthropic']).default('openai'),
+  AI_API_KEY: z.string().optional(), // Optional for development, required for AI parsing
 });
 
 export type EnvConfig = z.infer<typeof envSchema>;
@@ -68,6 +72,14 @@ export const fastifyEnvOptions = {
       DB_PATH: {
         type: 'string',
         default: './data/inbox.db',
+      },
+      AI_PROVIDER: {
+        type: 'string',
+        enum: ['openai', 'anthropic'],
+        default: 'openai',
+      },
+      AI_API_KEY: {
+        type: 'string',
       },
     },
   } as const,

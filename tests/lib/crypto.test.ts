@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
-import { encrypt, decrypt } from '../../src/lib/crypto.js';
+import { encrypt, decrypt, __clearCacheForTesting } from '../../src/lib/crypto.js';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -191,6 +191,9 @@ describe('Crypto Module', () => {
         fs.unlinkSync(SALT_PATH);
       }
 
+      // Clear the module cache so it will recreate the salt
+      __clearCacheForTesting();
+
       // Encrypt should create salt
       const { iv, content } = encrypt('test-salt-creation');
 
@@ -202,6 +205,9 @@ describe('Crypto Module', () => {
     });
 
     it('should reuse existing salt file', () => {
+      // Clear cache and ensure fresh salt is created
+      __clearCacheForTesting();
+
       // Ensure salt exists
       const { content: content1, iv: iv1 } = encrypt('test1');
 
