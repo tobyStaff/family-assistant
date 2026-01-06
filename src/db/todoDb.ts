@@ -17,7 +17,7 @@ const insertStmt = db.prepare(`
 const listStmt = db.prepare(`
   SELECT * FROM todos
   WHERE user_id = ?
-  ORDER BY created_at DESC
+  ORDER BY created_at DESC, id DESC
 `);
 
 // SELECT statement for getting a single todo

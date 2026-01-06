@@ -2,25 +2,26 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import Database from 'better-sqlite3';
 
-// Mock the db module to use in-memory database for testing
-const testDb = new Database(':memory:');
-testDb.pragma('journal_mode = WAL');
+// Mock the db import with a factory function
+vi.mock('./db.js', () => {
+  const testDb = new Database(':memory:');
+  testDb.pragma('journal_mode = WAL');
 
-// Create tables for testing
-testDb.exec(`
-  CREATE TABLE IF NOT EXISTS auth (
-    user_id TEXT PRIMARY KEY,
-    refresh_token TEXT NOT NULL,
-    access_token TEXT,
-    expiry_date DATETIME
-  );
-  CREATE INDEX IF NOT EXISTS idx_auth_user_id ON auth(user_id);
-`);
+  // Create tables for testing
+  testDb.exec(`
+    CREATE TABLE IF NOT EXISTS auth (
+      user_id TEXT PRIMARY KEY,
+      refresh_token TEXT NOT NULL,
+      access_token TEXT,
+      expiry_date DATETIME
+    );
+    CREATE INDEX IF NOT EXISTS idx_auth_user_id ON auth(user_id);
+  `);
 
-// Mock the db import
-vi.mock('./db.js', () => ({
-  default: testDb,
-}));
+  return {
+    default: testDb,
+  };
+});
 
 // Import functions after mocking
 import {
@@ -30,6 +31,9 @@ import {
   hasAuth,
   updateAccessToken,
 } from './authDb.js';
+import db from './db.js';
+
+const testDb = db as Database.Database;
 
 describe('authDb', () => {
   beforeEach(() => {
