@@ -1,0 +1,48 @@
+# Dependencies
+node_modules
+.pnpm-store
+
+# Build output
+# dist - INCLUDED for production deployment (pre-built locally)
+
+# Development files
+*.test.ts
+*.test.js
+**/__tests__
+.vscode
+.idea
+
+# Git
+.git
+.gitignore
+
+# Environment and secrets
+.env
+.env.*
+*.key
+*.pem
+credentials.json
+
+# Documentation
+*.md
+!README.md
+deliverable-*.md
+
+# Logs
+logs
+*.log
+npm-debug.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Test coverage
+coverage
+.nyc_output
+
+# Data directory (will be mounted as volume)
+data
+*.db
+*.db-shm
+*.db-wal

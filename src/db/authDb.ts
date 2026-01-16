@@ -24,6 +24,11 @@ const deleteStmt = db.prepare(`
   DELETE FROM auth WHERE user_id = ?
 `);
 
+// SELECT statement for getting all user IDs
+const getAllUserIdsStmt = db.prepare(`
+  SELECT user_id FROM auth
+`);
+
 /**
  * Store or update auth tokens for a user
  * IMPORTANT: Tokens should be encrypted before calling this function
@@ -50,12 +55,20 @@ export function getAuth(userId: string): AuthEntry | null {
   const row = getStmt.get(userId) as any;
   if (!row) return null;
 
-  return {
+  const auth: AuthEntry = {
     user_id: row.user_id,
     refresh_token: row.refresh_token,
-    access_token: row.access_token || undefined,
-    expiry_date: row.expiry_date ? new Date(row.expiry_date) : undefined,
   };
+
+  if (row.access_token) {
+    auth.access_token = row.access_token;
+  }
+
+  if (row.expiry_date) {
+    auth.expiry_date = new Date(row.expiry_date);
+  }
+
+  return auth;
 }
 
 /**
@@ -97,12 +110,75 @@ export function updateAccessToken(
   const existing = getAuth(userId);
   if (!existing) return false;
 
-  storeAuth({
+  const updatedAuth: AuthEntry = {
     user_id: userId,
     refresh_token: existing.refresh_token,
     access_token: accessToken,
-    expiry_date: expiryDate,
-  });
+  };
+
+  if (expiryDate) {
+    updatedAuth.expiry_date = expiryDate;
+  }
+
+  storeAuth(updatedAuth);
 
   return true;
+}
+
+/**
+ * Get all user IDs with stored auth
+ * Used for daily summary cron job to process all users
+ *
+ * @returns Array of user IDs
+ */
+export function getAllUserIds(): string[] {
+  const rows = getAllUserIdsStmt.all() as any[];
+  return rows.map(row => row.user_id);
+}
+
+/**
+ * Get user's OAuth2 client
+ * Fetches encrypted tokens from database and creates OAuth2Client
+ *
+ * @param userId - User ID
+ * @returns OAuth2Client with tokens
+ */
+export async function getUserAuth(userId: string): Promise<any> {
+  const { google } = await import('googleapis');
+  const { decrypt } = await import('../lib/crypto.js');
+
+  // Fetch encrypted tokens from database
+  const authEntry = getAuth(userId);
+  if (!authEntry) {
+    throw new Error(`No auth found for user ${userId}`);
+  }
+
+  // Decrypt tokens (stored as "iv:content")
+  const decryptToken = (encryptedData: string): string => {
+    const [iv, content] = encryptedData.split(':');
+    if (!iv || !content) {
+      throw new Error('Invalid encrypted token format');
+    }
+    return decrypt(content, iv);
+  };
+
+  const refreshToken = decryptToken(authEntry.refresh_token);
+  const accessToken = authEntry.access_token
+    ? decryptToken(authEntry.access_token)
+    : undefined;
+
+  // Create OAuth2Client
+  const oauth2Client = new google.auth.OAuth2(
+    process.env.GOOGLE_CLIENT_ID,
+    process.env.GOOGLE_CLIENT_SECRET,
+    process.env.GOOGLE_REDIRECT_URI
+  );
+
+  oauth2Client.setCredentials({
+    refresh_token: refreshToken,
+    access_token: accessToken ?? null,
+    expiry_date: authEntry.expiry_date?.getTime() ?? null,
+  });
+
+  return oauth2Client;
 }

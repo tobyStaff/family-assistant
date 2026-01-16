@@ -246,7 +246,7 @@ describe('todoDb', () => {
     it('should completely isolate users', () => {
       // Create todos for multiple users
       const user1Id1 = createTodo('user1', 'User 1 - Task 1');
-      const user1Id2 = createTodo('user1', 'User 1 - Task 2');
+      createTodo('user1', 'User 1 - Task 2');
       const user2Id1 = createTodo('user2', 'User 2 - Task 1');
       const user3Id1 = createTodo('user3', 'User 3 - Task 1');
 

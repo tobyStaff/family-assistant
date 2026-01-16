@@ -2,11 +2,12 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { google } from 'googleapis';
-import type { OAuth2Client } from 'google-auth-library';
 import { toZonedTime } from 'date-fns-tz';
 import { formatISO } from 'date-fns';
 import { checkForDuplicate } from '../utils/calendarDedup.js';
 import type { EventData } from '../types/calendar.js';
+import { getUserAuth } from '../lib/userContext.js';
+import { requireAuth } from '../middleware/session.js';
 
 /**
  * Zod schema for add event request validation
@@ -18,22 +19,6 @@ const AddEventBodySchema = z.object({
   end: z.coerce.date().optional(),
   parsedTimeZone: z.string().optional(),
 });
-
-/**
- * Get user's OAuth2 client from session/token
- * TODO: Implement this with actual OAuth flow from deliverables 1/2
- *
- * @returns OAuth2Client for the authenticated user
- */
-async function getUserAuth(_request: FastifyRequest): Promise<OAuth2Client> {
-  // TODO: Replace with actual auth implementation
-  // This should:
-  // 1. Get user ID from JWT/session
-  // 2. Fetch encrypted OAuth tokens from database
-  // 3. Decrypt tokens using crypto module
-  // 4. Create and return OAuth2Client with tokens
-  throw new Error('Auth not implemented - placeholder for deliverable 1/2');
-}
 
 /**
  * Get user's timezone preference
@@ -62,7 +47,7 @@ export async function calendarRoutes(fastify: FastifyInstance): Promise<void> {
    */
   fastify.post<{
     Body: z.infer<typeof AddEventBodySchema>;
-  }>('/add-event', async (request, reply) => {
+  }>('/add-event', { preHandler: requireAuth }, async (request, reply) => {
     // Validate body
     const bodyResult = AddEventBodySchema.safeParse(request.body);
     if (!bodyResult.success) {

@@ -1,0 +1,35 @@
+# Production Dockerfile - uses pre-built dist/ from local machine
+FROM node:20-alpine
+
+# Install build tools for native modules
+RUN apk add --no-cache python3 make g++
+
+# Install pnpm
+RUN corepack enable && corepack prepare pnpm@10.27.0 --activate
+
+WORKDIR /app
+
+# Copy package files
+COPY package.json pnpm-lock.yaml ./
+
+# Install production dependencies only
+RUN pnpm install --prod --frozen-lockfile
+
+# Build native modules (better-sqlite3)
+RUN cd node_modules/.pnpm/better-sqlite3@*/node_modules/better-sqlite3 && \
+    npx node-gyp rebuild --release
+
+# Copy pre-built dist folder from local machine
+COPY dist ./dist
+
+# Create data directory for SQLite database
+RUN mkdir -p /app/data
+
+# Expose application port
+EXPOSE 3000
+
+# Set production environment
+ENV NODE_ENV=production
+
+# Run with memory limit for constrained environments
+CMD ["node", "--max-old-space-size=512", "dist/app.js"]

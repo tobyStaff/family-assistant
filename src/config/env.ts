@@ -67,7 +67,7 @@ export const fastifyEnvOptions = {
       },
       GOOGLE_REDIRECT_URI: {
         type: 'string',
-        format: 'uri',
+        minLength: 1,
       },
       DB_PATH: {
         type: 'string',

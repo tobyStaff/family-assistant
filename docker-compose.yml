@@ -1,0 +1,57 @@
+version: '3.8'
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.prod
+    container_name: inbox-manager
+    ports:
+      - '3000:3000'
+    volumes:
+      # Persist SQLite database
+      - db-data:/app/data
+      # Mount Google service account credentials for backups (optional)
+      # - ./credentials.json:/app/credentials.json:ro
+    environment:
+      # Application
+      - NODE_ENV=production
+      - PORT=3000
+      - HOST=0.0.0.0
+      - LOG_LEVEL=info
+
+      # Database
+      - DB_PATH=/app/data/app.db
+
+      # Security - MUST be set via .env file or secrets
+      - ENCRYPTION_SECRET=${ENCRYPTION_SECRET}
+
+      # Google OAuth - MUST be set via .env file
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
+      - GOOGLE_REDIRECT_URI=${GOOGLE_REDIRECT_URI}
+
+      # AI Provider (openai or anthropic)
+      - AI_PROVIDER=${AI_PROVIDER:-openai}
+      - AI_API_KEY=${AI_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+
+      # Cron schedule for daily summary (daily at 8 AM UTC)
+      - CRON_SCHEDULE=${CRON_SCHEDULE:-0 0 8 * * *}
+      - TZ=${TZ:-UTC}
+
+    # Auto-restart on failure or server reboot
+    restart: always
+
+    # Health check using /health endpoint
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+volumes:
+  db-data:
+    driver: local
