@@ -615,9 +615,13 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
                     .join('')
                 : '<div class="no-events">No upcoming events in the next 7 days</div>'
             }
-            <a href="/events-view" style="display: block; margin-top: 1rem; color: #007bff; text-decoration: none;">
-              View all events →
-            </a>
+            <div style="margin-top: 1rem; display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center;">
+              <a href="/events-view" style="color: #007bff; text-decoration: none;">View all events →</a>
+              <button class="btn-test" id="sync-events-btn" onclick="syncEvents()" style="margin-left: auto;">
+                🔄 Sync to Google Calendar
+              </button>
+            </div>
+            <div id="sync-events-result" style="margin-top: 0.5rem; display: none;"></div>
           </div>
 
           <div class="api-section">
@@ -660,13 +664,16 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
 
           <div class="api-section">
             <h2>✨ Personalized Family Briefing (New!)</h2>
-            <p>Preview the new personalized summary that uses stored events and todos:</p>
+            <p>Preview or send the personalized summary that uses stored events and todos:</p>
             <button class="btn-test" id="personalized-preview-btn" onclick="previewPersonalizedSummary()">
-              ✨ Preview Personalized Summary
+              👁️ Preview Summary
+            </button>
+            <button class="btn-test" id="send-daily-summary-btn" onclick="sendDailySummary()" style="background: #28a745;">
+              📧 Send Daily Summary
             </button>
             <div id="personalized-result" style="margin-top: 1rem; display: none;"></div>
             <p style="margin-top: 0.5rem; font-size: 13px; color: #666;">
-              💡 This uses Phase 4 pipeline: stored events & todos + AI insights
+              💡 This uses Phase 4 pipeline: stored events & todos + AI insights. Summary is sent to recipients configured in Settings.
             </p>
           </div>
 
@@ -723,6 +730,18 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
               </button>
             </p>
             <div id="scope-result" style="margin-top: 1rem; display: none;"></div>
+          </div>
+
+          <div class="api-section" style="border: 2px solid #dc3545; background: #fff5f5;">
+            <h2>🧪 Testing Tools</h2>
+            <p style="color: #721c24;">Reset all your data for testing purposes. This cannot be undone.</p>
+            <button class="btn-test" id="reset-data-btn" onclick="resetAllData()" style="background: #dc3545; color: white;">
+              🗑️ Reset All My Data
+            </button>
+            <div id="reset-result" style="margin-top: 0.5rem; display: none;"></div>
+            <p style="margin-top: 0.5rem; font-size: 13px; color: #666;">
+              This will delete: stored emails, email analyses, events, and todos.
+            </p>
           </div>
         </div>
 
@@ -1214,7 +1233,106 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
               resultDiv.innerHTML = \`<strong>❌ Error:</strong> \${error.message}\`;
             } finally {
               btn.disabled = false;
-              btn.textContent = '✨ Preview Personalized Summary';
+              btn.textContent = '👁️ Preview Summary';
+            }
+          }
+
+          async function sendDailySummary() {
+            const btn = document.getElementById('send-daily-summary-btn');
+            const resultDiv = document.getElementById('personalized-result');
+
+            btn.disabled = true;
+            btn.textContent = '⏳ Sending...';
+            resultDiv.style.display = 'block';
+            resultDiv.className = 'success-message';
+            resultDiv.innerHTML = '<strong>📧 Sending daily summary...</strong>';
+
+            try {
+              const response = await fetch('/admin/trigger-daily-summary');
+              const data = await response.json();
+
+              if (response.ok && data.success) {
+                resultDiv.className = 'success-message';
+                resultDiv.innerHTML = '<strong>✅ Daily summary triggered!</strong><br>Check the configured email recipients.';
+              } else {
+                throw new Error(data.error || 'Failed to send summary');
+              }
+            } catch (error) {
+              resultDiv.className = 'error-message';
+              resultDiv.innerHTML = \`<strong>❌ Error:</strong> \${error.message}\`;
+            } finally {
+              btn.disabled = false;
+              btn.textContent = '📧 Send Daily Summary';
+            }
+          }
+
+          async function syncEvents() {
+            const btn = document.getElementById('sync-events-btn');
+            const resultDiv = document.getElementById('sync-events-result');
+
+            btn.disabled = true;
+            btn.textContent = '⏳ Syncing...';
+            resultDiv.style.display = 'block';
+            resultDiv.className = 'success-message';
+            resultDiv.innerHTML = '<strong>🔄 Syncing events to Google Calendar...</strong>';
+
+            try {
+              const response = await fetch('/admin/trigger-event-sync');
+              const data = await response.json();
+
+              if (response.ok && data.success) {
+                resultDiv.className = 'success-message';
+                resultDiv.innerHTML = '<strong>✅ Event sync triggered!</strong><br>Pending events will be synced to Google Calendar.';
+                // Reload after a delay to show updated sync status
+                setTimeout(() => window.location.reload(), 2000);
+              } else {
+                throw new Error(data.error || 'Failed to sync events');
+              }
+            } catch (error) {
+              resultDiv.className = 'error-message';
+              resultDiv.innerHTML = \`<strong>❌ Error:</strong> \${error.message}\`;
+            } finally {
+              btn.disabled = false;
+              btn.textContent = '🔄 Sync to Google Calendar';
+            }
+          }
+
+          async function resetAllData() {
+            if (!confirm('⚠️ This will delete ALL your data:\\n\\n• All stored emails\\n• All email analyses\\n• All events\\n• All todos\\n\\nThis cannot be undone. Are you sure?')) {
+              return;
+            }
+
+            const btn = document.getElementById('reset-data-btn');
+            const resultDiv = document.getElementById('reset-result');
+            btn.disabled = true;
+            btn.textContent = '⏳ Resetting...';
+            resultDiv.style.display = 'block';
+            resultDiv.className = 'success-message';
+            resultDiv.innerHTML = '<strong>⏳ Resetting all data...</strong>';
+
+            try {
+              const response = await fetch('/api/reset-all-data', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({}),
+              });
+              const data = await response.json();
+
+              if (response.ok) {
+                resultDiv.className = 'success-message';
+                resultDiv.innerHTML = \`<strong>✅ All data reset!</strong><br>
+                  Deleted: \${data.deleted.emails} emails, \${data.deleted.analyses} analyses,
+                  \${data.deleted.events} events, \${data.deleted.todos} todos\`;
+                setTimeout(() => window.location.reload(), 2000);
+              } else {
+                throw new Error(data.error || 'Failed to reset data');
+              }
+            } catch (error) {
+              resultDiv.className = 'error-message';
+              resultDiv.innerHTML = \`<strong>❌ Error:</strong> \${error.message}\`;
+            } finally {
+              btn.disabled = false;
+              btn.textContent = '🗑️ Reset All My Data';
             }
           }
 

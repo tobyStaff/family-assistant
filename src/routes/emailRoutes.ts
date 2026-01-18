@@ -15,10 +15,11 @@ import {
   getAnalysisStats,
   updateAnalysisStatus,
   batchApproveAnalyses,
+  deleteEmailAnalysis,
   type StoredEmailAnalysis,
   type AnalysisStatus,
 } from '../db/emailAnalysisDb.js';
-import { analyzeEmail, analyzeUnanalyzedEmails } from '../parsers/twoPassAnalyzer.js';
+import { analyzeEmail, analyzeUnanalyzedEmails, reanalyzeEmail } from '../parsers/twoPassAnalyzer.js';
 import { getUserId, getUserAuth } from '../lib/userContext.js';
 import { requireAuth } from '../middleware/session.js';
 import { fetchAndStoreEmails, syncProcessedLabels } from '../utils/emailStorageService.js';
@@ -311,6 +312,124 @@ export async function emailRoutes(fastify: FastifyInstance): Promise<void> {
   });
 
   /**
+   * DELETE /api/analyses/:id
+   * Delete an analysis
+   */
+  fastify.delete<{ Params: { id: string } }>('/api/analyses/:id', { preHandler: requireAuth }, async (request, reply) => {
+    const userId = getUserId(request);
+    const analysisId = parseInt(request.params.id);
+
+    if (isNaN(analysisId)) {
+      return reply.code(400).send({ error: 'Invalid analysis ID' });
+    }
+
+    try {
+      const deleted = deleteEmailAnalysis(userId, analysisId);
+
+      if (!deleted) {
+        return reply.code(404).send({ error: 'Analysis not found' });
+      }
+
+      return reply.code(200).send({
+        success: true,
+        message: 'Analysis deleted successfully',
+      });
+    } catch (error: any) {
+      fastify.log.error({ err: error, userId, analysisId }, 'Error deleting analysis');
+      return reply.code(500).send({ error: 'Failed to delete analysis' });
+    }
+  });
+
+  /**
+   * POST /api/analyses/:id/reanalyze
+   * Re-analyze an email (deletes old analysis, creates new one)
+   */
+  fastify.post<{
+    Params: { id: string };
+    Body: { provider?: 'openai' | 'anthropic' };
+  }>('/api/analyses/:id/reanalyze', { preHandler: requireAuth }, async (request, reply) => {
+    const userId = getUserId(request);
+    const analysisId = parseInt(request.params.id);
+
+    if (isNaN(analysisId)) {
+      return reply.code(400).send({ error: 'Invalid analysis ID' });
+    }
+
+    try {
+      // Get the existing analysis to find the email ID
+      const existingAnalysis = getEmailAnalysisById(userId, analysisId);
+      if (!existingAnalysis) {
+        return reply.code(404).send({ error: 'Analysis not found' });
+      }
+
+      const provider = request.body?.provider || 'openai';
+      fastify.log.info({ userId, analysisId, emailId: existingAnalysis.email_id, provider }, 'Re-analysis triggered');
+
+      const result = await reanalyzeEmail(userId, existingAnalysis.email_id, provider);
+
+      if (result.status === 'error') {
+        return reply.code(500).send({
+          success: false,
+          error: result.error || 'Re-analysis failed',
+        });
+      }
+
+      // Get the new analysis to return
+      const newAnalysis = getEmailAnalysisById(userId, result.analysisId);
+
+      return reply.code(200).send({
+        success: true,
+        analysis: newAnalysis ? formatAnalysisForApi(newAnalysis) : null,
+        eventsCreated: result.eventsCreated,
+        todosCreated: result.todosCreated,
+        qualityScore: result.qualityScore,
+      });
+    } catch (error: any) {
+      fastify.log.error({ err: error, analysisId }, 'Error re-analyzing');
+      return reply.code(500).send({ error: 'Failed to re-analyze', message: error.message });
+    }
+  });
+
+  /**
+   * POST /api/reset-all-data
+   * Delete all user data for testing purposes
+   */
+  fastify.post('/api/reset-all-data', { preHandler: requireAuth }, async (request, reply) => {
+    const userId = getUserId(request);
+
+    try {
+      const { default: db } = await import('../db/db.js');
+
+      // Get counts before deletion for reporting
+      const emailCount = (db.prepare('SELECT COUNT(*) as count FROM emails WHERE user_id = ?').get(userId) as any).count;
+      const analysisCount = (db.prepare('SELECT COUNT(*) as count FROM email_analyses WHERE user_id = ?').get(userId) as any).count;
+      const eventCount = (db.prepare('SELECT COUNT(*) as count FROM events WHERE user_id = ?').get(userId) as any).count;
+      const todoCount = (db.prepare('SELECT COUNT(*) as count FROM todos WHERE user_id = ?').get(userId) as any).count;
+
+      // Delete in correct order (foreign key constraints)
+      db.prepare('DELETE FROM email_analyses WHERE user_id = ?').run(userId);
+      db.prepare('DELETE FROM todos WHERE user_id = ?').run(userId);
+      db.prepare('DELETE FROM events WHERE user_id = ?').run(userId);
+      db.prepare('DELETE FROM emails WHERE user_id = ?').run(userId);
+
+      fastify.log.info({ userId, emailCount, analysisCount, eventCount, todoCount }, 'User data reset');
+
+      return reply.code(200).send({
+        success: true,
+        deleted: {
+          emails: emailCount,
+          analyses: analysisCount,
+          events: eventCount,
+          todos: todoCount,
+        },
+      });
+    } catch (error: any) {
+      fastify.log.error({ err: error, userId }, 'Error resetting user data');
+      return reply.code(500).send({ error: 'Failed to reset data', message: error.message });
+    }
+  });
+
+  /**
    * POST /api/analyses/run
    * Manually trigger analysis on unanalyzed emails
    */
@@ -363,7 +482,17 @@ export async function emailRoutes(fastify: FastifyInstance): Promise<void> {
       const analyses = listEmailAnalyses(userId, 100, 0);
       const stats = getAnalysisStats(userId);
 
-      const html = generateAnalysesViewHtml(analyses, stats);
+      // Fetch emails to get body text for raw email display
+      const emailIds = [...new Set(analyses.map((a) => a.email_id))];
+      const emailMap = new Map<number, StoredEmail>();
+      for (const emailId of emailIds) {
+        const email = getEmailById(userId, emailId);
+        if (email) {
+          emailMap.set(emailId, email);
+        }
+      }
+
+      const html = generateAnalysesViewHtml(analyses, stats, emailMap);
       return reply.code(200).type('text/html').send(html);
     } catch (error: any) {
       fastify.log.error({ err: error }, 'Error rendering analyses view');
@@ -406,11 +535,18 @@ function formatAnalysisForApi(analysis: StoredEmailAnalysis) {
  */
 function generateAnalysesViewHtml(
   analyses: StoredEmailAnalysis[],
-  stats: ReturnType<typeof getAnalysisStats>
+  stats: ReturnType<typeof getAnalysisStats>,
+  emailMap: Map<number, StoredEmail>
 ): string {
   const analysesHtml = analyses.length > 0
-    ? analyses.map((analysis) => `
-        <div class="analysis-card" data-analysis-id="${analysis.id}">
+    ? analyses.map((analysis) => {
+        const email = emailMap.get(analysis.email_id);
+        const emailBody = email?.body_text || '(No email body available)';
+        const emailSubject = email?.subject || '(Unknown subject)';
+        const emailFrom = email?.from_name || email?.from_email || '(Unknown sender)';
+
+        return `
+        <div class="analysis-card" data-analysis-id="${analysis.id}" data-email-id="${analysis.email_id}">
           <div class="analysis-header">
             <div class="analysis-summary">${escapeHtml(analysis.email_summary || '(No summary)')}</div>
             <div class="analysis-badges">
@@ -423,6 +559,10 @@ function generateAnalysesViewHtml(
             <span>Provider: ${analysis.ai_provider}</span>
             <span>${formatDate(analysis.created_at)}</span>
           </div>
+          <div class="email-info">
+            <div class="detail"><strong>Subject:</strong> ${escapeHtml(emailSubject)}</div>
+            <div class="detail"><strong>From:</strong> ${escapeHtml(emailFrom)}</div>
+          </div>
           <div class="analysis-stats">
             <span class="stat">📅 ${analysis.events_extracted} events</span>
             <span class="stat">📝 ${analysis.todos_extracted} todos</span>
@@ -434,15 +574,27 @@ function generateAnalysesViewHtml(
             <div class="detail"><strong>Intent:</strong> ${escapeHtml(analysis.email_intent || 'N/A')}</div>
             ${analysis.implicit_context ? `<div class="detail"><strong>Context:</strong> ${escapeHtml(analysis.implicit_context)}</div>` : ''}
           </div>
+          <details class="raw-email-details">
+            <summary>View Raw Email</summary>
+            <div class="raw-email-body">${escapeHtml(emailBody)}</div>
+          </details>
+          <details class="raw-ai-details">
+            <summary>View AI Response</summary>
+            <div class="raw-ai-body">${analysis.raw_extraction_json ? formatJsonForDisplay(analysis.raw_extraction_json) : '(No raw response available)'}</div>
+          </details>
           ${analysis.analysis_error ? `<div class="analysis-error">Error: ${escapeHtml(analysis.analysis_error)}</div>` : ''}
-          ${analysis.status === 'analyzed' ? `
-            <div class="analysis-actions">
+          <div class="analysis-actions">
+            <button class="btn btn-reanalyze" onclick="reanalyzeEmail(${analysis.id})">🔄 Re-analyze</button>
+            ${analysis.status === 'analyzed' ? `
               <button class="btn btn-approve" onclick="approveAnalysis(${analysis.id})">✅ Approve</button>
               <button class="btn btn-reject" onclick="rejectAnalysis(${analysis.id})">❌ Reject</button>
-            </div>
-          ` : ''}
+            ` : ''}
+            <button class="btn btn-delete" data-analysis-id="${analysis.id}" onclick="deleteAnalysis(this)">🗑️ Delete</button>
+          </div>
+          <div class="reanalyze-result" id="reanalyze-result-${analysis.id}" style="display: none;"></div>
         </div>
-      `).join('')
+      `;
+      }).join('')
     : '<div class="no-analyses">No analyses yet. Run analysis on emails to see results.</div>';
 
   return `
@@ -521,6 +673,10 @@ function generateAnalysesViewHtml(
     .btn-approve:hover { background: #218838; }
     .btn-reject { background: #dc3545; color: white; }
     .btn-reject:hover { background: #c82333; }
+    .btn-reanalyze { background: #17a2b8; color: white; }
+    .btn-reanalyze:hover { background: #138496; }
+    .btn-delete { background: #6c757d; color: white; }
+    .btn-delete:hover { background: #5a6268; }
     .btn:disabled { opacity: 0.6; cursor: not-allowed; }
 
     .content {
@@ -585,6 +741,49 @@ function generateAnalysesViewHtml(
     }
     .detail { margin-bottom: 5px; }
 
+    .email-info {
+      font-size: 13px;
+      color: #444;
+      margin-bottom: 10px;
+      padding: 8px;
+      background: #f8f9fa;
+      border-radius: 4px;
+    }
+
+    .raw-email-details, .raw-ai-details {
+      margin-top: 10px;
+    }
+    .raw-email-details summary, .raw-ai-details summary {
+      cursor: pointer;
+      color: #667eea;
+      font-size: 13px;
+      font-weight: 500;
+    }
+    .raw-ai-details summary {
+      color: #17a2b8;
+    }
+    .raw-email-body, .raw-ai-body {
+      margin-top: 10px;
+      padding: 15px;
+      background: #f8f9fa;
+      border-radius: 6px;
+      font-size: 12px;
+      font-family: monospace;
+      white-space: pre-wrap;
+      max-height: 400px;
+      overflow-y: auto;
+      border: 1px solid #e0e0e0;
+    }
+    .raw-ai-body {
+      background: #e8f4f8;
+      border-color: #b8daff;
+    }
+    .raw-ai-body .json-key { color: #881391; }
+    .raw-ai-body .json-string { color: #1a1aa6; }
+    .raw-ai-body .json-number { color: #1a6; }
+    .raw-ai-body .json-boolean { color: #d63384; }
+    .raw-ai-body .json-null { color: #6c757d; }
+
     .analysis-error {
       margin-top: 10px;
       padding: 10px;
@@ -598,7 +797,18 @@ function generateAnalysesViewHtml(
       margin-top: 15px;
       display: flex;
       gap: 10px;
+      flex-wrap: wrap;
     }
+
+    .reanalyze-result {
+      margin-top: 10px;
+      padding: 12px;
+      border-radius: 6px;
+      font-size: 13px;
+    }
+    .reanalyze-result.loading { background: #e3f2fd; color: #1565c0; }
+    .reanalyze-result.success { background: #d4edda; color: #155724; }
+    .reanalyze-result.error { background: #f8d7da; color: #721c24; }
 
     .no-analyses {
       text-align: center;
@@ -747,6 +957,81 @@ function generateAnalysesViewHtml(
         alert('Error: ' + error.message);
       }
     }
+
+    async function deleteAnalysis(btn) {
+      const analysisId = btn.dataset.analysisId;
+      const card = btn.closest('.analysis-card');
+      const summary = card.querySelector('.analysis-summary')?.textContent || 'this analysis';
+
+      if (!confirm('Delete analysis?\\n\\n"' + summary.substring(0, 100) + '..."')) {
+        return;
+      }
+
+      btn.disabled = true;
+      btn.textContent = '⏳ Deleting...';
+
+      try {
+        const response = await fetch('/api/analyses/' + analysisId, {
+          method: 'DELETE'
+        });
+
+        if (response.ok) {
+          card.style.transition = 'opacity 0.3s, transform 0.3s';
+          card.style.opacity = '0';
+          card.style.transform = 'translateX(-20px)';
+          setTimeout(() => card.remove(), 300);
+        } else {
+          const data = await response.json();
+          throw new Error(data.error || 'Delete failed');
+        }
+      } catch (error) {
+        alert('Error deleting analysis: ' + error.message);
+        btn.disabled = false;
+        btn.textContent = '🗑️ Delete';
+      }
+    }
+
+    async function reanalyzeEmail(analysisId) {
+      const resultDiv = document.getElementById('reanalyze-result-' + analysisId);
+      const card = document.querySelector('[data-analysis-id="' + analysisId + '"]');
+      const btn = card.querySelector('.btn-reanalyze');
+
+      btn.disabled = true;
+      btn.textContent = '⏳ Analyzing...';
+      resultDiv.style.display = 'block';
+      resultDiv.className = 'reanalyze-result loading';
+      resultDiv.innerHTML = 'Running AI analysis... This may take a moment.';
+
+      try {
+        const response = await fetch('/api/analyses/' + analysisId + '/reanalyze', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({})
+        });
+
+        const data = await response.json();
+
+        if (response.ok && data.success) {
+          resultDiv.className = 'reanalyze-result success';
+          resultDiv.innerHTML = \`
+            <strong>✅ Re-analysis complete!</strong><br>
+            <strong>New Summary:</strong> \${data.analysis?.emailSummary || 'N/A'}<br>
+            <strong>Tone:</strong> \${data.analysis?.emailTone || 'N/A'} | <strong>Intent:</strong> \${data.analysis?.emailIntent || 'N/A'}<br>
+            <strong>Quality:</strong> \${data.qualityScore ? (data.qualityScore * 100).toFixed(0) + '%' : 'N/A'}<br>
+            <strong>Events:</strong> \${data.eventsCreated} | <strong>Todos:</strong> \${data.todosCreated}<br>
+            <em>Refreshing page in 3 seconds...</em>
+          \`;
+          setTimeout(() => window.location.reload(), 3000);
+        } else {
+          throw new Error(data.message || data.error || 'Re-analysis failed');
+        }
+      } catch (error) {
+        resultDiv.className = 'reanalyze-result error';
+        resultDiv.innerHTML = '<strong>❌ Error:</strong> ' + error.message;
+        btn.disabled = false;
+        btn.textContent = '🔄 Re-analyze';
+      }
+    }
   </script>
 </body>
 </html>
@@ -813,6 +1098,9 @@ function generateEmailsViewHtml(
             <div class="email-body">${escapeHtml(email.body_text || '(No body content)')}</div>
           </details>
           ${email.fetch_error ? `<div class="email-error">Error: ${escapeHtml(email.fetch_error)}</div>` : ''}
+          <div class="email-actions">
+            <button class="btn btn-delete btn-sm" data-email-id="${email.id}" onclick="deleteEmail(this)">🗑️ Delete</button>
+          </div>
         </div>
       `).join('')
     : '<div class="no-emails">No emails stored yet. Click "Fetch Emails from Gmail" to import emails.</div>';
@@ -891,6 +1179,9 @@ function generateEmailsViewHtml(
     .btn-primary:hover { background: #5a6fd6; }
     .btn-secondary { background: #6c757d; color: white; }
     .btn-secondary:hover { background: #5a6268; }
+    .btn-delete { background: #dc3545; color: white; }
+    .btn-delete:hover { background: #c82333; }
+    .btn-sm { padding: 6px 12px; font-size: 12px; }
     .btn:disabled { opacity: 0.6; cursor: not-allowed; }
 
     .fetch-options {
@@ -1003,6 +1294,12 @@ function generateEmailsViewHtml(
       color: #721c24;
       border-radius: 4px;
       font-size: 13px;
+    }
+
+    .email-actions {
+      margin-top: 12px;
+      display: flex;
+      gap: 8px;
     }
 
     .no-emails {
@@ -1126,6 +1423,39 @@ function generateEmailsViewHtml(
         btn.textContent = '📥 Fetch Emails from Gmail';
       }
     }
+
+    async function deleteEmail(btn) {
+      const emailId = btn.dataset.emailId;
+      const card = btn.closest('.email-card');
+      const subject = card.querySelector('.email-subject')?.textContent || 'this email';
+
+      if (!confirm('Delete "' + subject + '"?\\n\\nThis will also delete any associated analysis.')) {
+        return;
+      }
+
+      btn.disabled = true;
+      btn.textContent = '⏳ Deleting...';
+
+      try {
+        const response = await fetch('/api/emails/' + emailId, {
+          method: 'DELETE'
+        });
+
+        if (response.ok) {
+          card.style.transition = 'opacity 0.3s, transform 0.3s';
+          card.style.opacity = '0';
+          card.style.transform = 'translateX(-20px)';
+          setTimeout(() => card.remove(), 300);
+        } else {
+          const data = await response.json();
+          throw new Error(data.error || 'Delete failed');
+        }
+      } catch (error) {
+        alert('Error deleting email: ' + error.message);
+        btn.disabled = false;
+        btn.textContent = '🗑️ Delete';
+      }
+    }
   </script>
 </body>
 </html>
@@ -1144,6 +1474,27 @@ function escapeHtml(text: string): string {
     "'": '&#39;',
   };
   return text.replace(/[&<>"']/g, (char) => htmlEntities[char]);
+}
+
+/**
+ * Format JSON string for display with syntax highlighting
+ */
+function formatJsonForDisplay(jsonString: string): string {
+  try {
+    const parsed = JSON.parse(jsonString);
+    const formatted = JSON.stringify(parsed, null, 2);
+
+    // Apply syntax highlighting
+    return escapeHtml(formatted)
+      .replace(/"([^"]+)":/g, '<span class="json-key">"$1"</span>:')
+      .replace(/: "([^"]*)"/g, ': <span class="json-string">"$1"</span>')
+      .replace(/: (-?\d+\.?\d*)/g, ': <span class="json-number">$1</span>')
+      .replace(/: (true|false)/g, ': <span class="json-boolean">$1</span>')
+      .replace(/: (null)/g, ': <span class="json-null">$1</span>');
+  } catch {
+    // If JSON parsing fails, just escape and return as-is
+    return escapeHtml(jsonString);
+  }
 }
 
 /**

@@ -1,12 +1,11 @@
 // src/utils/personalizedSummaryBuilder.ts
 
-import type { OAuth2Client } from 'google-auth-library';
-import { getUpcomingEvents } from './calendarIntegration.js';
+import { getUpcomingEvents as getUpcomingEventsFromDb, type Event } from '../db/eventDb.js';
 import { getTodos } from '../db/todoDb.js';
 import { getChildProfiles } from '../db/childProfilesDb.js';
 import type { Todo } from '../types/todo.js';
 import type { ChildProfile } from '../types/childProfile.js';
-import type { ExtractedEvent, TodoType } from '../types/extraction.js';
+import type { ExtractedEvent } from '../types/extraction.js';
 
 /**
  * Personalized summary structure organized by child
@@ -38,30 +37,18 @@ export interface FamilySummary {
 }
 
 /**
- * Calendar event from Google Calendar API
+ * Convert database event to extracted event format
  */
-interface CalendarEvent {
-  id: string;
-  summary: string;
-  start: Date;
-  end?: Date;
-  description?: string;
-  location?: string;
-}
-
-/**
- * Convert calendar event to extracted event format
- */
-function calendarEventToExtracted(event: CalendarEvent): ExtractedEvent {
+function dbEventToExtracted(event: Event): ExtractedEvent {
   return {
-    title: event.summary,
-    date: event.start.toISOString(),
-    end_date: event.end?.toISOString(),
+    title: event.title,
+    date: event.date.toISOString(),
+    end_date: event.end_date?.toISOString(),
     description: event.description,
     location: event.location,
-    child_name: 'General', // Calendar events don't have child info
-    source_email_id: undefined,
-    confidence: 1.0, // High confidence for calendar events
+    child_name: event.child_name || 'General',
+    source_email_id: event.source_email_id,
+    confidence: event.confidence || 1.0,
   };
 }
 
@@ -69,7 +56,7 @@ function calendarEventToExtracted(event: CalendarEvent): ExtractedEvent {
  * Organize events and todos by child
  */
 function organizeByChild(
-  calendarEvents: CalendarEvent[],
+  dbEvents: Event[],
   todos: Todo[],
   childProfiles: ChildProfile[]
 ): { byChild: Map<string, { events: ExtractedEvent[]; todos: Todo[] }>; familyWide: { events: ExtractedEvent[]; todos: Todo[] } } {
@@ -81,10 +68,14 @@ function organizeByChild(
     byChild.set(profile.real_name, { events: [], todos: [] });
   }
 
-  // Convert and organize calendar events (all go to family-wide for now)
-  for (const calEvent of calendarEvents) {
-    const event = calendarEventToExtracted(calEvent);
-    familyWide.events.push(event);
+  // Convert and organize database events by child
+  for (const dbEvent of dbEvents) {
+    const event = dbEventToExtracted(dbEvent);
+    if (dbEvent.child_name && dbEvent.child_name !== 'General' && byChild.has(dbEvent.child_name)) {
+      byChild.get(dbEvent.child_name)!.events.push(event);
+    } else {
+      familyWide.events.push(event);
+    }
   }
 
   // Organize todos
@@ -247,32 +238,29 @@ Return JSON:
 /**
  * Generate personalized email briefing using stored data
  *
- * This is the new pipeline that uses stored calendar events and todos
- * instead of extracting from emails every time (80% cost reduction).
+ * This pipeline uses stored events and todos from the database
+ * (populated by AI analysis) instead of calling external APIs.
  *
  * @param userId - User ID
- * @param auth - OAuth2 client
  * @param daysAhead - How many days to look ahead (default: 7)
  * @returns Personalized summary
  */
 export async function generatePersonalizedSummary(
   userId: string,
-  auth: OAuth2Client,
   daysAhead: number = 7
 ): Promise<PersonalizedSummary> {
-  // Step 1: Gather structured data from database and calendar
+  // Step 1: Gather structured data from database
   const now = new Date();
   const futureDate = new Date(now);
   futureDate.setDate(futureDate.getDate() + daysAhead);
 
-  const [calendarEvents, pendingTodos, childProfiles] = await Promise.all([
-    getUpcomingEvents(auth, daysAhead),
-    getTodos(userId, { status: 'pending' }),
-    getChildProfiles(userId, true), // active only
-  ]);
+  // Get events and todos from database (populated by AI analysis)
+  const dbEvents = getUpcomingEventsFromDb(userId, daysAhead);
+  const pendingTodos = getTodos(userId, { status: 'pending' });
+  const childProfiles = await getChildProfiles(userId, true); // active only
 
   // Step 2: Organize by child
-  const organized = organizeByChild(calendarEvents, pendingTodos, childProfiles);
+  const organized = organizeByChild(dbEvents, pendingTodos, childProfiles);
 
   // Step 3: Build child summaries
   const childSummaries: ChildSummary[] = [];

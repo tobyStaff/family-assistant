@@ -48,15 +48,38 @@ function formatDate(date: Date | string): string {
 }
 
 /**
- * Render a single todo item
+ * Get action button label based on todo type
  */
-function renderTodo(todo: Todo): string {
+function getActionButtonLabel(type: TodoType): string {
+  switch (type) {
+    case 'PAY': return 'Pay Now →';
+    case 'SIGN': return 'Sign Form →';
+    case 'FILL': return 'Fill Form →';
+    case 'READ': return 'Read Now →';
+    case 'BUY': return 'Buy Now →';
+    default: return 'Open Link →';
+  }
+}
+
+/**
+ * Render a single todo item
+ * @param todo - The todo item
+ * @param baseUrl - Base URL for action buttons (optional)
+ */
+function renderTodo(todo: Todo, baseUrl?: string): string {
   const typeEmoji = getTodoTypeEmoji(todo.type);
   const typeLabel = getTodoTypeLabel(todo.type);
   const dueDate = todo.due_date ? formatDate(todo.due_date) : 'No deadline';
   const amountBadge = todo.amount ? `<span class="amount-badge">${escapeHtml(todo.amount)}</span>` : '';
-  const payNowButton = todo.type === 'PAY' && todo.url
-    ? `<div style="margin-top: 8px;"><a href="${escapeHtml(todo.url)}" class="pay-button">Pay Now →</a></div>`
+
+  // Action button for URL (with correct label based on type)
+  const actionButton = todo.url
+    ? `<a href="${escapeHtml(todo.url)}" class="action-button">${getActionButtonLabel(todo.type)}</a>`
+    : '';
+
+  // Mark complete button (if baseUrl provided)
+  const completeButton = baseUrl && todo.id
+    ? `<a href="${baseUrl}/api/todos/${todo.id}/complete-from-email" class="complete-button">✓ Done</a>`
     : '';
 
   return `
@@ -70,21 +93,43 @@ function renderTodo(todo: Todo): string {
         <span>⏰ ${dueDate}</span>
         ${todo.child_name && todo.child_name !== 'General' ? `<span>👶 ${escapeHtml(todo.child_name)}</span>` : ''}
       </div>
-      ${payNowButton}
+      ${(actionButton || completeButton) ? `
+        <div class="todo-actions">
+          ${actionButton}
+          ${completeButton}
+        </div>
+      ` : ''}
     </div>
   `;
 }
 
 /**
- * Render a single event
+ * Extended event type with database id
  */
-function renderEvent(event: ExtractedEvent): string {
+interface EventWithId extends ExtractedEvent {
+  id?: number;
+}
+
+/**
+ * Render a single event
+ * @param event - The event
+ * @param baseUrl - Base URL for action buttons (optional)
+ */
+function renderEvent(event: EventWithId, baseUrl?: string): string {
   const eventDate = formatDate(event.date);
   const location = event.location ? `<div class="event-location">📍 ${escapeHtml(event.location)}</div>` : '';
 
+  // Remove button (if baseUrl provided)
+  const removeButton = baseUrl && event.id
+    ? `<a href="${baseUrl}/api/events/${event.id}/remove-from-email" class="remove-button">✕ Remove</a>`
+    : '';
+
   return `
     <div class="event-item">
-      <div class="event-title">${escapeHtml(event.title)}</div>
+      <div class="event-header">
+        <div class="event-title">${escapeHtml(event.title)}</div>
+        ${removeButton}
+      </div>
       <div class="event-date">📅 ${eventDate}</div>
       ${location}
       ${event.description ? `<div class="event-description">${escapeHtml(event.description)}</div>` : ''}
@@ -107,9 +152,141 @@ function renderInsights(insights: string[]): string {
 }
 
 /**
- * Render child summary section
+ * Render items grouped by child within a section
  */
-function renderChildSection(child: ChildSummary): string {
+function renderChildGroup(
+  childName: string,
+  displayName: string | undefined,
+  todos: Todo[],
+  events: EventWithId[],
+  baseUrl?: string
+): string {
+  if (todos.length === 0 && events.length === 0) return '';
+
+  const name = displayName || childName;
+
+  return `
+    <div class="child-group">
+      <h4>👶 ${escapeHtml(name)}</h4>
+      ${todos.map(t => renderTodo(t, baseUrl)).join('')}
+      ${events.map(e => renderEvent(e, baseUrl)).join('')}
+    </div>
+  `;
+}
+
+/**
+ * Render the Essential section (urgent items - today/tomorrow)
+ */
+function renderEssentialSection(
+  summary: PersonalizedSummary,
+  baseUrl?: string
+): string {
+  // Collect all urgent items
+  const hasChildUrgent = summary.by_child.some(c =>
+    c.urgent_todos.length > 0 || c.urgent_events.length > 0
+  );
+  const hasFamilyUrgent = summary.family_wide.urgent_todos.length > 0 ||
+    summary.family_wide.urgent_events.length > 0;
+
+  if (!hasChildUrgent && !hasFamilyUrgent) {
+    return `
+      <div class="essential-section">
+        <h2>🔥 Essential</h2>
+        <div class="empty-state">✓ Nothing urgent - you're all caught up!</div>
+      </div>
+    `;
+  }
+
+  return `
+    <div class="essential-section">
+      <h2>🔥 Essential</h2>
+      <p class="section-subtitle">Happening soon or requires immediate action</p>
+
+      ${summary.by_child.map(child => renderChildGroup(
+        child.child_name,
+        child.display_name,
+        child.urgent_todos,
+        child.urgent_events as EventWithId[],
+        baseUrl
+      )).join('')}
+
+      ${hasFamilyUrgent ? `
+        <div class="child-group">
+          <h4>🏠 Family-Wide</h4>
+          ${summary.family_wide.urgent_todos.map(t => renderTodo(t, baseUrl)).join('')}
+          ${summary.family_wide.urgent_events.map(e => renderEvent(e as EventWithId, baseUrl)).join('')}
+        </div>
+      ` : ''}
+    </div>
+  `;
+}
+
+/**
+ * Render the For Consideration section (upcoming items - rest of week)
+ */
+function renderForConsiderationSection(
+  summary: PersonalizedSummary,
+  baseUrl?: string
+): string {
+  // Collect all upcoming items
+  const hasChildUpcoming = summary.by_child.some(c =>
+    c.upcoming_todos.length > 0 || c.upcoming_events.length > 0
+  );
+  const hasFamilyUpcoming = summary.family_wide.upcoming_todos.length > 0 ||
+    summary.family_wide.upcoming_events.length > 0;
+
+  if (!hasChildUpcoming && !hasFamilyUpcoming) {
+    return '';
+  }
+
+  return `
+    <div class="consideration-section">
+      <h2>📋 For Consideration</h2>
+      <p class="section-subtitle">Coming up this week - plan ahead</p>
+
+      ${summary.by_child.map(child => renderChildGroup(
+        child.child_name,
+        child.display_name,
+        child.upcoming_todos,
+        child.upcoming_events as EventWithId[],
+        baseUrl
+      )).join('')}
+
+      ${hasFamilyUpcoming ? `
+        <div class="child-group">
+          <h4>🏠 Family-Wide</h4>
+          ${summary.family_wide.upcoming_todos.map(t => renderTodo(t, baseUrl)).join('')}
+          ${summary.family_wide.upcoming_events.map(e => renderEvent(e as EventWithId, baseUrl)).join('')}
+        </div>
+      ` : ''}
+    </div>
+  `;
+}
+
+/**
+ * Render all insights section
+ */
+function renderAllInsights(summary: PersonalizedSummary): string {
+  const allInsights: string[] = [
+    ...summary.insights,
+    ...summary.by_child.flatMap(c => c.insights),
+  ];
+
+  if (allInsights.length === 0) return '';
+
+  return `
+    <div class="insights-section">
+      <h3>💡 Insights</h3>
+      ${allInsights.map(insight => `<div class="insight-item">• ${escapeHtml(insight)}</div>`).join('')}
+    </div>
+  `;
+}
+
+// Keep legacy functions for backward compatibility
+/**
+ * Render child summary section (legacy - kept for compatibility)
+ */
+function renderChildSection(child: ChildSummary, baseUrl?: string): string {
   const displayName = child.display_name || child.child_name;
   const hasUrgent = child.urgent_todos.length > 0 || child.urgent_events.length > 0;
   const hasUpcoming = child.upcoming_todos.length > 0 || child.upcoming_events.length > 0;
@@ -130,16 +307,16 @@ function renderChildSection(child: ChildSummary): string {
       ${child.urgent_todos.length > 0 || child.urgent_events.length > 0 ? `
         <div class="urgent-section">
           <h3>🔥 Urgent (Today/Tomorrow)</h3>
-          ${child.urgent_todos.map(renderTodo).join('')}
-          ${child.urgent_events.map(renderEvent).join('')}
+          ${child.urgent_todos.map(t => renderTodo(t, baseUrl)).join('')}
+          ${child.urgent_events.map(e => renderEvent(e as EventWithId, baseUrl)).join('')}
         </div>
       ` : ''}
 
       ${child.upcoming_todos.length > 0 || child.upcoming_events.length > 0 ? `
         <div class="upcoming-section">
           <h3>📆 This Week</h3>
-          ${child.upcoming_todos.map(renderTodo).join('')}
-          ${child.upcoming_events.map(renderEvent).join('')}
+          ${child.upcoming_todos.map(t => renderTodo(t, baseUrl)).join('')}
+          ${child.upcoming_events.map(e => renderEvent(e as EventWithId, baseUrl)).join('')}
         </div>
       ` : ''}
 
@@ -149,9 +326,9 @@ function renderChildSection(child: ChildSummary): string {
 }
 
 /**
- * Render family-wide section
+ * Render family-wide section (legacy - kept for compatibility)
  */
-function renderFamilySection(family: FamilySummary): string {
+function renderFamilySection(family: FamilySummary, baseUrl?: string): string {
   const hasItems = family.urgent_todos.length > 0 || family.urgent_events.length > 0
     || family.upcoming_todos.length > 0 || family.upcoming_events.length > 0;
 
@@ -166,16 +343,16 @@ function renderFamilySection(family: FamilySummary): string {
       ${family.urgent_todos.length > 0 || family.urgent_events.length > 0 ? `
         <div class="urgent-section">
           <h3>🔥 Urgent (Today/Tomorrow)</h3>
-          ${family.urgent_todos.map(renderTodo).join('')}
-          ${family.urgent_events.map(renderEvent).join('')}
+          ${family.urgent_todos.map(t => renderTodo(t, baseUrl)).join('')}
+          ${family.urgent_events.map(e => renderEvent(e as EventWithId, baseUrl)).join('')}
         </div>
       ` : ''}
 
       ${family.upcoming_todos.length > 0 || family.upcoming_events.length > 0 ? `
         <div class="upcoming-section">
           <h3>📆 This Week</h3>
-          ${family.upcoming_todos.map(renderTodo).join('')}
-          ${family.upcoming_events.map(renderEvent).join('')}
+          ${family.upcoming_todos.map(t => renderTodo(t, baseUrl)).join('')}
+          ${family.upcoming_events.map(e => renderEvent(e as EventWithId, baseUrl)).join('')}
         </div>
       ` : ''}
 
@@ -369,6 +546,96 @@ export function renderPersonalizedEmail(summary: PersonalizedSummary): string {
       color: #666;
       font-size: 13px;
     }
+    /* New section styles */
+    .essential-section {
+      background: #fff8e1;
+      padding: 20px;
+      border-radius: 12px;
+      border: 2px solid #ffc107;
+      margin-bottom: 25px;
+    }
+    .essential-section h2 {
+      color: #e65100;
+      margin-top: 0;
+      border-bottom-color: #ffc107;
+    }
+    .consideration-section {
+      background: #f8f9fa;
+      padding: 20px;
+      border-radius: 12px;
+      border: 1px solid #e0e0e0;
+      margin-bottom: 25px;
+    }
+    .consideration-section h2 {
+      color: #555;
+      margin-top: 0;
+    }
+    .section-subtitle {
+      color: #666;
+      font-size: 14px;
+      margin: -10px 0 15px 0;
+    }
+    .child-group {
+      margin-bottom: 20px;
+      padding-left: 10px;
+      border-left: 3px solid #667eea;
+    }
+    .child-group h4 {
+      color: #667eea;
+      margin: 0 0 12px 0;
+      font-size: 15px;
+    }
+    .todo-actions, .event-header {
+      display: flex;
+      gap: 8px;
+      margin-top: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .event-header {
+      justify-content: space-between;
+      margin-top: 0;
+      margin-bottom: 6px;
+    }
+    .action-button {
+      display: inline-block;
+      background: #28a745;
+      color: white;
+      padding: 6px 14px;
+      border-radius: 6px;
+      text-decoration: none;
+      font-weight: 600;
+      font-size: 13px;
+    }
+    .action-button:hover {
+      background: #218838;
+    }
+    .complete-button {
+      display: inline-block;
+      background: #667eea;
+      color: white;
+      padding: 6px 14px;
+      border-radius: 6px;
+      text-decoration: none;
+      font-weight: 600;
+      font-size: 13px;
+    }
+    .complete-button:hover {
+      background: #5a6fd6;
+    }
+    .remove-button {
+      display: inline-block;
+      background: #dc3545;
+      color: white;
+      padding: 4px 10px;
+      border-radius: 4px;
+      text-decoration: none;
+      font-weight: 500;
+      font-size: 12px;
+    }
+    .remove-button:hover {
+      background: #c82333;
+    }
   </style>
 </head>
 <body>
@@ -378,16 +645,11 @@ export function renderPersonalizedEmail(summary: PersonalizedSummary): string {
       <div class="date">${dateStr}</div>
     </div>
 
-    ${summary.insights.length > 0 ? `
-      <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; border-radius: 8px; margin-bottom: 30px;">
-        <h3 style="margin: 0 0 10px 0; color: white;">✨ Today's Overview</h3>
-        ${summary.insights.map(insight => `<div style="margin: 6px 0;">• ${escapeHtml(insight)}</div>`).join('')}
-      </div>
-    ` : ''}
+    ${renderAllInsights(summary)}
 
-    ${summary.by_child.map(renderChildSection).join('')}
+    ${renderEssentialSection(summary)}
 
-    ${renderFamilySection(summary.family_wide)}
+    ${renderForConsiderationSection(summary)}
 
     <div class="footer">
       Generated by Inbox Manager • ${new Date().toLocaleString()}

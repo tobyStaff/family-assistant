@@ -127,7 +127,7 @@ async function dailySummaryPlugin(fastify: FastifyInstance) {
                 const auth = await getUserAuth(userId);
 
                 // Generate personalized summary (uses stored events/todos from database)
-                const summary = await generatePersonalizedSummary(userId, auth, 7); // Look ahead 7 days
+                const summary = await generatePersonalizedSummary(userId, 7); // Look ahead 7 days
 
                 // Render HTML email
                 const html = renderPersonalizedEmail(summary);

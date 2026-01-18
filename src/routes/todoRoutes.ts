@@ -12,9 +12,95 @@ import {
   getTodos,
   completeTodo,
 } from '../db/todoDb.js';
-import { getTodoTypeEmoji, getTodoTypeLabel } from '../types/extraction.js';
+import { getEmailByGmailId } from '../db/emailDb.js';
+import { getTodoTypeEmoji, getTodoTypeLabel, TodoType } from '../types/extraction.js';
 import { getUserId } from '../lib/userContext.js';
 import { requireAuth } from '../middleware/session.js';
+
+/**
+ * Get the appropriate action button label based on todo type
+ */
+function getActionButtonLabel(type: TodoType): string {
+  switch (type) {
+    case 'PAY':
+      return 'Pay Now →';
+    case 'SIGN':
+      return 'Sign Form →';
+    case 'FILL':
+      return 'Fill Form →';
+    case 'READ':
+      return 'Read Now →';
+    case 'BUY':
+      return 'Buy Now →';
+    default:
+      return 'Open Link →';
+  }
+}
+
+/**
+ * Render a simple HTML result page for email action links
+ */
+function renderActionResult(success: boolean, title: string, subtitle?: string): string {
+  const emoji = success ? '✅' : '❌';
+  const bgColor = success ? '#d4edda' : '#f8d7da';
+  const borderColor = success ? '#28a745' : '#dc3545';
+
+  return `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${title}</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      margin: 0;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    }
+    .card {
+      background: white;
+      padding: 40px 60px;
+      border-radius: 12px;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+      text-align: center;
+    }
+    .status {
+      font-size: 64px;
+      margin-bottom: 16px;
+    }
+    .title {
+      font-size: 24px;
+      color: #333;
+      margin-bottom: 8px;
+    }
+    .subtitle {
+      font-size: 14px;
+      color: #666;
+    }
+    .back-link {
+      margin-top: 20px;
+      display: inline-block;
+      color: #667eea;
+      text-decoration: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="status">${emoji}</div>
+    <div class="title">${title}</div>
+    ${subtitle ? `<div class="subtitle">${subtitle}</div>` : ''}
+    <a href="/dashboard" class="back-link">← Back to Dashboard</a>
+  </div>
+</body>
+</html>
+  `;
+}
 
 /**
  * Zod schemas for request validation
@@ -303,6 +389,32 @@ export async function todoRoutes(fastify: FastifyInstance): Promise<void> {
   });
 
   /**
+   * GET /api/todos/:id/complete-from-email
+   * Mark todo as done from email link (returns HTML confirmation page)
+   */
+  fastify.get<{ Params: { id: string } }>('/api/todos/:id/complete-from-email', { preHandler: requireAuth }, async (request, reply) => {
+    const todoId = parseInt(request.params.id);
+
+    if (isNaN(todoId)) {
+      return reply.type('text/html').send(renderActionResult(false, 'Invalid todo ID'));
+    }
+
+    try {
+      const userId = getUserId(request);
+      const success = markTodoAsDone(userId, todoId);
+
+      if (!success) {
+        return reply.type('text/html').send(renderActionResult(false, 'Todo not found'));
+      }
+
+      return reply.type('text/html').send(renderActionResult(true, 'Todo marked as complete!', 'You can close this window.'));
+    } catch (error) {
+      fastify.log.error({ err: error, todoId }, 'Error completing todo from email');
+      return reply.type('text/html').send(renderActionResult(false, 'Failed to complete todo'));
+    }
+  });
+
+  /**
    * GET /todos-view
    * Render HTML view of todos with filters
    */
@@ -310,6 +422,17 @@ export async function todoRoutes(fastify: FastifyInstance): Promise<void> {
     try {
       const userId = getUserId(request);
       const todos = listTodos(userId);
+
+      // Fetch source emails for todos that have them
+      const sourceEmails = new Map<string, any>();
+      for (const todo of todos) {
+        if (todo.source_email_id && !sourceEmails.has(todo.source_email_id)) {
+          const email = getEmailByGmailId(userId, todo.source_email_id);
+          if (email) {
+            sourceEmails.set(todo.source_email_id, email);
+          }
+        }
+      }
 
       // Get unique children and types for filters
       const children = [...new Set(todos.map(t => t.child_name).filter(Boolean))];
@@ -539,6 +662,52 @@ export async function todoRoutes(fastify: FastifyInstance): Promise<void> {
       color: #666;
       font-size: 18px;
     }
+    .source-email-toggle {
+      background: #f8f9fa;
+      border: 1px solid #e0e0e0;
+      color: #666;
+      font-size: 12px;
+      padding: 4px 10px;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    .source-email-toggle:hover {
+      background: #e9ecef;
+    }
+    .source-email-content {
+      display: none;
+      margin-top: 12px;
+      padding: 12px;
+      background: #f8f9fa;
+      border: 1px solid #e0e0e0;
+      border-radius: 8px;
+      font-size: 13px;
+    }
+    .source-email-content.visible {
+      display: block;
+    }
+    .source-email-header {
+      font-weight: 600;
+      color: #333;
+      margin-bottom: 8px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid #e0e0e0;
+    }
+    .source-email-meta {
+      color: #666;
+      margin-bottom: 8px;
+    }
+    .source-email-body {
+      white-space: pre-wrap;
+      font-family: monospace;
+      font-size: 12px;
+      max-height: 300px;
+      overflow-y: auto;
+      background: white;
+      padding: 8px;
+      border-radius: 4px;
+      border: 1px solid #e0e0e0;
+    }
   </style>
 </head>
 <body>
@@ -603,7 +772,21 @@ export async function todoRoutes(fastify: FastifyInstance): Promise<void> {
           </div>
           <div class="todo-description">${todo.description}</div>
           <div class="todo-meta">
-            ${todo.due_date ? `<div class="meta-item">⏰ Due: ${new Date(todo.due_date).toLocaleDateString()}</div>` : ''}
+            ${(() => {
+              // Defensive date rendering - check if date is valid
+              let parts = [];
+              if (todo.due_date) {
+                const date = new Date(todo.due_date);
+                if (!isNaN(date.getTime())) {
+                  parts.push(`<div class="meta-item">⏰ Due: ${date.toLocaleDateString()}</div>`);
+                }
+              }
+              // Show recurrence pattern for recurring items
+              if (todo.recurring && todo.recurrence_pattern) {
+                parts.push(`<div class="meta-item">🔄 ${todo.recurrence_pattern}</div>`);
+              }
+              return parts.join('');
+            })()}
             ${todo.child_name ? `<div class="meta-item">👶 ${todo.child_name}</div>` : ''}
             ${todo.confidence ? `<div class="meta-item">🎯 ${Math.round(todo.confidence * 100)}% confidence</div>` : ''}
             ${todo.completed_at ? `<div class="meta-item">✅ Completed: ${new Date(todo.completed_at).toLocaleDateString()}</div>` : ''}
@@ -615,16 +798,46 @@ export async function todoRoutes(fastify: FastifyInstance): Promise<void> {
               <button class="btn btn-secondary" onclick="markAsPending(${todo.id})">↩ Mark Pending</button>
             `}
             ${todo.url ? `
-              <a href="${todo.url}" target="_blank" class="btn btn-primary">💰 Pay Now</a>
+              <a href="${todo.url}" target="_blank" class="btn btn-primary">${getActionButtonLabel(todo.type)}</a>
             ` : ''}
             <button class="btn btn-danger" onclick="deleteTodo(${todo.id})">🗑️ Delete</button>
+            ${todo.source_email_id && sourceEmails.has(todo.source_email_id) ? `
+              <button class="source-email-toggle" onclick="toggleSourceEmail(${todo.id})">📧 View Source Email</button>
+            ` : ''}
           </div>
+          ${(() => {
+            if (!todo.source_email_id) return '';
+            const email = sourceEmails.get(todo.source_email_id);
+            if (!email) return '';
+            const safeSubject = (email.subject || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            const safeFrom = (email.from_email || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            const safeBody = (email.body_text || email.snippet || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            return `
+              <div class="source-email-content" id="source-email-${todo.id}">
+                <div class="source-email-header">📧 ${safeSubject}</div>
+                <div class="source-email-meta">
+                  <strong>From:</strong> ${safeFrom}<br>
+                  <strong>Date:</strong> ${new Date(email.date).toLocaleString()}
+                </div>
+                <div class="source-email-body">${safeBody}</div>
+              </div>
+            `;
+          })()}
         </div>
       `).join('')}
     </div>
   </div>
 
   <script>
+    function toggleSourceEmail(todoId) {
+      const content = document.getElementById('source-email-' + todoId);
+      if (content) {
+        content.classList.toggle('visible');
+        const btn = event.target;
+        btn.textContent = content.classList.contains('visible') ? '📧 Hide Source Email' : '📧 View Source Email';
+      }
+    }
+
     let currentTypeFilter = 'all';
     let currentChildFilter = 'all';
     let currentStatusFilter = 'all';

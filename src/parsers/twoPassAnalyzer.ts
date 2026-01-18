@@ -9,9 +9,105 @@ import {
 } from '../db/emailAnalysisDb.js';
 import { createTodoEnhanced, type CreateTodoInput } from '../db/todoDb.js';
 import { createEvent, type CreateEventInput } from '../db/eventDb.js';
+import { getChildProfiles } from '../db/childProfilesDb.js';
 import { extractEventsAndTodosEnhanced } from './eventTodoExtractor.js';
 import type { EmailMetadata } from '../types/summary.js';
 import type { EnhancedExtractionResult } from './extractionSchema.js';
+import {
+  createChildMappings,
+  getAnonymizedProfiles,
+  anonymizeText,
+  deanonymizeExtractionResult,
+  type ChildMapping,
+} from '../utils/childAnonymizer.js';
+
+/**
+ * Check if a string is a valid ISO8601 date
+ */
+function isValidISODate(dateStr: string | null | undefined): boolean {
+  if (!dateStr) return false;
+  const date = new Date(dateStr);
+  return !isNaN(date.getTime());
+}
+
+/**
+ * Day name to day number mapping (Sunday = 0)
+ */
+const DAY_NAMES: Record<string, number> = {
+  sunday: 0, sun: 0,
+  monday: 1, mon: 1,
+  tuesday: 2, tue: 2, tues: 2,
+  wednesday: 3, wed: 3,
+  thursday: 4, thu: 4, thur: 4, thurs: 4,
+  friday: 5, fri: 5,
+  saturday: 6, sat: 6,
+};
+
+/**
+ * Extract day number from recurrence pattern
+ * Returns the first day found, or null if no day found
+ */
+function extractDayFromPattern(pattern: string | null | undefined): number | null {
+  if (!pattern) return null;
+  const lowerPattern = pattern.toLowerCase();
+
+  for (const [dayName, dayNum] of Object.entries(DAY_NAMES)) {
+    if (lowerPattern.includes(dayName)) {
+      return dayNum;
+    }
+  }
+  return null;
+}
+
+/**
+ * Calculate the next occurrence of a given day from a reference date
+ */
+function getNextOccurrence(referenceDate: Date, targetDay: number): Date {
+  const result = new Date(referenceDate);
+  const currentDay = result.getDay();
+
+  // Calculate days until target day
+  let daysUntil = targetDay - currentDay;
+  if (daysUntil <= 0) {
+    daysUntil += 7; // Move to next week if target is today or earlier
+  }
+
+  result.setDate(result.getDate() + daysUntil);
+  result.setHours(9, 0, 0, 0); // Default to 9:00 AM
+  return result;
+}
+
+/**
+ * Validate and fix a due date for a todo item
+ * If the date is invalid but we have a recurrence pattern with a day name,
+ * calculate the next occurrence from the email date
+ */
+function validateAndFixDueDate(
+  dueDate: string | null | undefined,
+  recurrencePattern: string | null | undefined,
+  emailDate: Date
+): string | undefined {
+  // If due date is valid, return it
+  if (isValidISODate(dueDate)) {
+    return dueDate!;
+  }
+
+  // If no recurrence pattern, can't fix it
+  if (!recurrencePattern) {
+    return undefined;
+  }
+
+  // Try to extract a day from the recurrence pattern
+  const targetDay = extractDayFromPattern(recurrencePattern);
+  if (targetDay === null) {
+    return undefined;
+  }
+
+  // Calculate the next occurrence
+  const nextOccurrence = getNextOccurrence(emailDate, targetDay);
+  console.log(`[TwoPass] Fixed invalid date using recurrence pattern "${recurrencePattern}" → ${nextOccurrence.toISOString()}`);
+  return nextOccurrence.toISOString();
+}
 
 /**
  * Result of two-pass analysis
@@ -136,12 +232,34 @@ export async function analyzeEmail(
       };
     }
 
-    // Convert to EmailMetadata
+    // Fetch child profiles for relevance filtering
+    const childProfiles = getChildProfiles(userId, true); // Only active profiles
+    const mappings = createChildMappings(childProfiles);
+    const anonymizedProfiles = getAnonymizedProfiles(mappings);
+
+    // Convert to EmailMetadata with anonymized content
     const emailMetadata = storedEmailToMetadata(email);
 
-    // Run AI extraction
-    console.log(`[TwoPass] Analyzing email ${emailId}: "${email.subject}"`);
-    const extraction = await extractEventsAndTodosEnhanced([emailMetadata], aiProvider);
+    // Anonymize email content before sending to AI
+    if (mappings.length > 0) {
+      emailMetadata.subject = anonymizeText(emailMetadata.subject, mappings);
+      emailMetadata.snippet = anonymizeText(emailMetadata.snippet, mappings);
+      if (emailMetadata.bodyText) {
+        emailMetadata.bodyText = anonymizeText(emailMetadata.bodyText, mappings);
+      }
+      if (emailMetadata.attachmentContent) {
+        emailMetadata.attachmentContent = anonymizeText(emailMetadata.attachmentContent, mappings);
+      }
+    }
+
+    // Run AI extraction with anonymized profiles for relevance filtering
+    console.log(`[TwoPass] Analyzing email ${emailId}: "${email.subject}" (${mappings.length} child profiles)`);
+    let extraction = await extractEventsAndTodosEnhanced([emailMetadata], aiProvider, anonymizedProfiles);
+
+    // Deanonymize the extraction result (replace CHILD_1, CHILD_2 with real names)
+    if (mappings.length > 0) {
+      extraction = deanonymizeExtractionResult(extraction, mappings);
+    }
 
     // Calculate quality score
     const qualityScore = calculateQualityScore(extraction);
@@ -214,10 +332,17 @@ export async function analyzeEmail(
     // Create todos
     for (const todo of extraction.todos) {
       try {
+        // Validate and fix due_date if invalid (especially for recurring items)
+        const fixedDueDate = validateAndFixDueDate(
+          todo.due_date,
+          todo.recurrence_pattern,
+          email.date
+        );
+
         const todoInput: CreateTodoInput = {
           description: todo.description,
           type: todo.type,
-          due_date: todo.due_date || undefined,
+          due_date: fixedDueDate,
           child_name: todo.child_name || 'General',
           source_email_id: email.gmail_message_id,
           url: todo.url || undefined,
@@ -320,15 +445,22 @@ export async function analyzeUnanalyzedEmails(
 }
 
 /**
- * Re-analyze a specific email (creates new analysis version)
+ * Re-analyze a specific email (deletes existing analysis and creates new one)
  */
 export async function reanalyzeEmail(
   userId: string,
   emailId: number,
   aiProvider: 'openai' | 'anthropic' = 'openai'
 ): Promise<TwoPassAnalysisResult> {
-  // Reset the email's analyzed flag
   const { default: db } = await import('../db/db.js');
+
+  // Delete existing analysis for this email
+  db.prepare(`
+    DELETE FROM email_analyses
+    WHERE user_id = ? AND email_id = ?
+  `).run(userId, emailId);
+
+  // Reset the email's analyzed flag
   db.prepare(`
     UPDATE emails
     SET analyzed = 0, updated_at = CURRENT_TIMESTAMP

@@ -578,8 +578,8 @@ export async function adminRoutes(fastify: FastifyInstance): Promise<void> {
       const { generatePersonalizedSummary } = await import('../utils/personalizedSummaryBuilder.js');
       const { renderPersonalizedEmail } = await import('../templates/personalizedEmailTemplate.js');
 
-      // Generate personalized summary (uses stored events/todos)
-      const summary = await generatePersonalizedSummary(userId, auth, 7); // Look ahead 7 days
+      // Generate personalized summary (uses stored events/todos from database)
+      const summary = await generatePersonalizedSummary(userId, 7); // Look ahead 7 days
 
       // Render HTML
       const html = renderPersonalizedEmail(summary);

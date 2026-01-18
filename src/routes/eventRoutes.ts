@@ -2,10 +2,74 @@
 
 import type { FastifyInstance } from 'fastify';
 import { listEvents, getEvent, getEvents, deleteEvent, getEventStats } from '../db/eventDb.js';
+import { getEmailByGmailId } from '../db/emailDb.js';
 import { syncEventsToCalendar } from '../utils/calendarIntegration.js';
 import { getUserAuth } from '../db/authDb.js';
 import { getUserId } from '../lib/userContext.js';
 import { requireAuth } from '../middleware/session.js';
+
+/**
+ * Render a simple HTML result page for email action links
+ */
+function renderEventActionResult(success: boolean, title: string, subtitle?: string): string {
+  const emoji = success ? '✅' : '❌';
+
+  return `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${title}</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      margin: 0;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    }
+    .card {
+      background: white;
+      padding: 40px 60px;
+      border-radius: 12px;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+      text-align: center;
+    }
+    .status {
+      font-size: 64px;
+      margin-bottom: 16px;
+    }
+    .title {
+      font-size: 24px;
+      color: #333;
+      margin-bottom: 8px;
+    }
+    .subtitle {
+      font-size: 14px;
+      color: #666;
+    }
+    .back-link {
+      margin-top: 20px;
+      display: inline-block;
+      color: #667eea;
+      text-decoration: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="status">${emoji}</div>
+    <div class="title">${title}</div>
+    ${subtitle ? `<div class="subtitle">${subtitle}</div>` : ''}
+    <a href="/dashboard" class="back-link">← Back to Dashboard</a>
+  </div>
+</body>
+</html>
+  `;
+}
 
 /**
  * Register event routes
@@ -123,6 +187,32 @@ export async function eventRoutes(fastify: FastifyInstance): Promise<void> {
   });
 
   /**
+   * GET /api/events/:id/remove-from-email
+   * Remove event from email link (returns HTML confirmation page)
+   */
+  fastify.get<{ Params: { id: string } }>('/api/events/:id/remove-from-email', { preHandler: requireAuth }, async (request, reply) => {
+    const eventId = parseInt(request.params.id);
+
+    if (isNaN(eventId)) {
+      return reply.type('text/html').send(renderEventActionResult(false, 'Invalid event ID'));
+    }
+
+    try {
+      const userId = getUserId(request);
+      const deleted = deleteEvent(userId, eventId);
+
+      if (!deleted) {
+        return reply.type('text/html').send(renderEventActionResult(false, 'Event not found'));
+      }
+
+      return reply.type('text/html').send(renderEventActionResult(true, 'Event removed!', 'You can close this window.'));
+    } catch (error) {
+      fastify.log.error({ err: error, eventId }, 'Error removing event from email');
+      return reply.type('text/html').send(renderEventActionResult(false, 'Failed to remove event'));
+    }
+  });
+
+  /**
    * GET /events-view
    * HTML view for managing events
    */
@@ -132,6 +222,17 @@ export async function eventRoutes(fastify: FastifyInstance): Promise<void> {
     try {
       const events = listEvents(userId);
       const stats = getEventStats(userId);
+
+      // Fetch source emails for events that have them
+      const sourceEmails = new Map<string, any>();
+      for (const event of events) {
+        if (event.source_email_id && !sourceEmails.has(event.source_email_id)) {
+          const email = getEmailByGmailId(userId, event.source_email_id);
+          if (email) {
+            sourceEmails.set(event.source_email_id, email);
+          }
+        }
+      }
 
       // Group events by sync status for filtering
       const pendingEvents = events.filter((e) => e.sync_status === 'pending');
@@ -371,6 +472,59 @@ export async function eventRoutes(fastify: FastifyInstance): Promise<void> {
       font-size: 64px;
       margin-bottom: 20px;
     }
+
+    .source-email-toggle {
+      background: #f8f9fa;
+      border: 1px solid #e0e0e0;
+      color: #666;
+      font-size: 12px;
+      padding: 4px 10px;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+
+    .source-email-toggle:hover {
+      background: #e9ecef;
+    }
+
+    .source-email-content {
+      display: none;
+      margin-top: 12px;
+      padding: 12px;
+      background: #f8f9fa;
+      border: 1px solid #e0e0e0;
+      border-radius: 8px;
+      font-size: 13px;
+    }
+
+    .source-email-content.visible {
+      display: block;
+    }
+
+    .source-email-header {
+      font-weight: 600;
+      color: #333;
+      margin-bottom: 8px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid #e0e0e0;
+    }
+
+    .source-email-meta {
+      color: #666;
+      margin-bottom: 8px;
+    }
+
+    .source-email-body {
+      white-space: pre-wrap;
+      font-family: monospace;
+      font-size: 12px;
+      max-height: 300px;
+      overflow-y: auto;
+      background: white;
+      padding: 8px;
+      border-radius: 4px;
+      border: 1px solid #e0e0e0;
+    }
   </style>
 </head>
 <body>
@@ -475,7 +629,28 @@ export async function eventRoutes(fastify: FastifyInstance): Promise<void> {
         <div class="event-actions">
           ${event.sync_status === 'failed' || event.sync_status === 'pending' ? `<button class="btn btn-retry" onclick="retrySync(${event.id})">🔄 Retry Sync</button>` : ''}
           <button class="btn btn-delete" onclick="deleteEvent(${event.id})">🗑️ Delete</button>
+          ${event.source_email_id && sourceEmails.has(event.source_email_id) ? `
+            <button class="source-email-toggle" onclick="toggleSourceEmail(${event.id})">📧 View Source Email</button>
+          ` : ''}
         </div>
+        ${(() => {
+          if (!event.source_email_id) return '';
+          const email = sourceEmails.get(event.source_email_id);
+          if (!email) return '';
+          const safeSubject = (email.subject || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+          const safeFrom = (email.from_email || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+          const safeBody = (email.body_text || email.snippet || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+          return `
+            <div class="source-email-content" id="source-email-${event.id}">
+              <div class="source-email-header">📧 ${safeSubject}</div>
+              <div class="source-email-meta">
+                <strong>From:</strong> ${safeFrom}<br>
+                <strong>Date:</strong> ${new Date(email.date).toLocaleString()}
+              </div>
+              <div class="source-email-body">${safeBody}</div>
+            </div>
+          `;
+        })()}
       </div>
       `
               )
@@ -485,6 +660,15 @@ export async function eventRoutes(fastify: FastifyInstance): Promise<void> {
   </div>
 
   <script>
+    function toggleSourceEmail(eventId) {
+      const content = document.getElementById('source-email-' + eventId);
+      if (content) {
+        content.classList.toggle('visible');
+        const btn = event.target;
+        btn.textContent = content.classList.contains('visible') ? '📧 Hide Source Email' : '📧 View Source Email';
+      }
+    }
+
     let currentStatusFilter = 'all';
     let currentChildFilter = 'all';
 
