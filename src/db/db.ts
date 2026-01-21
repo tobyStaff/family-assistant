@@ -484,6 +484,62 @@ function runMigrations() {
 
     console.log('Migration 4 completed');
   }
+
+  // Migration 5: Create email_action_tokens table for token-based email actions
+  if (version < 5) {
+    console.log('Running migration 5: Creating email_action_tokens table');
+
+    db.transaction(() => {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS email_action_tokens (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          token TEXT NOT NULL UNIQUE,
+          user_id TEXT NOT NULL,
+          action_type TEXT NOT NULL CHECK(action_type IN ('complete_todo', 'remove_event')),
+          target_id INTEGER NOT NULL,
+          expires_at DATETIME NOT NULL,
+          used_at DATETIME,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+
+          FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
+        );
+
+        -- Index for token lookups
+        CREATE INDEX IF NOT EXISTS idx_action_tokens_token ON email_action_tokens(token);
+
+        -- Index for cleanup queries
+        CREATE INDEX IF NOT EXISTS idx_action_tokens_expires ON email_action_tokens(expires_at);
+
+        -- Index for user queries
+        CREATE INDEX IF NOT EXISTS idx_action_tokens_user ON email_action_tokens(user_id);
+      `);
+
+      // Record migration
+      db.prepare('INSERT INTO schema_version (version, description) VALUES (?, ?)').run(
+        5,
+        'Create email_action_tokens table for token-based email actions'
+      );
+    })();
+
+    console.log('Migration 5 completed');
+  }
+
+  // Migration 6: Add auto_completed column to todos table
+  if (version < 6) {
+    console.log('Running migration 6: Adding auto_completed column to todos table');
+
+    db.transaction(() => {
+      db.exec(`ALTER TABLE todos ADD COLUMN auto_completed INTEGER DEFAULT 0;`);
+
+      // Record migration
+      db.prepare('INSERT INTO schema_version (version, description) VALUES (?, ?)').run(
+        6,
+        'Add auto_completed column to todos table for tracking automatic completions'
+      );
+    })();
+
+    console.log('Migration 6 completed');
+  }
 }
 
 // Run migrations after initial table creation

@@ -7,6 +7,7 @@ import { extractEventsAndTodos } from '../parsers/eventTodoExtractor.js';
 import { createCalendarEventsBatch, eventExists } from './calendarIntegration.js';
 import { createTodosBatch } from '../db/todoDb.js';
 import { markEmailAsProcessed, isEmailProcessed } from '../db/processedEmailsDb.js';
+import { cleanupPastItems } from './cleanupPastItems.js';
 
 /**
  * Result from processing emails
@@ -29,7 +30,6 @@ export interface ProcessingOptions {
   dateRange: DateRange;
   maxResults?: number;
   aiProvider?: 'openai' | 'anthropic';
-  dryRun?: boolean; // Preview without saving
   skipDuplicateEvents?: boolean; // Check if events already exist in calendar
 }
 
@@ -68,7 +68,6 @@ export async function processEmails(
     console.log(`   Date range: ${options.dateRange}`);
     console.log(`   Max results: ${options.maxResults || 'unlimited'}`);
     console.log(`   AI provider: ${options.aiProvider || 'openai'}`);
-    console.log(`   Dry run: ${options.dryRun ? 'YES' : 'NO'}`);
 
     // Step 1: Fetch emails with body content
     console.log('\n📥 Step 1: Fetching emails...');
@@ -120,22 +119,45 @@ export async function processEmails(
     console.log(`   - ${extraction.events.length} events found`);
     console.log(`   - ${extraction.todos.length} todos found`);
 
-    // Step 3: Store in calendar and database
-    if (!options.dryRun) {
-      console.log('\n💾 Step 3: Storing events and todos...');
+    // Step 3: Store in database, cleanup old items, then sync to calendar
+    console.log('\n💾 Step 3: Storing events and todos...');
 
-      // 3a: Save events to database FIRST, then sync to Calendar
-      if (extraction.events.length > 0) {
-        console.log(`\n📅 Saving ${extraction.events.length} events to database...`);
+    // 3a: Save events to database
+    let eventIds: number[] = [];
+    if (extraction.events.length > 0) {
+      console.log(`\n📅 Saving ${extraction.events.length} events to database...`);
 
-        const { createEventsBatch } = await import('../db/eventDb.js');
-        const eventIds = createEventsBatch(userId, extraction.events);
-        console.log(`✅ Saved ${eventIds.length} events to database`);
+      const { createEventsBatch } = await import('../db/eventDb.js');
+      eventIds = createEventsBatch(userId, extraction.events);
+      console.log(`✅ Saved ${eventIds.length} events to database`);
+    }
 
-        // Now sync to Google Calendar
-        console.log(`\n☁️  Syncing ${eventIds.length} events to Google Calendar...`);
+    // 3b: Create todos in database
+    if (extraction.todos.length > 0) {
+      console.log(`\n📝 Creating ${extraction.todos.length} todos...`);
+      const todoIds = createTodosBatch(userId, extraction.todos);
+      result.todos_created = todoIds.length;
+      console.log(`✅ Created ${todoIds.length} todos`);
+    }
+
+    // 3c: Cleanup old items (>24h past) - filters out old events/todos before calendar sync
+    console.log('\n🧹 Cleaning up past items...');
+    const cleanup = cleanupPastItems(userId);
+    if (cleanup.todosCompleted > 0 || cleanup.eventsRemoved > 0) {
+      console.log(`✅ Cleanup: auto-completed ${cleanup.todosCompleted} todos, removed ${cleanup.eventsRemoved} events`);
+    } else {
+      console.log(`✅ No past items to clean up`);
+    }
+
+    // 3d: Sync remaining events to Google Calendar
+    if (eventIds.length > 0) {
+      // Filter out any event IDs that were just deleted by cleanup
+      const remainingEventIds = eventIds.filter(id => !cleanup.eventIds.includes(id));
+
+      if (remainingEventIds.length > 0) {
+        console.log(`\n☁️  Syncing ${remainingEventIds.length} events to Google Calendar...`);
         const { syncEventsToCalendar } = await import('./calendarIntegration.js');
-        const syncResult = await syncEventsToCalendar(userId, auth, eventIds);
+        const syncResult = await syncEventsToCalendar(userId, auth, remainingEventIds);
 
         result.events_created = syncResult.synced;
 
@@ -143,28 +165,18 @@ export async function processEmails(
         if (syncResult.failed > 0) {
           console.log(`⚠️  ${syncResult.failed} events failed to sync (will retry automatically)`);
         }
+      } else {
+        console.log(`\n☁️  No events to sync (all were past items)`);
       }
-
-      // 3b: Create todos in database
-      if (extraction.todos.length > 0) {
-        console.log(`\n📝 Creating ${extraction.todos.length} todos...`);
-        const todoIds = createTodosBatch(userId, extraction.todos);
-        result.todos_created = todoIds.length;
-        console.log(`✅ Created ${todoIds.length} todos`);
-      }
-
-      // 3c: Mark emails as processed
-      console.log('\n✓ Marking emails as processed...');
-      for (const email of unprocessedEmails) {
-        markEmailAsProcessed(userId, email.id);
-      }
-      result.emails_processed = unprocessedEmails.length;
-      console.log(`✅ Marked ${unprocessedEmails.length} emails as processed`);
-    } else {
-      console.log('\n🔍 DRY RUN: Skipping database writes');
-      console.log(`   Would create ${extraction.events.length} events`);
-      console.log(`   Would create ${extraction.todos.length} todos`);
     }
+
+    // 3e: Mark emails as processed
+    console.log('\n✓ Marking emails as processed...');
+    for (const email of unprocessedEmails) {
+      markEmailAsProcessed(userId, email.id);
+    }
+    result.emails_processed = unprocessedEmails.length;
+    console.log(`✅ Marked ${unprocessedEmails.length} emails as processed`);
 
     result.success = true;
     result.processing_time_ms = Date.now() - startTime;

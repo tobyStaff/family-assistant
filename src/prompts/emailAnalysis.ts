@@ -109,13 +109,36 @@ For the email, provide:
 === SECTION 3: TODO EXTRACTION ===
 
 **Todo Type Classification:**
-- **PAY**: Payment required (extract amount and URL)
+- **PAY**: Payment required (extract amount and URL - see payment link rules below)
 - **BUY**: Need to purchase from shop
 - **PACK**: Need to pack/send item from home (item already exists, just needs packing)
 - **SIGN**: Need to sign a document/form
 - **FILL**: Need to complete a form/questionnaire
 - **READ**: Need to read document/attachment
 - **REMIND**: General reminder, repair tasks, fix tasks, or anything that doesn't fit above categories
+
+**Payment Link Detection (IMPORTANT for PAY type):**
+When extracting payment todos, look carefully for actual payment provider URLs, NOT school website links.
+
+Known UK school payment providers (prioritize these domains):
+- **Arbor**: arbor-education.com, login.arbor.sc, *.arbor.sc
+- **Scopay**: scopay.com
+- **Classlist**: classlist.com
+- **ParentPay**: parentpay.com
+- **SchoolMoney**: schoolmoney.co.uk
+- **ParentMail**: parentmail.co.uk
+- **WisePay**: wisepay.co.uk
+- **School Gateway**: schoolgateway.com
+- **Tucasi**: tucasi.com
+- **SIMS Pay**: simspay.co.uk
+- **Pay360**: pay360.com
+
+**Payment URL Rules:**
+1. ONLY set the \`url\` field if you find an actual payment provider link (from the list above)
+2. School website links (e.g., "www.myschool.sch.uk") are NOT payment links - do not use these
+3. If the email mentions a payment provider by name but has no direct link, set \`url\` to null
+4. Include the payment provider name in the description (e.g., "Pay £80 via Arbor for residential trip")
+5. Generic "click here to pay" links to school websites should be ignored for the url field
 
 **Type Selection Notes:**
 - "Fix", "repair", "mend" → use REMIND (these are general tasks, not PACK)
@@ -160,13 +183,20 @@ Analysis:
   - Todo 2: "Pack PE kit for Tuesday" (recurring: true, recurrence_pattern: "weekly on Tuesdays", due_date: "2026-01-13T09:00:00Z")
 - Note: due_date is the NEXT occurrence calculated from the email date, NOT a day name
 
-**Example 2: One-off Trip**
-Email: "Year 3 trip to the Science Museum on Friday 24th January. Cost £12, payment due by 20th Jan."
+**Example 2: One-off Trip with Payment Link**
+Email: "Year 3 trip to the Science Museum on Friday 24th January. Cost £12, payment due by 20th Jan. Pay here: https://www.parentpay.com/trip-123"
 
 Analysis:
 - Event: "Year 3 trip to Science Museum" on 2026-01-24T09:00:00 (morning, not recurring)
-- Todo 1: "Pay £12 for Science Museum trip" due 2026-01-20T23:59:00 (PAY, not recurring)
+- Todo 1: "Pay £12 via ParentPay for Science Museum trip" due 2026-01-20T23:59:00 (PAY, url: "https://www.parentpay.com/trip-123", not recurring)
 - Todo 2: "Pack lunch for Science Museum trip" due 2026-01-24T09:00:00 (PACK, inferred, not recurring)
+
+**Example 2b: Payment Required but No Direct Link**
+Email: "Reminder: £80 instalment for residential trip due Friday 23rd January. Payable via Arbor please. Kind regards, School Office. w: https://www.myschool.sch.uk"
+
+Analysis:
+- Todo: "Pay £80 via Arbor for residential trip instalment" due 2026-01-23T23:59:00 (PAY, url: null, amount: "£80.00")
+- Note: The school website link is NOT a payment link - Arbor is mentioned but no arbor.sc URL is present, so url is null
 
 **Example 3: One-off Task with Deadline (NO event)**
 Email: "Fix Ella's PE shoes for this Wednesday morning."

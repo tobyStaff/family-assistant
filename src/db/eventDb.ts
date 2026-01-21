@@ -430,3 +430,36 @@ export function getEventStats(userId: string): {
     failed: result.failed || 0,
   };
 }
+
+/**
+ * Delete all past events from database
+ * Used by cleanup to remove events that have already passed
+ *
+ * @param userId - User ID
+ * @param cutoffDate - Events with date before this will be deleted
+ * @returns Array of event IDs that were deleted
+ */
+export function deletePastEvents(userId: string, cutoffDate: Date): number[] {
+  // First, get the IDs of events that will be deleted
+  const selectStmt = db.prepare(`
+    SELECT id FROM events
+    WHERE user_id = ?
+      AND date < ?
+  `);
+  const rows = selectStmt.all(userId, cutoffDate.toISOString()) as { id: number }[];
+  const ids = rows.map(r => r.id);
+
+  if (ids.length === 0) {
+    return [];
+  }
+
+  // Delete all matching events
+  const deleteStmt = db.prepare(`
+    DELETE FROM events
+    WHERE user_id = ?
+      AND date < ?
+  `);
+  deleteStmt.run(userId, cutoffDate.toISOString());
+
+  return ids;
+}

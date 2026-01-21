@@ -19,6 +19,7 @@ export interface Todo {
   confidence?: number; // AI confidence (0.0-1.0)
   created_at: Date;
   completed_at?: Date; // When marked as done
+  auto_completed?: boolean; // True if auto-completed by cleanup (past due date)
   // Enhanced fields (Task 1.9)
   recurring?: boolean; // True if recurring task
   recurrence_pattern?: string; // E.g., "every Monday"

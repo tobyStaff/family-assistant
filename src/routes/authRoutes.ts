@@ -663,6 +663,15 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
           </div>
 
           <div class="api-section">
+            <h2>🧹 Cleanup Past Items</h2>
+            <p>Auto-complete past todos and remove past events (items due before today):</p>
+            <button class="btn-test" id="cleanup-btn" onclick="runCleanup()">
+              🧹 Run Cleanup
+            </button>
+            <div id="cleanup-result"></div>
+          </div>
+
+          <div class="api-section">
             <h2>✨ Personalized Family Briefing (New!)</h2>
             <p>Preview or send the personalized summary that uses stored events and todos:</p>
             <button class="btn-test" id="personalized-preview-btn" onclick="previewPersonalizedSummary()">
@@ -1108,6 +1117,46 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
             } finally {
               btn.disabled = false;
               btn.textContent = '🚀 Process Emails (Extract Events & Todos)';
+            }
+          }
+
+          async function runCleanup() {
+            const btn = document.getElementById('cleanup-btn');
+            const resultDiv = document.getElementById('cleanup-result');
+
+            btn.disabled = true;
+            btn.textContent = '⏳ Running cleanup...';
+            resultDiv.style.display = 'block';
+            resultDiv.className = 'success-message';
+            resultDiv.innerHTML = '<strong>🧹 Cleaning up past items...</strong>';
+
+            try {
+              const response = await fetch('/admin/cleanup', {
+                method: 'POST'
+              });
+
+              const data = await response.json();
+
+              if (response.ok && data.success) {
+                resultDiv.className = 'success-message';
+                const cutoffDate = new Date(data.cleanup.cutoff_date).toLocaleDateString();
+                resultDiv.innerHTML = \`
+                  <strong>✅ Cleanup complete!</strong><br>
+                  ✓ Todos auto-completed: \${data.cleanup.todos_auto_completed}<br>
+                  ✓ Events removed: \${data.cleanup.events_removed}<br>
+                  📅 Cutoff date: \${cutoffDate}<br>
+                  <br>
+                  <a href="/todos-view" style="color: #667eea; text-decoration: underline;">View Todos →</a>
+                \`;
+              } else {
+                throw new Error(data.message || 'Cleanup failed');
+              }
+            } catch (error) {
+              resultDiv.className = 'error-message';
+              resultDiv.innerHTML = \`<strong>❌ Error:</strong> \${error.message}\`;
+            } finally {
+              btn.disabled = false;
+              btn.textContent = '🧹 Run Cleanup';
             }
           }
 

@@ -16,6 +16,7 @@ import { getEmailByGmailId } from '../db/emailDb.js';
 import { getTodoTypeEmoji, getTodoTypeLabel, TodoType } from '../types/extraction.js';
 import { getUserId } from '../lib/userContext.js';
 import { requireAuth } from '../middleware/session.js';
+import { getPaymentButtonInfo } from '../utils/paymentProviders.js';
 
 /**
  * Get the appropriate action button label based on todo type
@@ -586,6 +587,15 @@ export async function todoRoutes(fastify: FastifyInstance): Promise<void> {
       font-weight: 600;
       margin-left: 8px;
     }
+    .auto-completed-badge {
+      background: #6c757d;
+      color: white;
+      padding: 4px 10px;
+      border-radius: 12px;
+      font-size: 11px;
+      font-weight: 500;
+      margin-left: 8px;
+    }
     .todo-description {
       font-size: 16px;
       color: #333;
@@ -789,7 +799,7 @@ export async function todoRoutes(fastify: FastifyInstance): Promise<void> {
             })()}
             ${todo.child_name ? `<div class="meta-item">👶 ${todo.child_name}</div>` : ''}
             ${todo.confidence ? `<div class="meta-item">🎯 ${Math.round(todo.confidence * 100)}% confidence</div>` : ''}
-            ${todo.completed_at ? `<div class="meta-item">✅ Completed: ${new Date(todo.completed_at).toLocaleDateString()}</div>` : ''}
+            ${todo.completed_at ? `<div class="meta-item">✅ Completed: ${new Date(todo.completed_at).toLocaleDateString()}${todo.auto_completed ? ' <span class="auto-completed-badge">Auto</span>' : ''}</div>` : ''}
           </div>
           <div class="todo-actions">
             ${todo.status === 'pending' ? `
@@ -797,9 +807,13 @@ export async function todoRoutes(fastify: FastifyInstance): Promise<void> {
             ` : `
               <button class="btn btn-secondary" onclick="markAsPending(${todo.id})">↩ Mark Pending</button>
             `}
-            ${todo.url ? `
-              <a href="${todo.url}" target="_blank" class="btn btn-primary">${getActionButtonLabel(todo.type)}</a>
-            ` : ''}
+            ${(() => {
+              const paymentBtn = getPaymentButtonInfo(todo);
+              if (paymentBtn) {
+                return `<a href="${paymentBtn.url}" target="_blank" class="btn btn-primary">${paymentBtn.label}</a>`;
+              }
+              return '';
+            })()}
             <button class="btn btn-danger" onclick="deleteTodo(${todo.id})">🗑️ Delete</button>
             ${todo.source_email_id && sourceEmails.has(todo.source_email_id) ? `
               <button class="source-email-toggle" onclick="toggleSourceEmail(${todo.id})">📧 View Source Email</button>

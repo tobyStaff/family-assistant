@@ -111,6 +111,10 @@ function mapRowToTodo(row: any): Todo {
     todo.completed_at = new Date(row.completed_at);
   }
 
+  if (row.auto_completed !== null && row.auto_completed !== undefined) {
+    todo.auto_completed = Boolean(row.auto_completed);
+  }
+
   // Enhanced fields (Task 1.9)
   if (row.recurring !== null && row.recurring !== undefined) {
     todo.recurring = Boolean(row.recurring);
@@ -411,4 +415,44 @@ export function completeTodo(userId: string, id: number): boolean {
   `);
   const result = stmt.run(id, userId);
   return result.changes > 0;
+}
+
+/**
+ * Mark all past pending todos as auto-completed
+ * Used by cleanup to automatically complete todos that are past due
+ *
+ * @param userId - User ID
+ * @param cutoffDate - Todos with due_date before this will be marked complete
+ * @returns Array of todo IDs that were auto-completed
+ */
+export function markTodosAsAutoCompleted(userId: string, cutoffDate: Date): number[] {
+  // First, get the IDs of todos that will be affected
+  const selectStmt = db.prepare(`
+    SELECT id FROM todos
+    WHERE user_id = ?
+      AND status = 'pending'
+      AND due_date IS NOT NULL
+      AND due_date < ?
+  `);
+  const rows = selectStmt.all(userId, cutoffDate.toISOString()) as { id: number }[];
+  const ids = rows.map(r => r.id);
+
+  if (ids.length === 0) {
+    return [];
+  }
+
+  // Update all matching todos
+  const updateStmt = db.prepare(`
+    UPDATE todos
+    SET status = 'done',
+        completed_at = CURRENT_TIMESTAMP,
+        auto_completed = 1
+    WHERE user_id = ?
+      AND status = 'pending'
+      AND due_date IS NOT NULL
+      AND due_date < ?
+  `);
+  updateStmt.run(userId, cutoffDate.toISOString());
+
+  return ids;
 }

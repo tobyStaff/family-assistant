@@ -2,8 +2,8 @@
 import type { FastifyInstance } from 'fastify';
 import fp from 'fastify-plugin';
 import fastifyCron from 'fastify-cron';
-import { generatePersonalizedSummary } from '../utils/personalizedSummaryBuilder.js';
-import { renderPersonalizedEmail } from '../templates/personalizedEmailTemplate.js';
+import { generatePersonalizedSummary, type PersonalizedSummary, type ChildSummary, type FamilySummary } from '../utils/personalizedSummaryBuilder.js';
+import { renderPersonalizedEmail, type PersonalizedSummaryWithActions, type TodoWithAction, type EventWithAction, type ChildSummaryWithActions, type FamilySummaryWithActions } from '../templates/personalizedEmailTemplate.js';
 import { sendInboxSummary } from '../utils/emailSender.js';
 import { getAllUserIds } from '../db/authDb.js';
 import { getUser } from '../db/userDb.js';
@@ -15,6 +15,9 @@ import { cleanupExpiredSessions } from '../db/sessionDb.js';
 import { getOrCreateDefaultSettings } from '../db/settingsDb.js';
 import { fetchAndStoreEmails, syncProcessedLabels } from '../utils/emailStorageService.js';
 import { analyzeUnanalyzedEmails } from '../parsers/twoPassAnalyzer.js';
+import { createActionToken, cleanupExpiredTokens } from '../db/emailActionTokenDb.js';
+import type { Todo } from '../types/todo.js';
+import type { ExtractedEvent } from '../types/extraction.js';
 
 /**
  * Get user's OAuth2 client
@@ -75,6 +78,69 @@ async function getUserEmail(userId: string): Promise<string> {
 }
 
 /**
+ * Transform a todo to include an action URL for completing it
+ */
+function addTodoAction(todo: Todo, userId: string, baseUrl: string): TodoWithAction {
+  const token = createActionToken(userId, 'complete_todo', todo.id);
+  return {
+    ...todo,
+    actionUrl: `${baseUrl}/api/action/${token}`,
+  };
+}
+
+/**
+ * Transform an event to include an action URL for removing it
+ */
+function addEventAction(event: ExtractedEvent & { id?: number }, userId: string, baseUrl: string): EventWithAction {
+  // Only add action URL if event has an id
+  if (event.id) {
+    const token = createActionToken(userId, 'remove_event', event.id);
+    return {
+      ...event,
+      actionUrl: `${baseUrl}/api/action/${token}`,
+    };
+  }
+  return { ...event };
+}
+
+/**
+ * Transform a PersonalizedSummary to include action URLs for todos and events
+ */
+function addActionsToSummary(
+  summary: PersonalizedSummary,
+  userId: string,
+  baseUrl: string
+): PersonalizedSummaryWithActions {
+  // Transform child summaries
+  const byChildWithActions: ChildSummaryWithActions[] = summary.by_child.map(child => ({
+    child_name: child.child_name,
+    display_name: child.display_name,
+    today_todos: child.today_todos.map(todo => addTodoAction(todo, userId, baseUrl)),
+    today_events: child.today_events.map(event => addEventAction(event, userId, baseUrl)),
+    upcoming_todos: child.upcoming_todos.map(todo => addTodoAction(todo, userId, baseUrl)),
+    upcoming_events: child.upcoming_events.map(event => addEventAction(event, userId, baseUrl)),
+    insights: child.insights,
+  }));
+
+  // Transform family-wide summary
+  const familyWideWithActions: FamilySummaryWithActions = {
+    today_todos: summary.family_wide.today_todos.map(todo => addTodoAction(todo, userId, baseUrl)),
+    today_events: summary.family_wide.today_events.map(event => addEventAction(event, userId, baseUrl)),
+    upcoming_todos: summary.family_wide.upcoming_todos.map(todo => addTodoAction(todo, userId, baseUrl)),
+    upcoming_events: summary.family_wide.upcoming_events.map(event => addEventAction(event, userId, baseUrl)),
+    insights: summary.family_wide.insights,
+  };
+
+  return {
+    generated_at: summary.generated_at,
+    date_range: summary.date_range,
+    by_child: byChildWithActions,
+    family_wide: familyWideWithActions,
+    insights: summary.insights,
+  };
+}
+
+/**
  * Daily Summary Cron Plugin
  * Sends automated daily summaries of upcoming TODOs and events
  *
@@ -129,17 +195,23 @@ async function dailySummaryPlugin(fastify: FastifyInstance) {
                 // Generate personalized summary (uses stored events/todos from database)
                 const summary = await generatePersonalizedSummary(userId, 7); // Look ahead 7 days
 
-                // Render HTML email
-                const html = renderPersonalizedEmail(summary);
+                // Get base URL for action links
+                const baseUrl = process.env.BASE_URL || 'http://localhost:3000';
+
+                // Add action URLs to summary (creates tokens for each todo/event)
+                const summaryWithActions = addActionsToSummary(summary, userId, baseUrl);
+
+                // Render HTML email with action buttons
+                const html = renderPersonalizedEmail(summaryWithActions);
 
                 // Count total items
                 const totalTodos = summary.by_child.reduce((acc, child) =>
-                  acc + child.urgent_todos.length + child.upcoming_todos.length, 0
-                ) + summary.family_wide.urgent_todos.length + summary.family_wide.upcoming_todos.length;
+                  acc + child.today_todos.length + child.upcoming_todos.length, 0
+                ) + summary.family_wide.today_todos.length + summary.family_wide.upcoming_todos.length;
 
                 const totalEvents = summary.by_child.reduce((acc, child) =>
-                  acc + child.urgent_events.length + child.upcoming_events.length, 0
-                ) + summary.family_wide.urgent_events.length + summary.family_wide.upcoming_events.length;
+                  acc + child.today_events.length + child.upcoming_events.length, 0
+                ) + summary.family_wide.today_events.length + summary.family_wide.upcoming_events.length;
 
                 // Only send email if there's content
                 if (totalTodos > 0 || totalEvents > 0 || summary.insights.length > 0) {
@@ -224,13 +296,17 @@ async function dailySummaryPlugin(fastify: FastifyInstance) {
 
           try {
             // Delete all expired sessions
-            const deletedCount = cleanupExpiredSessions();
+            const deletedSessions = cleanupExpiredSessions();
+
+            // Delete all expired action tokens
+            const deletedTokens = cleanupExpiredTokens();
 
             fastify.log.info(
               {
-                deletedCount,
+                deletedSessions,
+                deletedTokens,
               },
-              'Session cleanup completed successfully'
+              'Session and token cleanup completed successfully'
             );
           } catch (error) {
             // Log error but don't crash the server

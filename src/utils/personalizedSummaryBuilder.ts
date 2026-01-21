@@ -21,26 +21,34 @@ export interface PersonalizedSummary {
 export interface ChildSummary {
   child_name: string;
   display_name?: string; // Privacy alias if set
-  urgent_todos: Todo[];
-  upcoming_todos: Todo[];
-  urgent_events: ExtractedEvent[];
-  upcoming_events: ExtractedEvent[];
+  today_todos: Todo[];
+  today_events: ExtractedEvent[];
+  upcoming_todos: Todo[]; // Tomorrow onwards
+  upcoming_events: ExtractedEvent[]; // Tomorrow onwards
   insights: string[];
 }
 
 export interface FamilySummary {
-  urgent_todos: Todo[];
-  upcoming_todos: Todo[];
-  urgent_events: ExtractedEvent[];
-  upcoming_events: ExtractedEvent[];
+  today_todos: Todo[];
+  today_events: ExtractedEvent[];
+  upcoming_todos: Todo[]; // Tomorrow onwards
+  upcoming_events: ExtractedEvent[]; // Tomorrow onwards
   insights: string[];
 }
 
 /**
- * Convert database event to extracted event format
+ * Extended event type that includes the database id
  */
-function dbEventToExtracted(event: Event): ExtractedEvent {
+export interface ExtractedEventWithId extends ExtractedEvent {
+  id: number;
+}
+
+/**
+ * Convert database event to extracted event format (includes id for action links)
+ */
+function dbEventToExtracted(event: Event): ExtractedEventWithId {
   return {
+    id: event.id,
     title: event.title,
     date: event.date.toISOString(),
     end_date: event.end_date?.toISOString(),
@@ -91,18 +99,19 @@ function organizeByChild(
 }
 
 /**
- * Split items into urgent (today/tomorrow) and upcoming (rest of week)
+ * Split items into today and upcoming (tomorrow onwards)
  */
-function splitByUrgency<T extends { date?: string; due_date?: Date }>(
+function splitByDay<T extends { date?: string; due_date?: Date }>(
   items: T[],
   dateField: 'date' | 'due_date'
-): { urgent: T[]; upcoming: T[] } {
+): { today: T[]; upcoming: T[] } {
   const now = new Date();
-  const tomorrow = new Date(now);
-  tomorrow.setDate(tomorrow.getDate() + 2);
-  tomorrow.setHours(0, 0, 0, 0);
+  const todayStart = new Date(now);
+  todayStart.setHours(0, 0, 0, 0);
+  const tomorrowStart = new Date(todayStart);
+  tomorrowStart.setDate(tomorrowStart.getDate() + 1);
 
-  const urgent: T[] = [];
+  const today: T[] = [];
   const upcoming: T[] = [];
 
   for (const item of items) {
@@ -111,18 +120,22 @@ function splitByUrgency<T extends { date?: string; due_date?: Date }>(
       : (item.due_date || null);
 
     if (!itemDate) {
-      upcoming.push(item);
+      upcoming.push(item); // No date = upcoming/for consideration
       continue;
     }
 
-    if (itemDate < tomorrow) {
-      urgent.push(item);
+    // Items from today (including past items from today)
+    if (itemDate >= todayStart && itemDate < tomorrowStart) {
+      today.push(item);
+    } else if (itemDate < todayStart) {
+      // Past items that weren't cleaned up - treat as today
+      today.push(item);
     } else {
       upcoming.push(item);
     }
   }
 
-  return { urgent, upcoming };
+  return { today, upcoming };
 }
 
 /**
@@ -152,15 +165,15 @@ async function generateAIInsights(
     })),
     by_child: childSummaries.map(s => ({
       child_name: s.child_name,
-      urgent_todos_count: s.urgent_todos.length,
-      urgent_todos_types: s.urgent_todos.map(t => t.type),
-      urgent_events_count: s.urgent_events.length,
+      today_todos_count: s.today_todos.length,
+      today_todos_types: s.today_todos.map(t => t.type),
+      today_events_count: s.today_events.length,
       upcoming_todos_count: s.upcoming_todos.length,
       upcoming_events_count: s.upcoming_events.length,
     })),
     family_wide: {
-      urgent_todos_count: familySummary.urgent_todos.length,
-      urgent_events_count: familySummary.urgent_events.length,
+      today_todos_count: familySummary.today_todos.length,
+      today_events_count: familySummary.today_events.length,
     },
   };
 
@@ -171,16 +184,16 @@ You have access to organized data about the family's upcoming schedule:
 **Children**:
 ${context.children.map(c => `- ${c.name} (Year ${c.year_group}, ${c.school})`).join('\n')}
 
-**Urgent Items (Today/Tomorrow)**:
+**Today's Items**:
 ${childSummaries.map(s => `
 ${s.child_name}:
-- ${s.urgent_todos.length} urgent todos (types: ${s.urgent_todos.map(t => t.type).join(', ')})
-- ${s.urgent_events.length} urgent events
+- ${s.today_todos.length} todos today (types: ${s.today_todos.map(t => t.type).join(', ')})
+- ${s.today_events.length} events today
 `).join('\n')}
 
 Family-wide:
-- ${familySummary.urgent_todos.length} urgent todos
-- ${familySummary.urgent_events.length} urgent events
+- ${familySummary.today_todos.length} todos today
+- ${familySummary.today_events.length} events today
 
 **Upcoming This Week**:
 ${childSummaries.map(s => `
@@ -266,28 +279,28 @@ export async function generatePersonalizedSummary(
   const childSummaries: ChildSummary[] = [];
   for (const profile of childProfiles) {
     const data = organized.byChild.get(profile.real_name) || { events: [], todos: [] };
-    const { urgent: urgentTodos, upcoming: upcomingTodos } = splitByUrgency(data.todos, 'due_date');
-    const { urgent: urgentEvents, upcoming: upcomingEvents } = splitByUrgency(data.events, 'date');
+    const { today: todayTodos, upcoming: upcomingTodos } = splitByDay(data.todos, 'due_date');
+    const { today: todayEvents, upcoming: upcomingEvents } = splitByDay(data.events, 'date');
 
     childSummaries.push({
       child_name: profile.real_name,
       display_name: profile.display_name || undefined,
-      urgent_todos: urgentTodos,
+      today_todos: todayTodos,
+      today_events: todayEvents,
       upcoming_todos: upcomingTodos,
-      urgent_events: urgentEvents,
       upcoming_events: upcomingEvents,
       insights: [], // Will be filled by AI
     });
   }
 
   // Step 4: Build family-wide summary
-  const { urgent: urgentFamilyTodos, upcoming: upcomingFamilyTodos } = splitByUrgency(organized.familyWide.todos, 'due_date');
-  const { urgent: urgentFamilyEvents, upcoming: upcomingFamilyEvents } = splitByUrgency(organized.familyWide.events, 'date');
+  const { today: todayFamilyTodos, upcoming: upcomingFamilyTodos } = splitByDay(organized.familyWide.todos, 'due_date');
+  const { today: todayFamilyEvents, upcoming: upcomingFamilyEvents } = splitByDay(organized.familyWide.events, 'date');
 
   const familySummary: FamilySummary = {
-    urgent_todos: urgentFamilyTodos,
+    today_todos: todayFamilyTodos,
+    today_events: todayFamilyEvents,
     upcoming_todos: upcomingFamilyTodos,
-    urgent_events: urgentFamilyEvents,
     upcoming_events: upcomingFamilyEvents,
     insights: [], // Will be filled by AI
   };

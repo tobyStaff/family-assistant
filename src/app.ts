@@ -16,6 +16,7 @@ import { adminRoutes } from './routes/adminRoutes.js';
 import { metricsRoutes } from './routes/metricsRoutes.js';
 import { childProfileRoutes } from './routes/childProfileRoutes.js';
 import { processingRoutes } from './routes/processingRoutes.js';
+import { actionRoutes } from './routes/actionRoutes.js';
 import dailySummaryPlugin from './plugins/dailySummary.js';
 import metricsPlugin from './plugins/metrics.js';
 import { sessionMiddleware } from './middleware/session.js';
@@ -86,6 +87,7 @@ export async function buildApp() {
 
   // Register routes (auth routes FIRST - they don't require auth)
   await fastify.register(authRoutes);
+  await fastify.register(actionRoutes);  // Token-based auth, no session required
   await fastify.register(settingsRoutes);
   await fastify.register(adminRoutes);
   await fastify.register(metricsRoutes);
