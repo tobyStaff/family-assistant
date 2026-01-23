@@ -21,3 +21,6 @@ Notes on tweaks
     - Admin user -> All access.
     - Super Admin -> Account management & all access, with anonymised data (emails).
 5. Detection on dates passed being irrelevant, auto remove todos and events that are in the past from todos and events but leave them in the Calendar, they can just be marked as "done" and therefore wont need to appear in the list or email anymore.
+
+
+6. Detect emergency emails?

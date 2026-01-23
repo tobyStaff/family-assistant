@@ -223,13 +223,59 @@ export async function adminRoutes(fastify: FastifyInstance): Promise<void> {
       const sanitized = sanitizeEmails(emails);
       const aiInput = await prepareEmailsForAI(userId, auth, sanitized);
 
-      // Run AI analysis
+      // Run AI analysis (same as production)
+      const startTime = Date.now();
       const aiSummary = await analyzeInbox(aiInput, provider);
+      const responseTimeMs = Date.now() - startTime;
+
+      // Validate AI output (same as production)
+      const { validateSchoolSummary, formatValidationErrors } = await import('../utils/summaryValidator.js');
+      const { recordAIMetrics } = await import('../db/metricsDb.js');
+
+      const validation = validateSchoolSummary(aiSummary, emails.length);
+
+      if (!validation.valid) {
+        fastify.log.error({ errors: validation.errors }, 'AI summary validation FAILED');
+
+        // Record failed metrics (same as production)
+        recordAIMetrics({
+          user_id: userId,
+          provider,
+          emails_total: emails.length,
+          emails_signal: aiSummary.email_analysis?.signal_count || 0,
+          emails_noise: aiSummary.email_analysis?.noise_count || 0,
+          validation_passed: false,
+          validation_errors: JSON.stringify(validation.errors),
+          response_time_ms: responseTimeMs,
+          schema_validated: provider === 'openai',
+        });
+
+        throw new Error(
+          `AI generated invalid summary with ${validation.errors.length} error(s): ${validation.errors[0]}`
+        );
+      }
+
+      if (validation.warnings.length > 0) {
+        fastify.log.warn({ warnings: validation.warnings }, 'AI summary has warnings');
+      }
+
+      // Record successful metrics (same as production)
+      recordAIMetrics({
+        user_id: userId,
+        provider,
+        emails_total: emails.length,
+        emails_signal: aiSummary.email_analysis?.signal_count || 0,
+        emails_noise: aiSummary.email_analysis?.noise_count || 0,
+        validation_passed: true,
+        validation_errors: validation.warnings.length > 0 ? JSON.stringify(validation.warnings) : undefined,
+        response_time_ms: responseTimeMs,
+        schema_validated: provider === 'openai',
+      });
 
       // Render HTML
       const html = renderSummaryEmail(aiSummary);
 
-      fastify.log.info({ userId, emailCount: emails.length }, 'Email preview generated successfully');
+      fastify.log.info({ userId, emailCount: emails.length, responseTimeMs }, 'Email preview generated successfully');
 
       // Return HTML for browser preview
       return reply.code(200).type('text/html').send(html);
@@ -290,7 +336,7 @@ export async function adminRoutes(fastify: FastifyInstance): Promise<void> {
 
   /**
    * POST /admin/test-gmail-send
-   * Test Gmail send capability with detailed diagnostics
+   * Test Gmail send capability using the same code path as production
    */
   fastify.post('/admin/test-gmail-send', { preHandler: requireAuth }, async (request, reply) => {
     try {
@@ -313,35 +359,47 @@ export async function adminRoutes(fastify: FastifyInstance): Promise<void> {
         });
       }
 
-      // Try to send a test email
-      const gmail = google.gmail({ version: 'v1', auth });
+      // Create a test HTML email (same format as production emails)
+      const testHtml = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="utf-8">
+          <style>
+            body { font-family: -apple-system, sans-serif; padding: 20px; }
+          </style>
+        </head>
+        <body>
+          <h1>📧 Gmail API Test</h1>
+          <p>This is a test message from Inbox Manager to verify Gmail send capability.</p>
+          <p>If you received this email, the Gmail API is working correctly.</p>
+          <hr>
+          <p style="color: #666; font-size: 0.9em;">Sent at: ${new Date().toISOString()}</p>
+        </body>
+        </html>
+      `;
 
-      // Create a simple test message
-      const message = [
-        'To: ' + tokenInfo.email,
-        'Subject: Gmail API Test',
-        'MIME-Version: 1.0',
-        'Content-Type: text/plain; charset=utf-8',
-        '',
-        'This is a test message from Inbox Manager to verify Gmail send capability.',
-      ].join('\r\n');
-
-      const encoded = Buffer.from(message)
-        .toString('base64')
-        .replace(/\+/g, '-')
-        .replace(/\//g, '_')
-        .replace(/=+$/, '');
+      // Use the same sendInboxSummary function as production
+      // This tests the full email sending code path including MIME encoding
+      const dummySummary = {
+        email_analysis: { total_received: 0, signal_count: 0, noise_count: 0 },
+        summary: [],
+        kit_list: { tomorrow: [], upcoming: [] },
+        financials: [],
+        calendar_updates: [],
+        attachments_requiring_review: [],
+        recurring_activities: [],
+        pro_dad_insight: '',
+      };
 
       try {
-        await gmail.users.messages.send({
-          userId: 'me',
-          requestBody: { raw: encoded },
-        });
+        const sentCount = await sendInboxSummary(auth, dummySummary, testHtml, [tokenInfo.email!]);
 
         return reply.code(200).send({
           success: true,
-          message: 'Successfully sent test email!',
+          message: 'Successfully sent test email using production code path!',
           recipient: tokenInfo.email,
+          sentCount,
         });
       } catch (sendError: any) {
         fastify.log.error({ err: sendError }, 'Gmail send failed');
@@ -372,7 +430,7 @@ export async function adminRoutes(fastify: FastifyInstance): Promise<void> {
   /**
    * POST /admin/send-daily-summary
    * Manually trigger sending of daily summary email
-   * FOR DEVELOPMENT/TESTING - allows testing the complete flow
+   * FOR DEVELOPMENT/TESTING - follows exact same code path as production cron job
    */
   fastify.post<{
     Body: z.infer<typeof SendSummarySchema>;
@@ -390,23 +448,78 @@ export async function adminRoutes(fastify: FastifyInstance): Promise<void> {
       const userId = getUserId(request);
       const auth = await getUserAuth(request);
 
-      const dateRange = (bodyResult.data.dateRange || 'yesterday') as DateRange;
-      const maxResults = bodyResult.data.maxResults || 100;
-      const provider = (bodyResult.data.aiProvider || 'openai') as AIProvider;
+      fastify.log.info({ userId }, 'Generating and sending personalized daily summary');
 
-      fastify.log.info({ userId, dateRange, maxResults, provider }, 'Generating and sending daily summary');
+      // Import functions (same as production cron job)
+      const { generatePersonalizedSummary } = await import('../utils/personalizedSummaryBuilder.js');
+      const { renderPersonalizedEmail } = await import('../templates/personalizedEmailTemplate.js');
+      const { cleanupPastItems } = await import('../utils/cleanupPastItems.js');
+      const { createActionToken } = await import('../db/emailActionTokenDb.js');
 
-      // Step 1: Generate complete inbox summary (fetch + AI + render)
-      const result = await generateInboxSummary(userId, auth, dateRange, maxResults, provider);
+      // Step 1: Clean up past items (same as production)
+      const cleanupResult = cleanupPastItems(userId);
+      if (cleanupResult.todosCompleted > 0 || cleanupResult.eventsRemoved > 0) {
+        fastify.log.info(
+          { userId, todosCompleted: cleanupResult.todosCompleted, eventsRemoved: cleanupResult.eventsRemoved },
+          'Cleaned up past items before summary'
+        );
+      }
 
-      // Step 2: Determine recipients
+      // Step 2: Generate personalized summary (same as production)
+      const summary = await generatePersonalizedSummary(userId, 7);
+
+      // Step 3: Add action URLs (same as production)
+      const baseUrl = process.env.BASE_URL || 'http://localhost:3000';
+
+      // Helper to add action URL to todo
+      const addTodoAction = (todo: any) => {
+        const token = createActionToken(userId, 'complete_todo', todo.id);
+        return { ...todo, actionUrl: `${baseUrl}/api/action/${token}` };
+      };
+
+      // Helper to add action URL to event
+      const addEventAction = (event: any) => {
+        if (event.id) {
+          const token = createActionToken(userId, 'remove_event', event.id);
+          return { ...event, actionUrl: `${baseUrl}/api/action/${token}` };
+        }
+        return { ...event };
+      };
+
+      // Transform summary with action URLs
+      const summaryWithActions = {
+        generated_at: summary.generated_at,
+        date_range: summary.date_range,
+        by_child: summary.by_child.map(child => ({
+          child_name: child.child_name,
+          display_name: child.display_name,
+          today_todos: child.today_todos.map(addTodoAction),
+          today_events: child.today_events.map(addEventAction),
+          upcoming_todos: child.upcoming_todos.map(addTodoAction),
+          upcoming_events: child.upcoming_events.map(addEventAction),
+          insights: child.insights,
+        })),
+        family_wide: {
+          today_todos: summary.family_wide.today_todos.map(addTodoAction),
+          today_events: summary.family_wide.today_events.map(addEventAction),
+          upcoming_todos: summary.family_wide.upcoming_todos.map(addTodoAction),
+          upcoming_events: summary.family_wide.upcoming_events.map(addEventAction),
+          insights: summary.family_wide.insights,
+        },
+        insights: summary.insights,
+        highlight: summary.highlight,
+        emailsAnalyzed: summary.emailsAnalyzed,
+      };
+
+      // Step 4: Render HTML (same as production)
+      const html = renderPersonalizedEmail(summaryWithActions);
+
+      // Step 5: Determine recipients
       let recipients: string[];
       if (bodyResult.data.testRecipients && bodyResult.data.testRecipients.length > 0) {
-        // Use test recipients if provided
         recipients = bodyResult.data.testRecipients;
         fastify.log.info({ recipients }, 'Using test recipients');
       } else {
-        // Use settings recipients
         const settings = getOrCreateDefaultSettings(userId);
         if (!settings.summary_enabled) {
           return reply.code(400).send({
@@ -424,26 +537,48 @@ export async function adminRoutes(fastify: FastifyInstance): Promise<void> {
         });
       }
 
-      // Step 3: Send emails
-      const sentCount = await sendInboxSummary(auth, result.summary, result.html, recipients);
+      // Count items (same as production)
+      const totalTodos = summary.by_child.reduce((acc, child) =>
+        acc + child.today_todos.length + child.upcoming_todos.length, 0
+      ) + summary.family_wide.today_todos.length + summary.family_wide.upcoming_todos.length;
 
-      // Step 4: Save summary to database
+      const totalEvents = summary.by_child.reduce((acc, child) =>
+        acc + child.today_events.length + child.upcoming_events.length, 0
+      ) + summary.family_wide.today_events.length + summary.family_wide.upcoming_events.length;
+
+      // Step 6: Send email (same as production - uses dummy summary for legacy compatibility)
+      const dummySummary = {
+        email_analysis: { total_received: 0, signal_count: 0, noise_count: 0 },
+        summary: [],
+        kit_list: { tomorrow: [], upcoming: [] },
+        financials: [],
+        calendar_updates: [],
+        attachments_requiring_review: [],
+        recurring_activities: [],
+        pro_dad_insight: '',
+      };
+
+      const sentCount = await sendInboxSummary(auth, dummySummary, html, recipients);
+
+      // Step 7: Save summary to database
       saveSummary({
         user_id: userId,
         summary_date: new Date(),
-        inbox_count: result.emailCount,
-        summary_json: JSON.stringify(result.summary),
+        inbox_count: totalTodos + totalEvents,
+        summary_json: JSON.stringify(summary),
         sent_at: new Date(),
       });
 
       fastify.log.info(
         {
           userId,
-          emailCount: result.emailCount,
+          todoCount: totalTodos,
+          eventCount: totalEvents,
+          childCount: summary.by_child.length,
           recipients: recipients.length,
           sentCount,
         },
-        'Daily summary sent successfully'
+        'Personalized daily summary sent successfully'
       );
 
       return reply.code(200).send({
@@ -451,11 +586,12 @@ export async function adminRoutes(fastify: FastifyInstance): Promise<void> {
         emailsSent: sentCount,
         recipients,
         summary: {
-          childSummaries: result.summary.summary.length,
-          kitTomorrow: result.summary.kit_list.tomorrow.length,
-          kitUpcoming: result.summary.kit_list.upcoming.length,
-          financials: result.summary.financials.length,
-          calendarUpdates: result.summary.calendar_updates.length,
+          childCount: summary.by_child.length,
+          totalTodos,
+          totalEvents,
+          todayTodos: summary.by_child.reduce((acc, c) => acc + c.today_todos.length, 0) + summary.family_wide.today_todos.length,
+          todayEvents: summary.by_child.reduce((acc, c) => acc + c.today_events.length, 0) + summary.family_wide.today_events.length,
+          insights: summary.insights.length,
         },
       });
     } catch (error: any) {
@@ -574,21 +710,73 @@ export async function adminRoutes(fastify: FastifyInstance): Promise<void> {
 
       fastify.log.info({ userId }, 'Generating personalized summary preview');
 
-      // Import the new personalized summary functions
+      // Import the new personalized summary functions (same as production)
       const { generatePersonalizedSummary } = await import('../utils/personalizedSummaryBuilder.js');
       const { renderPersonalizedEmail } = await import('../templates/personalizedEmailTemplate.js');
+      const { cleanupPastItems } = await import('../utils/cleanupPastItems.js');
+      const { createActionToken } = await import('../db/emailActionTokenDb.js');
+
+      // Clean up past items before generating summary (same as production)
+      const cleanupResult = cleanupPastItems(userId);
+      if (cleanupResult.todosCompleted > 0 || cleanupResult.eventsRemoved > 0) {
+        fastify.log.info(
+          { userId, todosCompleted: cleanupResult.todosCompleted, eventsRemoved: cleanupResult.eventsRemoved },
+          'Cleaned up past items before preview'
+        );
+      }
 
       // Generate personalized summary (uses stored events/todos from database)
       const summary = await generatePersonalizedSummary(userId, 7); // Look ahead 7 days
 
-      // Render HTML
-      const html = renderPersonalizedEmail(summary);
+      // Add action URLs (same as production)
+      const baseUrl = process.env.BASE_URL || 'http://localhost:3000';
+
+      const addTodoAction = (todo: any) => {
+        const token = createActionToken(userId, 'complete_todo', todo.id);
+        return { ...todo, actionUrl: `${baseUrl}/api/action/${token}` };
+      };
+
+      const addEventAction = (event: any) => {
+        if (event.id) {
+          const token = createActionToken(userId, 'remove_event', event.id);
+          return { ...event, actionUrl: `${baseUrl}/api/action/${token}` };
+        }
+        return { ...event };
+      };
+
+      const summaryWithActions = {
+        generated_at: summary.generated_at,
+        date_range: summary.date_range,
+        by_child: summary.by_child.map(child => ({
+          child_name: child.child_name,
+          display_name: child.display_name,
+          today_todos: child.today_todos.map(addTodoAction),
+          today_events: child.today_events.map(addEventAction),
+          upcoming_todos: child.upcoming_todos.map(addTodoAction),
+          upcoming_events: child.upcoming_events.map(addEventAction),
+          insights: child.insights,
+        })),
+        family_wide: {
+          today_todos: summary.family_wide.today_todos.map(addTodoAction),
+          today_events: summary.family_wide.today_events.map(addEventAction),
+          upcoming_todos: summary.family_wide.upcoming_todos.map(addTodoAction),
+          upcoming_events: summary.family_wide.upcoming_events.map(addEventAction),
+          insights: summary.family_wide.insights,
+        },
+        insights: summary.insights,
+        highlight: summary.highlight,
+        emailsAnalyzed: summary.emailsAnalyzed,
+      };
+
+      // Render HTML (same as production)
+      const html = renderPersonalizedEmail(summaryWithActions);
 
       fastify.log.info(
         {
           userId,
           childCount: summary.by_child.length,
           totalInsights: summary.insights.length,
+          highlight: summary.highlight,
         },
         'Personalized summary preview generated'
       );

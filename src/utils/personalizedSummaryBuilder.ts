@@ -3,6 +3,7 @@
 import { getUpcomingEvents as getUpcomingEventsFromDb, type Event } from '../db/eventDb.js';
 import { getTodos } from '../db/todoDb.js';
 import { getChildProfiles } from '../db/childProfilesDb.js';
+import { getRecentlyAnalyzedCount } from '../db/emailAnalysisDb.js';
 import type { Todo } from '../types/todo.js';
 import type { ChildProfile } from '../types/childProfile.js';
 import type { ExtractedEvent } from '../types/extraction.js';
@@ -16,6 +17,8 @@ export interface PersonalizedSummary {
   by_child: ChildSummary[];
   family_wide: FamilySummary;
   insights: string[];
+  highlight?: string; // AI-generated #1 thing to remember today
+  emailsAnalyzed?: number; // Count of emails analyzed for this summary
 }
 
 export interface ChildSummary {
@@ -100,8 +103,9 @@ function organizeByChild(
 
 /**
  * Split items into today and upcoming (tomorrow onwards)
+ * Past non-recurring items are filtered out (they should have been cleaned up)
  */
-function splitByDay<T extends { date?: string; due_date?: Date }>(
+function splitByDay<T extends { date?: string; due_date?: Date; recurring?: boolean }>(
   items: T[],
   dateField: 'date' | 'due_date'
 ): { today: T[]; upcoming: T[] } {
@@ -124,12 +128,15 @@ function splitByDay<T extends { date?: string; due_date?: Date }>(
       continue;
     }
 
-    // Items from today (including past items from today)
+    // Items from today
     if (itemDate >= todayStart && itemDate < tomorrowStart) {
       today.push(item);
     } else if (itemDate < todayStart) {
-      // Past items that weren't cleaned up - treat as today
-      today.push(item);
+      // Past items: only include if recurring (one-off past items are filtered out)
+      if (item.recurring) {
+        today.push(item);
+      }
+      // Non-recurring past items are silently dropped - cleanup should handle them
     } else {
       upcoming.push(item);
     }
@@ -142,12 +149,13 @@ function splitByDay<T extends { date?: string; due_date?: Date }>(
  * Generate AI insights using structured data
  *
  * Uses OpenAI to analyze organized events/todos and provide helpful insights
+ * Also generates a highlight - the single most important thing to remember today
  */
 async function generateAIInsights(
   childSummaries: ChildSummary[],
   familySummary: FamilySummary,
   childProfiles: ChildProfile[]
-): Promise<{ childInsights: Map<string, string[]>; familyInsights: string[] }> {
+): Promise<{ childInsights: Map<string, string[]>; familyInsights: string[]; highlight: string | null }> {
   // Lazy-load OpenAI to avoid loading env vars too early
   const { default: OpenAI } = await import('openai');
   const openai = new OpenAI({
@@ -177,6 +185,34 @@ async function generateAIInsights(
     },
   };
 
+  // Build detailed today items for highlight selection
+  const todayDetails = {
+    events: [
+      ...childSummaries.flatMap(s => s.today_events.map(e => ({
+        title: e.title,
+        child: s.child_name,
+        time: e.date
+      }))),
+      ...familySummary.today_events.map(e => ({
+        title: e.title,
+        child: 'Family',
+        time: e.date
+      }))
+    ],
+    todos: [
+      ...childSummaries.flatMap(s => s.today_todos.map(t => ({
+        description: t.description,
+        type: t.type,
+        child: s.child_name
+      }))),
+      ...familySummary.today_todos.map(t => ({
+        description: t.description,
+        type: t.type,
+        child: 'Family'
+      }))
+    ]
+  };
+
   const prompt = `You are an elite Executive Assistant for busy parents with school-age children.
 
 You have access to organized data about the family's upcoming schedule:
@@ -195,24 +231,41 @@ Family-wide:
 - ${familySummary.today_todos.length} todos today
 - ${familySummary.today_events.length} events today
 
+**Today's Events Detail**:
+${todayDetails.events.map(e => `- [${e.child}] ${e.title}`).join('\n') || 'No events today'}
+
+**Today's Todos Detail**:
+${todayDetails.todos.map(t => `- [${t.child}] ${t.type}: ${t.description}`).join('\n') || 'No todos today'}
+
 **Upcoming This Week**:
 ${childSummaries.map(s => `
 ${s.child_name}: ${s.upcoming_todos.length} todos, ${s.upcoming_events.length} events
 `).join('\n')}
 
 Your task:
-1. For each child, provide 1-2 helpful insights:
+1. **HIGHLIGHT**: Identify the SINGLE most important thing to remember TODAY. This should be:
+   - Something happening TODAY (not upcoming)
+   - Preferably something that requires action or could be easily forgotten
+   - Examples: "Mufti day today!", "Swimming kit needed", "School trip - packed lunch required"
+   - If nothing urgent, pick the most notable event/todo for today
+   - Keep it SHORT (under 10 words if possible)
+   - If absolutely nothing is happening today, return null
+
+2. For each child, provide 1-2 helpful insights:
    - "Leo has PE tomorrow - remember to pack kit"
    - "Payment deadline for Ella's trip is Friday"
    - "Busy week ahead for Max: 3 events"
-2. Provide 1-2 family-wide insights:
+
+3. Provide 1-2 family-wide insights:
    - "Busy Tuesday: overlapping events for both children"
    - "3 payments due this week totaling £45"
-3. Keep insights brief, actionable, and empathetic
-4. Use display names if provided (for privacy)
+
+4. Keep insights brief, actionable, and empathetic
+5. Use display names if provided (for privacy)
 
 Return JSON:
 {
+  "highlight": "Mufti day today!" or null if nothing today,
   "child_insights": {
     "Ella": ["insight 1", "insight 2"],
     "Leo": ["insight 1"]
@@ -237,6 +290,7 @@ Return JSON:
     return {
       childInsights: new Map(Object.entries(parsed.child_insights || {})) as Map<string, string[]>,
       familyInsights: parsed.family_insights || [],
+      highlight: parsed.highlight || null,
     };
   } catch (error: any) {
     console.error('Error generating AI insights:', error);
@@ -244,6 +298,7 @@ Return JSON:
     return {
       childInsights: new Map(),
       familyInsights: [],
+      highlight: null,
     };
   }
 }
@@ -305,8 +360,8 @@ export async function generatePersonalizedSummary(
     insights: [], // Will be filled by AI
   };
 
-  // Step 5: Generate AI insights
-  const { childInsights, familyInsights } = await generateAIInsights(
+  // Step 5: Generate AI insights (includes highlight)
+  const { childInsights, familyInsights, highlight } = await generateAIInsights(
     childSummaries,
     familySummary,
     childProfiles
@@ -318,12 +373,33 @@ export async function generatePersonalizedSummary(
   }
   familySummary.insights = familyInsights;
 
-  // Step 6: Return complete summary
+  // Step 6: Generate fallback highlight if AI didn't provide one
+  let finalHighlight = highlight;
+  if (!finalHighlight) {
+    // Fallback: use first today event or todo
+    const firstTodayEvent = childSummaries.find(s => s.today_events.length > 0)?.today_events[0]
+      || familySummary.today_events[0];
+    const firstTodayTodo = childSummaries.find(s => s.today_todos.length > 0)?.today_todos[0]
+      || familySummary.today_todos[0];
+
+    if (firstTodayEvent) {
+      finalHighlight = firstTodayEvent.title;
+    } else if (firstTodayTodo) {
+      finalHighlight = firstTodayTodo.description;
+    }
+  }
+
+  // Step 7: Get emails analyzed count (last 48 hours)
+  const emailsAnalyzed = getRecentlyAnalyzedCount(userId, 48);
+
+  // Step 8: Return complete summary
   return {
     generated_at: now,
     date_range: { start: now, end: futureDate },
     by_child: childSummaries,
     family_wide: familySummary,
     insights: familyInsights, // Top-level insights
+    highlight: finalHighlight || undefined,
+    emailsAnalyzed: emailsAnalyzed > 0 ? emailsAnalyzed : undefined,
   };
 }

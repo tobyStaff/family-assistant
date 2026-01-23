@@ -39,6 +39,8 @@ export interface PersonalizedSummaryWithActions {
   by_child: ChildSummaryWithActions[];
   family_wide: FamilySummaryWithActions;
   insights: string[];
+  highlight?: string; // AI-generated #1 thing to remember today
+  emailsAnalyzed?: number; // Count of emails analyzed for this summary
 }
 
 /**
@@ -113,10 +115,133 @@ function getActionButtonLabel(type: TodoType): string {
 }
 
 /**
+ * Check if a date is today
+ */
+function isToday(date: Date | string): boolean {
+  const d = typeof date === 'string' ? new Date(date) : date;
+  const today = new Date();
+  return d.toDateString() === today.toDateString();
+}
+
+/**
+ * Check if a date is tomorrow
+ */
+function isTomorrow(date: Date | string): boolean {
+  const d = typeof date === 'string' ? new Date(date) : date;
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  return d.toDateString() === tomorrow.toDateString();
+}
+
+/**
+ * Check if a date is within the next N days (excluding today)
+ */
+function isWithinDays(date: Date | string, days: number): boolean {
+  const d = typeof date === 'string' ? new Date(date) : date;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const futureDate = new Date(today);
+  futureDate.setDate(futureDate.getDate() + days);
+  return d > today && d <= futureDate;
+}
+
+/**
+ * Evening reminder todo types - things to do tonight/prepare for tomorrow
+ */
+const EVENING_TODO_TYPES: TodoType[] = ['READ', 'PACK', 'BUY', 'PAY', 'FILL', 'SIGN', 'REMIND'];
+
+/**
+ * Get today's reminders - things happening/due TODAY
+ * Includes: PACK items for today, events today, todos due today
+ */
+function getTodayReminders(summary: PersonalizedSummaryWithActions): {
+  todos: TodoWithAction[];
+  events: EventWithAction[];
+} {
+  const allTodayTodos: TodoWithAction[] = [
+    ...summary.by_child.flatMap(c => c.today_todos),
+    ...summary.family_wide.today_todos,
+  ];
+  const allTodayEvents: EventWithAction[] = [
+    ...summary.by_child.flatMap(c => c.today_events as EventWithAction[]),
+    ...(summary.family_wide.today_events as EventWithAction[]),
+  ];
+
+  return { todos: allTodayTodos, events: allTodayEvents };
+}
+
+/**
+ * Get evening reminders - things to prepare/do tonight
+ * Includes: READ, PACK (for tomorrow), BUY, PAY, FILL, SIGN, homework due this week
+ * Excludes: events, items due next week+
+ */
+function getEveningReminders(summary: PersonalizedSummaryWithActions): TodoWithAction[] {
+  const allUpcomingTodos: TodoWithAction[] = [
+    ...summary.by_child.flatMap(c => c.upcoming_todos),
+    ...summary.family_wide.upcoming_todos,
+  ];
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const oneWeekFromNow = new Date(today);
+  oneWeekFromNow.setDate(oneWeekFromNow.getDate() + 7);
+
+  return allUpcomingTodos.filter(todo => {
+    // Only include relevant evening types
+    if (!EVENING_TODO_TYPES.includes(todo.type)) {
+      return false;
+    }
+
+    // Include items without due date (they need to be done soon)
+    if (!todo.due_date) {
+      return true;
+    }
+
+    // Include items due within the next week
+    const dueDate = new Date(todo.due_date);
+    return dueDate <= oneWeekFromNow;
+  });
+}
+
+/**
+ * Get diary events for next 7 days
+ * Returns events grouped by date
+ */
+function getDiaryEvents(summary: PersonalizedSummaryWithActions): Map<string, EventWithAction[]> {
+  const allUpcomingEvents: EventWithAction[] = [
+    ...summary.by_child.flatMap(c => c.upcoming_events as EventWithAction[]),
+    ...(summary.family_wide.upcoming_events as EventWithAction[]),
+  ];
+
+  // Group events by date
+  const eventsByDate = new Map<string, EventWithAction[]>();
+
+  // Initialize next 7 days
+  const today = new Date();
+  for (let i = 1; i <= 7; i++) {
+    const day = new Date(today);
+    day.setDate(day.getDate() + i);
+    const dayKey = day.toISOString().split('T')[0];
+    eventsByDate.set(dayKey, []);
+  }
+
+  // Group events by day
+  for (const event of allUpcomingEvents) {
+    const dayKey = new Date(event.date).toISOString().split('T')[0];
+    if (eventsByDate.has(dayKey)) {
+      eventsByDate.get(dayKey)!.push(event);
+    }
+  }
+
+  return eventsByDate;
+}
+
+/**
  * Render a single todo item
  * @param todo - The todo item (with optional actionUrl)
+ * @param size - Card size: 'large' (default) or 'small'
  */
-function renderTodo(todo: TodoWithAction): string {
+function renderTodo(todo: TodoWithAction, size: 'large' | 'small' = 'large'): string {
   const typeEmoji = getTodoTypeEmoji(todo.type);
   const typeLabel = getTodoTypeLabel(todo.type);
   const dueDate = todo.due_date ? formatDate(todo.due_date) : null;
@@ -137,7 +262,7 @@ function renderTodo(todo: TodoWithAction): string {
 
   // Mark complete button (if actionUrl provided - token-based)
   const completeButton = todo.actionUrl
-    ? `<a href="${escapeHtml(todo.actionUrl)}" class="complete-button">✓ Done</a>`
+    ? `<a href="${escapeHtml(todo.actionUrl)}" class="complete-button${size === 'small' ? ' complete-button-small' : ''}">✓ Done</a>`
     : '';
 
   // Build meta items
@@ -147,8 +272,10 @@ function renderTodo(todo: TodoWithAction): string {
     metaItems.push(`<span class="child-badge">👶 ${escapeHtml(todo.child_name)}</span>`);
   }
 
+  const cardClass = size === 'small' ? 'todo-item todo-item-small' : 'todo-item';
+
   return `
-    <div class="todo-item">
+    <div class="${cardClass}">
       <div class="todo-header">
         <span class="todo-type">${typeEmoji} ${typeLabel}</span>
         ${amountBadge}
@@ -168,8 +295,9 @@ function renderTodo(todo: TodoWithAction): string {
 /**
  * Render a single event
  * @param event - The event (with optional actionUrl)
+ * @param size - Card size: 'large' (default) or 'small'
  */
-function renderEvent(event: EventWithAction): string {
+function renderEvent(event: EventWithAction, size: 'large' | 'small' = 'large'): string {
   const eventDate = formatDate(event.date);
   const location = event.location ? `<div class="event-location">📍 ${escapeHtml(event.location)}</div>` : '';
   const childBadge = event.child_name && event.child_name !== 'General'
@@ -178,11 +306,13 @@ function renderEvent(event: EventWithAction): string {
 
   // Remove button (if actionUrl provided - token-based)
   const removeButton = event.actionUrl
-    ? `<a href="${escapeHtml(event.actionUrl)}" class="remove-button">✕ Remove</a>`
+    ? `<a href="${escapeHtml(event.actionUrl)}" class="remove-button${size === 'small' ? ' remove-button-small' : ''}">✕ Remove</a>`
     : '';
 
+  const cardClass = size === 'small' ? 'event-item event-item-small' : 'event-item';
+
   return `
-    <div class="event-item">
+    <div class="${cardClass}">
       <div class="event-header">
         <div class="event-title">${escapeHtml(event.title)}</div>
         ${removeButton}
@@ -207,6 +337,158 @@ function renderInsights(insights: string[]): string {
     <div class="insights-section">
       <h3>💡 Insights</h3>
       ${insights.map(insight => `<div class="insight-item">• ${escapeHtml(insight)}</div>`).join('')}
+    </div>
+  `;
+}
+
+/**
+ * Render the "work done" text showing how many emails were analyzed
+ */
+function renderWorkDone(emailsAnalyzed?: number): string {
+  if (!emailsAnalyzed || emailsAnalyzed === 0) {
+    return '';
+  }
+
+  return `
+    <div class="work-done-text">
+      The Family Assistant AI has summarised ${emailsAnalyzed} of your emails into this single email.
+    </div>
+  `;
+}
+
+/**
+ * Render the #1 thing to remember today (highlight banner)
+ */
+function renderHighlight(highlight?: string): string {
+  if (!highlight) {
+    return '';
+  }
+
+  return `
+    <div class="highlight-banner">
+      <div class="highlight-header">
+        <span class="highlight-icon">⭐</span>
+        <span class="highlight-title">#1 THING TO REMEMBER TODAY</span>
+      </div>
+      <div class="highlight-content">
+        ${escapeHtml(highlight)}
+      </div>
+    </div>
+  `;
+}
+
+/**
+ * Render today's reminders section (large cards)
+ */
+function renderTodayRemindersSection(summary: PersonalizedSummaryWithActions): string {
+  const { todos, events } = getTodayReminders(summary);
+
+  if (todos.length === 0 && events.length === 0) {
+    return `
+      <div class="section">
+        <div class="section-header today-reminders">
+          <span class="section-icon">📋</span>
+          <span class="section-title">TODAY'S REMINDERS</span>
+        </div>
+        <div class="empty-state">✓ Nothing scheduled for today - enjoy your day!</div>
+      </div>
+    `;
+  }
+
+  return `
+    <div class="section">
+      <div class="section-header today-reminders">
+        <span class="section-icon">📋</span>
+        <span class="section-title">TODAY'S REMINDERS</span>
+        <span class="section-count">${todos.length + events.length} items</span>
+      </div>
+      <div class="items-list">
+        ${events.map(e => renderEvent(e, 'large')).join('')}
+        ${todos.map(t => renderTodo(t, 'large')).join('')}
+      </div>
+    </div>
+  `;
+}
+
+/**
+ * Render evening reminders section (small cards)
+ */
+function renderEveningRemindersSection(summary: PersonalizedSummaryWithActions): string {
+  const eveningTodos = getEveningReminders(summary);
+
+  if (eveningTodos.length === 0) {
+    return '';
+  }
+
+  return `
+    <div class="section">
+      <div class="section-header evening-reminders">
+        <span class="section-icon">🌙</span>
+        <span class="section-title">THIS EVENING'S REMINDERS</span>
+        <span class="section-count">${eveningTodos.length} items</span>
+      </div>
+      <div class="items-grid">
+        ${eveningTodos.map(t => renderTodo(t, 'small')).join('')}
+      </div>
+    </div>
+  `;
+}
+
+/**
+ * Render diary section (next 7 days events)
+ */
+function renderDiarySection(summary: PersonalizedSummaryWithActions): string {
+  const eventsByDate = getDiaryEvents(summary);
+
+  // Check if there are any events
+  let totalEvents = 0;
+  for (const events of eventsByDate.values()) {
+    totalEvents += events.length;
+  }
+
+  if (totalEvents === 0) {
+    return '';
+  }
+
+  // Build diary rows
+  const rows: string[] = [];
+  for (const [dayKey, events] of eventsByDate) {
+    if (events.length === 0) continue;
+
+    const day = new Date(dayKey);
+    const dayLabel = day.toLocaleDateString('en-GB', {
+      weekday: 'short',
+      day: 'numeric',
+      month: 'short'
+    });
+
+    for (const event of events) {
+      const time = new Date(event.date).toLocaleTimeString('en-GB', {
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+      const childLabel = event.child_name && event.child_name !== 'General'
+        ? `<span class="diary-child">[${escapeHtml(event.child_name)}]</span>`
+        : '';
+
+      rows.push(`
+        <div class="diary-row">
+          <span class="diary-date">${dayLabel}</span>
+          <span class="diary-event">${childLabel} ${escapeHtml(event.title)} ${time !== '00:00' ? `at ${time}` : ''}</span>
+        </div>
+      `);
+    }
+  }
+
+  return `
+    <div class="section diary-section">
+      <div class="section-header diary">
+        <span class="section-icon">📅</span>
+        <span class="section-title">DIARY - NEXT 7 DAYS</span>
+      </div>
+      <div class="diary-list">
+        ${rows.join('')}
+      </div>
     </div>
   `;
 }
@@ -466,7 +748,7 @@ function renderWeekCalendar(
   `;
 }
 
-// Insights section replaced by Summary of Today section
+// Legacy functions kept for backward compatibility but not used in new structure
 
 /**
  * Render complete personalized email
@@ -474,9 +756,9 @@ function renderWeekCalendar(
 export function renderPersonalizedEmail(summary: PersonalizedSummaryWithActions): string {
   const dateStr = summary.generated_at.toLocaleDateString('en-GB', {
     weekday: 'long',
-    year: 'numeric',
-    month: 'long',
     day: 'numeric',
+    month: 'long',
+    year: 'numeric',
   });
 
   return `
@@ -485,7 +767,7 @@ export function renderPersonalizedEmail(summary: PersonalizedSummaryWithActions)
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Your Personalized Family Briefing</title>
+  <title>Family Briefing</title>
   <style>
     * { box-sizing: border-box; }
     body {
@@ -497,7 +779,7 @@ export function renderPersonalizedEmail(summary: PersonalizedSummaryWithActions)
       padding: 16px;
     }
     .container {
-      max-width: 900px;
+      max-width: 700px;
       width: 100%;
       margin: 0 auto;
       background-color: #ffffff;
@@ -512,30 +794,61 @@ export function renderPersonalizedEmail(summary: PersonalizedSummaryWithActions)
 
     /* Header */
     .header {
-      margin-bottom: 32px;
-      padding-bottom: 20px;
+      text-align: center;
+      margin-bottom: 16px;
+      padding-bottom: 16px;
       border-bottom: 2px solid #e8e8e8;
     }
-    .header::after {
-      content: "";
-      display: table;
-      clear: both;
-    }
     .header h1 {
-      margin: 0;
+      margin: 0 0 4px 0;
       color: #1a1a1a;
-      font-size: 24px;
+      font-size: 28px;
       font-weight: 700;
-      display: inline-block;
     }
     .header .date {
       color: #666;
-      font-size: 14px;
-      float: right;
-      margin-top: 8px;
+      font-size: 16px;
+      margin: 0;
     }
-    @media (max-width: 500px) {
-      .header .date { float: none; display: block; margin-top: 8px; }
+
+    /* Work Done text */
+    .work-done-text {
+      text-align: center;
+      color: #888;
+      font-size: 13px;
+      margin-bottom: 24px;
+      font-style: italic;
+    }
+
+    /* Highlight Banner */
+    .highlight-banner {
+      background: linear-gradient(135deg, #fff9c4 0%, #fff59d 100%);
+      border: 2px solid #ffd54f;
+      border-radius: 12px;
+      padding: 20px 24px;
+      margin-bottom: 28px;
+    }
+    .highlight-header {
+      display: flex;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+    .highlight-icon {
+      font-size: 24px;
+      margin-right: 10px;
+    }
+    .highlight-title {
+      font-size: 14px;
+      font-weight: 700;
+      color: #f57f17;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .highlight-content {
+      font-size: 18px;
+      font-weight: 600;
+      color: #333;
+      line-height: 1.4;
     }
 
     /* Sections */
@@ -543,46 +856,48 @@ export function renderPersonalizedEmail(summary: PersonalizedSummaryWithActions)
       margin-bottom: 28px;
     }
     .section-header {
-      margin-bottom: 8px;
+      margin-bottom: 12px;
       padding-bottom: 8px;
       border-bottom: 2px solid #e8e8e8;
     }
-    .section-header.essential {
-      border-bottom-color: #ff9800;
-    }
-    .section-header.consideration {
+    .section-header.today-reminders {
       border-bottom-color: #667eea;
+    }
+    .section-header.evening-reminders {
+      border-bottom-color: #9575cd;
+    }
+    .section-header.diary {
+      border-bottom-color: #4fc3f7;
     }
     .section-icon {
       font-size: 20px;
       vertical-align: middle;
+      margin-right: 8px;
     }
     .section-title {
-      font-size: 18px;
+      font-size: 16px;
       font-weight: 700;
       color: #1a1a1a;
       vertical-align: middle;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
     }
     .section-count {
-      font-size: 13px;
+      font-size: 12px;
       color: #888;
       float: right;
-    }
-    .section-subtitle {
-      color: #666;
-      font-size: 13px;
-      margin: 0 0 16px 0;
+      margin-top: 4px;
     }
     .items-list {
       display: block;
     }
 
-    /* Todo items */
+    /* Todo items - Large (default) */
     .todo-item {
       display: block;
-      padding: 16px 20px;
+      padding: 20px 24px;
       background: #fafafa;
-      border-radius: 8px;
+      border-radius: 10px;
       border-left: 4px solid #667eea;
       margin-bottom: 12px;
     }
@@ -598,7 +913,7 @@ export function renderPersonalizedEmail(summary: PersonalizedSummaryWithActions)
       display: inline-block;
       font-weight: 600;
       color: #667eea;
-      font-size: 13px;
+      font-size: 12px;
       text-transform: uppercase;
       letter-spacing: 0.3px;
     }
@@ -606,17 +921,18 @@ export function renderPersonalizedEmail(summary: PersonalizedSummaryWithActions)
       display: inline-block;
       background: #e53935;
       color: white;
-      padding: 3px 10px;
+      padding: 2px 10px;
       border-radius: 12px;
-      font-size: 13px;
+      font-size: 12px;
       font-weight: 600;
       margin-left: 10px;
     }
     .todo-description {
-      font-size: 15px;
+      font-size: 16px;
       line-height: 1.5;
       color: #333;
       margin-bottom: 8px;
+      font-weight: 500;
     }
     .todo-meta {
       font-size: 13px;
@@ -628,18 +944,37 @@ export function renderPersonalizedEmail(summary: PersonalizedSummaryWithActions)
       margin-right: 16px;
     }
     .todo-actions {
-      margin-top: 8px;
+      margin-top: 12px;
     }
     .todo-actions a {
       margin-right: 10px;
     }
 
-    /* Event items */
+    /* Todo items - Small */
+    .todo-item-small {
+      padding: 12px 16px;
+      border-radius: 8px;
+      border-left-width: 3px;
+      margin-bottom: 8px;
+    }
+    .todo-item-small .todo-description {
+      font-size: 14px;
+      margin-bottom: 4px;
+    }
+    .todo-item-small .todo-meta {
+      font-size: 12px;
+      margin-bottom: 4px;
+    }
+    .todo-item-small .todo-actions {
+      margin-top: 8px;
+    }
+
+    /* Event items - Large (default) */
     .event-item {
       display: block;
-      padding: 16px 20px;
+      padding: 20px 24px;
       background: #f0f7ff;
-      border-radius: 8px;
+      border-radius: 10px;
       border-left: 4px solid #2196f3;
       margin-bottom: 12px;
     }
@@ -649,7 +984,7 @@ export function renderPersonalizedEmail(summary: PersonalizedSummaryWithActions)
     .event-title {
       display: inline-block;
       font-weight: 600;
-      font-size: 15px;
+      font-size: 16px;
       color: #1565c0;
     }
     .event-meta {
@@ -668,14 +1003,38 @@ export function renderPersonalizedEmail(summary: PersonalizedSummaryWithActions)
       color: #555;
       line-height: 1.4;
     }
+
+    /* Event items - Small */
+    .event-item-small {
+      padding: 12px 16px;
+      border-radius: 8px;
+      border-left-width: 3px;
+      margin-bottom: 8px;
+    }
+    .event-item-small .event-title {
+      font-size: 14px;
+    }
+
+    /* Items grid for evening reminders (smaller cards) */
+    .items-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 10px;
+    }
+    @media (max-width: 500px) {
+      .items-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
     .child-badge {
       display: inline-block;
       background: #e8f4fd;
       color: #1976d2;
-      padding: 2px 10px;
+      padding: 2px 8px;
       border-radius: 4px;
       font-weight: 500;
-      font-size: 12px;
+      font-size: 11px;
     }
 
     /* Buttons - ensure white text in all states */
@@ -687,13 +1046,14 @@ export function renderPersonalizedEmail(summary: PersonalizedSummaryWithActions)
       display: inline-block;
       background: #43a047;
       color: #ffffff !important;
-      padding: 7px 16px;
+      padding: 8px 16px;
       border-radius: 6px;
       text-decoration: none;
       font-weight: 600;
       font-size: 13px;
     }
     .action-button:hover { background: #388e3c; }
+
     .complete-button,
     .complete-button:link,
     .complete-button:visited,
@@ -702,13 +1062,19 @@ export function renderPersonalizedEmail(summary: PersonalizedSummaryWithActions)
       display: inline-block;
       background: #667eea;
       color: #ffffff !important;
-      padding: 7px 16px;
+      padding: 8px 16px;
       border-radius: 6px;
       text-decoration: none;
       font-weight: 600;
       font-size: 13px;
     }
     .complete-button:hover { background: #5a6fd6; }
+
+    .complete-button-small {
+      padding: 5px 12px;
+      font-size: 12px;
+    }
+
     .remove-button,
     .remove-button:link,
     .remove-button:visited,
@@ -726,108 +1092,62 @@ export function renderPersonalizedEmail(summary: PersonalizedSummaryWithActions)
     }
     .remove-button:hover { background: #e53935; }
 
-    /* Payment provider badge (when no direct link) */
+    .remove-button-small {
+      padding: 4px 10px;
+      font-size: 11px;
+    }
+
+    /* Payment provider badge */
     .payment-provider-badge {
       display: inline-block;
       background: #fff3e0;
       color: #e65100;
-      padding: 7px 16px;
+      padding: 6px 14px;
       border-radius: 6px;
       font-weight: 600;
-      font-size: 13px;
+      font-size: 12px;
       border: 1px solid #ffcc80;
     }
 
-    /* Summary of Today section */
-    .summary-section {
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    /* Diary section */
+    .diary-section {
+      background: #f8f9fa;
       padding: 20px 24px;
       border-radius: 10px;
-      margin-bottom: 24px;
     }
-    .summary-section .section-header {
-      color: white;
+    .diary-section .section-header {
       border-bottom: none;
-      padding-bottom: 8px;
+      padding-bottom: 12px;
     }
-    .summary-section .section-title {
-      color: white;
-    }
-    .summary-section .section-count {
-      background: rgba(255,255,255,0.2);
-      color: white;
-    }
-    .summary-bullets {
-      list-style: none;
-      padding: 0;
-      margin: 0;
-    }
-    .summary-bullets li {
-      color: rgba(255,255,255,0.95);
-      padding: 6px 0;
-      font-size: 14px;
-      line-height: 1.4;
-      border-bottom: 1px solid rgba(255,255,255,0.1);
-    }
-    .summary-bullets li:last-child {
-      border-bottom: none;
-    }
-
-    /* Compact sections (For Consideration, Week Calendar) */
-    .compact-section {
-      background: #f8f9fa;
-      padding: 16px 20px;
-      border-radius: 8px;
-      margin-bottom: 20px;
-    }
-    .compact-section .section-header {
-      border-bottom: none;
-      padding-bottom: 8px;
-    }
-    .compact-bullets {
-      list-style: none;
-      padding: 0;
-      margin: 0;
-    }
-    .compact-bullets li {
-      color: #555;
-      padding: 4px 0;
-      font-size: 13px;
-      line-height: 1.4;
-    }
-
-    /* Week Calendar */
-    .week-calendar {
+    .diary-list {
       display: flex;
       flex-direction: column;
-      gap: 8px;
     }
-    .calendar-day {
+    .diary-row {
       display: flex;
-      align-items: flex-start;
-      padding: 8px 0;
+      align-items: baseline;
+      padding: 10px 0;
       border-bottom: 1px solid #e8e8e8;
     }
-    .calendar-day:last-child {
+    .diary-row:last-child {
       border-bottom: none;
     }
-    .calendar-date {
+    .diary-date {
       font-weight: 600;
       color: #333;
-      min-width: 80px;
-      font-size: 13px;
+      min-width: 100px;
+      font-size: 14px;
     }
-    .calendar-items {
-      color: #666;
-      font-size: 13px;
+    .diary-event {
+      color: #555;
+      font-size: 14px;
       line-height: 1.4;
     }
-
-    /* Section header variants */
-    .section-header.today-summary .section-icon,
-    .section-header.today-details .section-icon,
-    .section-header.calendar .section-icon {
-      font-size: 18px;
+    .diary-child {
+      color: #1976d2;
+      font-weight: 500;
+      font-size: 12px;
+      margin-right: 4px;
     }
 
     /* Empty state */
@@ -854,20 +1174,22 @@ export function renderPersonalizedEmail(summary: PersonalizedSummaryWithActions)
 <body>
   <div class="container">
     <div class="header">
-      <h1>📬 Family Briefing</h1>
-      <div class="date">${dateStr}</div>
+      <h1>Family Briefing</h1>
+      <p class="date">${dateStr}</p>
     </div>
 
-    ${renderTodaySummary(summary)}
+    ${renderWorkDone(summary.emailsAnalyzed)}
 
-    ${renderTodayDetails(summary)}
+    ${renderHighlight(summary.highlight)}
 
-    ${renderWeekCalendar(summary)}
+    ${renderTodayRemindersSection(summary)}
 
-    ${renderForConsiderationSection(summary)}
+    ${renderEveningRemindersSection(summary)}
+
+    ${renderDiarySection(summary)}
 
     <div class="footer">
-      Generated by Inbox Manager
+      Generated by Family Assistant
     </div>
   </div>
 </body>

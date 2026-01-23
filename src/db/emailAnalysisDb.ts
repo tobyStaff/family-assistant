@@ -366,6 +366,23 @@ export function batchApproveAnalyses(
 }
 
 /**
+ * Get count of recently analyzed emails (within specified hours)
+ * Used for the "X emails analyzed" count in the daily summary
+ */
+export function getRecentlyAnalyzedCount(userId: string, hoursAgo: number = 48): number {
+  const stmt = db.prepare(`
+    SELECT COUNT(*) as count
+    FROM email_analyses
+    WHERE user_id = ?
+      AND created_at >= datetime('now', '-' || ? || ' hours')
+      AND status != 'pending'
+  `);
+
+  const result = stmt.get(userId, hoursAgo) as { count: number };
+  return result.count || 0;
+}
+
+/**
  * Format database row to StoredEmailAnalysis
  */
 function formatAnalysisRow(row: any): StoredEmailAnalysis {

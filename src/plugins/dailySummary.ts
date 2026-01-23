@@ -16,6 +16,7 @@ import { getOrCreateDefaultSettings } from '../db/settingsDb.js';
 import { fetchAndStoreEmails, syncProcessedLabels } from '../utils/emailStorageService.js';
 import { analyzeUnanalyzedEmails } from '../parsers/twoPassAnalyzer.js';
 import { createActionToken, cleanupExpiredTokens } from '../db/emailActionTokenDb.js';
+import { cleanupPastItems } from '../utils/cleanupPastItems.js';
 import type { Todo } from '../types/todo.js';
 import type { ExtractedEvent } from '../types/extraction.js';
 
@@ -137,6 +138,8 @@ function addActionsToSummary(
     by_child: byChildWithActions,
     family_wide: familyWideWithActions,
     insights: summary.insights,
+    highlight: summary.highlight,
+    emailsAnalyzed: summary.emailsAnalyzed,
   };
 }
 
@@ -191,6 +194,15 @@ async function dailySummaryPlugin(fastify: FastifyInstance) {
 
                 // Get user's OAuth2 client
                 const auth = await getUserAuth(userId);
+
+                // Clean up past items before generating summary
+                const cleanupResult = cleanupPastItems(userId);
+                if (cleanupResult.todosCompleted > 0 || cleanupResult.eventsRemoved > 0) {
+                  fastify.log.debug(
+                    { userId, todosCompleted: cleanupResult.todosCompleted, eventsRemoved: cleanupResult.eventsRemoved },
+                    'Cleaned up past items before summary'
+                  );
+                }
 
                 // Generate personalized summary (uses stored events/todos from database)
                 const summary = await generatePersonalizedSummary(userId, 7); // Look ahead 7 days

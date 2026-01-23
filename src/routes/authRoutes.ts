@@ -625,44 +625,6 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
           </div>
 
           <div class="api-section">
-            <h2>🤖 Email Processing Pipeline</h2>
-            <p>Extract events and todos from your emails using AI:</p>
-            <div style="margin-bottom: 1rem; display: flex; gap: 1rem; flex-wrap: wrap;">
-              <label style="font-size: 14px; color: #666;">
-                AI Provider:
-                <select id="process-ai-provider" style="margin-left: 0.5rem; padding: 4px 8px; border-radius: 4px; border: 1px solid #ccc;">
-                  <option value="openai" selected>OpenAI (GPT-4o)</option>
-                  <option value="anthropic">Anthropic (Claude)</option>
-                </select>
-              </label>
-              <label style="font-size: 14px; color: #666;">
-                Date Range:
-                <select id="process-date-range" style="margin-left: 0.5rem; padding: 4px 8px; border-radius: 4px; border: 1px solid #ccc;">
-                  <option value="today">Today</option>
-                  <option value="yesterday">Yesterday</option>
-                  <option value="last3days" selected>Last 3 Days</option>
-                  <option value="last7days">Last 7 Days</option>
-                  <option value="last30days">Last Month</option>
-                </select>
-              </label>
-              <label style="font-size: 14px; color: #666;">
-                Max Emails:
-                <input type="number" id="process-max-results" value="50" min="1" max="500" style="margin-left: 0.5rem; padding: 4px 8px; border-radius: 4px; border: 1px solid #ccc; width: 70px;">
-              </label>
-            </div>
-            <button class="btn-test" id="process-btn" onclick="processEmails()">
-              🚀 Process Emails (Extract Events & Todos)
-            </button>
-            <button class="btn-test" id="dry-run-btn" onclick="dryRunProcessing()">
-              👁️ Preview (Dry Run)
-            </button>
-            <button class="btn-test" id="status-btn" onclick="checkProcessingStatus()">
-              📊 Check Status
-            </button>
-            <div id="process-result"></div>
-          </div>
-
-          <div class="api-section">
             <h2>🧹 Cleanup Past Items</h2>
             <p>Auto-complete past todos and remove past events (items due before today):</p>
             <button class="btn-test" id="cleanup-btn" onclick="runCleanup()">
@@ -1067,59 +1029,6 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
             }
           }
 
-          async function processEmails() {
-            const btn = document.getElementById('process-btn');
-            const resultDiv = document.getElementById('process-result');
-            const aiProvider = document.getElementById('process-ai-provider').value;
-            const dateRange = document.getElementById('process-date-range').value;
-            const maxResults = parseInt(document.getElementById('process-max-results').value);
-
-            btn.disabled = true;
-            btn.textContent = '⏳ Processing emails...';
-            resultDiv.style.display = 'block';
-            resultDiv.className = 'success-message';
-            resultDiv.innerHTML = '<strong>🤖 Extracting events and todos from emails...</strong>';
-
-            try {
-              const response = await fetch('/admin/process-emails', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  dateRange,
-                  maxResults,
-                  aiProvider,
-                  dryRun: false,
-                  skipDuplicateEvents: true
-                })
-              });
-
-              const data = await response.json();
-
-              if (response.ok && data.success) {
-                resultDiv.className = 'success-message';
-                resultDiv.innerHTML = \`
-                  <strong>✅ Processing complete!</strong><br>
-                  📧 Emails fetched: \${data.stats.emails_fetched}<br>
-                  🔄 Emails processed: \${data.stats.emails_processed}<br>
-                  ⏭️ Emails skipped: \${data.stats.emails_skipped}<br>
-                  📅 Calendar events created: \${data.stats.events_created}<br>
-                  📝 Todos created: \${data.stats.todos_created}<br>
-                  ⏱️ Time: \${data.stats.processing_time_ms}ms<br>
-                  <br>
-                  <a href="/todos" style="color: #667eea; text-decoration: underline;">View Todos →</a>
-                \`;
-              } else {
-                throw new Error(data.message || 'Processing failed');
-              }
-            } catch (error) {
-              resultDiv.className = 'error-message';
-              resultDiv.innerHTML = \`<strong>❌ Error:</strong> \${error.message}\`;
-            } finally {
-              btn.disabled = false;
-              btn.textContent = '🚀 Process Emails (Extract Events & Todos)';
-            }
-          }
-
           async function runCleanup() {
             const btn = document.getElementById('cleanup-btn');
             const resultDiv = document.getElementById('cleanup-result');
@@ -1157,94 +1066,6 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
             } finally {
               btn.disabled = false;
               btn.textContent = '🧹 Run Cleanup';
-            }
-          }
-
-          async function dryRunProcessing() {
-            const btn = document.getElementById('dry-run-btn');
-            const resultDiv = document.getElementById('process-result');
-            const aiProvider = document.getElementById('process-ai-provider').value;
-            const dateRange = document.getElementById('process-date-range').value;
-            const maxResults = parseInt(document.getElementById('process-max-results').value);
-
-            btn.disabled = true;
-            btn.textContent = '⏳ Running preview...';
-            resultDiv.style.display = 'block';
-            resultDiv.className = 'success-message';
-            resultDiv.innerHTML = '<strong>🔍 Analyzing emails (preview mode)...</strong>';
-
-            try {
-              const response = await fetch('/admin/process-emails/dry-run', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  dateRange,
-                  maxResults,
-                  aiProvider
-                })
-              });
-
-              const data = await response.json();
-
-              if (response.ok && data.preview) {
-                resultDiv.className = 'success-message';
-                resultDiv.innerHTML = \`
-                  <strong>👁️ Preview (Dry Run - No Data Saved)</strong><br>
-                  📧 Emails fetched: \${data.stats.emails_fetched}<br>
-                  🔄 Emails to process: \${data.stats.emails_to_process}<br>
-                  ⏭️ Already processed: \${data.stats.emails_already_processed}<br>
-                  📅 Events would create: \${data.stats.events_would_create}<br>
-                  📝 Todos would create: \${data.stats.todos_would_create}<br>
-                  ⏱️ Time: \${data.stats.processing_time_ms}ms<br>
-                  <br>
-                  <em style="color: #666;">No data was saved. Click "Process Emails" to save.</em>
-                \`;
-              } else {
-                throw new Error(data.message || 'Preview failed');
-              }
-            } catch (error) {
-              resultDiv.className = 'error-message';
-              resultDiv.innerHTML = \`<strong>❌ Error:</strong> \${error.message}\`;
-            } finally {
-              btn.disabled = false;
-              btn.textContent = '👁️ Preview (Dry Run)';
-            }
-          }
-
-          async function checkProcessingStatus() {
-            const btn = document.getElementById('status-btn');
-            const resultDiv = document.getElementById('process-result');
-
-            btn.disabled = true;
-            btn.textContent = '⏳ Checking...';
-            resultDiv.style.display = 'block';
-            resultDiv.className = 'success-message';
-            resultDiv.innerHTML = '<strong>📊 Fetching processing status...</strong>';
-
-            try {
-              const response = await fetch('/admin/processing-status');
-              const data = await response.json();
-
-              if (response.ok) {
-                const lastProcessed = data.last_processed_at
-                  ? new Date(data.last_processed_at).toLocaleString()
-                  : 'Never';
-
-                resultDiv.className = 'success-message';
-                resultDiv.innerHTML = \`
-                  <strong>📊 Processing Status</strong><br>
-                  📧 Total emails processed: \${data.total_emails_processed}<br>
-                  🕐 Last processed: \${lastProcessed}<br>
-                \`;
-              } else {
-                throw new Error(data.message || 'Failed to fetch status');
-              }
-            } catch (error) {
-              resultDiv.className = 'error-message';
-              resultDiv.innerHTML = \`<strong>❌ Error:</strong> \${error.message}\`;
-            } finally {
-              btn.disabled = false;
-              btn.textContent = '📊 Check Status';
             }
           }
 
