@@ -12,7 +12,6 @@ X. Send Summary email not working & also daily briefing didn't send this morning
 X. Something is making the email too wide so on a mobile screen it scrolls left to right slightly and isn't locked in place.
 X. Buttons -> "Done" buttons don't work
 
-
 -------------------------
 
 # New Features
@@ -22,6 +21,11 @@ X. Buttons -> "Done" buttons don't work
 4. Proper onboarding.
 5. Reading text from images.
 6. Ability to sync data from prod to dev, to mess around with.
+7. Custom email domains.
+8. Calendar integrations with Gmail and outlook.
+9. Retry functionality - is there a way for admin or a user to retry an email parsing.
+10. Store the original attachments.
+11. Dedicated email address.
 
 -------------------------
 
