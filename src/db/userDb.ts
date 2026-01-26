@@ -1,6 +1,8 @@
 // src/db/userDb.ts
 import db from './db.js';
 import type { UserProfile } from '../types/todo.js';
+import type { Role } from '../types/roles.js';
+import { DEFAULT_ROLES, SUPER_ADMIN_EMAIL } from '../types/roles.js';
 
 /**
  * Prepared statements for user operations
@@ -155,4 +157,148 @@ function rowToUserProfile(row: any): UserProfile {
     created_at: row.created_at ? new Date(row.created_at) : undefined,
     updated_at: row.updated_at ? new Date(row.updated_at) : undefined,
   };
+}
+
+// ============================================
+// ROLE-BASED ACCESS CONTROL (RBAC) FUNCTIONS
+// ============================================
+
+// Prepared statement for getting user roles
+const getRolesStmt = db.prepare(`
+  SELECT roles FROM users WHERE user_id = ?
+`);
+
+// Prepared statement for updating user roles
+const updateRolesStmt = db.prepare(`
+  UPDATE users SET roles = ?, updated_at = datetime('now') WHERE user_id = ?
+`);
+
+// Prepared statement for getting all users (for admin dropdown)
+const getAllUsersStmt = db.prepare(`
+  SELECT user_id, email, name, picture_url, roles, created_at, updated_at
+  FROM users
+  ORDER BY email
+`);
+
+/**
+ * User profile with roles
+ */
+export interface UserWithRoles extends UserProfile {
+  roles: Role[];
+}
+
+/**
+ * Get user roles by user ID
+ *
+ * @param userId - User ID
+ * @returns Array of roles, or DEFAULT_ROLES if user not found
+ */
+export function getUserRoles(userId: string): Role[] {
+  const row = getRolesStmt.get(userId) as { roles: string } | undefined;
+  if (!row) return DEFAULT_ROLES;
+
+  try {
+    const roles = JSON.parse(row.roles) as Role[];
+    return roles.length > 0 ? roles : DEFAULT_ROLES;
+  } catch {
+    return DEFAULT_ROLES;
+  }
+}
+
+/**
+ * Get user roles by email address
+ * Used during login to assign appropriate roles
+ *
+ * @param email - User email
+ * @returns Array of roles
+ */
+export function getUserRolesByEmail(email: string): Role[] {
+  // Super admin gets all roles
+  if (email === SUPER_ADMIN_EMAIL) {
+    return ['STANDARD', 'ADMIN', 'SUPER_ADMIN'];
+  }
+
+  const user = getUserByEmail(email);
+  if (!user) return DEFAULT_ROLES;
+
+  return getUserRoles(user.user_id);
+}
+
+/**
+ * Update user roles
+ *
+ * @param userId - User ID
+ * @param roles - New array of roles
+ * @returns true if updated, false if user not found
+ */
+export function updateUserRoles(userId: string, roles: Role[]): boolean {
+  // Ensure at least STANDARD role
+  const finalRoles = roles.length > 0 ? roles : DEFAULT_ROLES;
+  const result = updateRolesStmt.run(JSON.stringify(finalRoles), userId);
+  return result.changes > 0;
+}
+
+/**
+ * Get user with roles by user ID
+ *
+ * @param userId - User ID
+ * @returns User profile with roles, or null if not found
+ */
+export function getUserWithRoles(userId: string): UserWithRoles | null {
+  const user = getUser(userId);
+  if (!user) return null;
+
+  const roles = getUserRoles(userId);
+  return { ...user, roles };
+}
+
+/**
+ * Get all users with roles (for admin user list)
+ *
+ * @returns Array of all users with their roles
+ */
+export function getAllUsersWithRoles(): UserWithRoles[] {
+  const rows = getAllUsersStmt.all() as any[];
+
+  return rows.map(row => {
+    let roles: Role[] = DEFAULT_ROLES;
+    try {
+      roles = JSON.parse(row.roles || '["STANDARD"]') as Role[];
+    } catch {
+      roles = DEFAULT_ROLES;
+    }
+
+    return {
+      user_id: row.user_id,
+      email: row.email,
+      name: row.name || undefined,
+      picture_url: row.picture_url || undefined,
+      created_at: row.created_at ? new Date(row.created_at) : undefined,
+      updated_at: row.updated_at ? new Date(row.updated_at) : undefined,
+      roles,
+    };
+  });
+}
+
+/**
+ * Ensure super admin has all roles (called during login)
+ * This handles the case where the super admin already exists but doesn't have all roles
+ *
+ * @param email - User email to check
+ */
+export function ensureSuperAdminRoles(email: string): void {
+  if (email !== SUPER_ADMIN_EMAIL) return;
+
+  const user = getUserByEmail(email);
+  if (!user) return;
+
+  const currentRoles = getUserRoles(user.user_id);
+  const hasAllRoles =
+    currentRoles.includes('STANDARD') &&
+    currentRoles.includes('ADMIN') &&
+    currentRoles.includes('SUPER_ADMIN');
+
+  if (!hasAllRoles) {
+    updateUserRoles(user.user_id, ['STANDARD', 'ADMIN', 'SUPER_ADMIN']);
+  }
 }

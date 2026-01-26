@@ -17,9 +17,12 @@ import { metricsRoutes } from './routes/metricsRoutes.js';
 import { childProfileRoutes } from './routes/childProfileRoutes.js';
 import { processingRoutes } from './routes/processingRoutes.js';
 import { actionRoutes } from './routes/actionRoutes.js';
+import { landingRoutes } from './routes/landingRoutes.js';
+import { checkoutRoutes } from './routes/checkoutRoutes.js';
 import dailySummaryPlugin from './plugins/dailySummary.js';
 import metricsPlugin from './plugins/metrics.js';
 import { sessionMiddleware } from './middleware/session.js';
+import { requireAdmin } from './middleware/authorization.js';
 import { fastifyEnvOptions } from './config/env.js';
 
 /**
@@ -49,11 +52,6 @@ export async function buildApp() {
   // Register environment variables plugin (loads .env file)
   await fastify.register(fastifyEnv, fastifyEnvOptions);
 
-  // Health check endpoint
-  fastify.get('/health', async () => {
-    return { status: 'ok', timestamp: new Date().toISOString() };
-  });
-
   // Register cookie plugin (required for sessions)
   if (!process.env.ENCRYPTION_SECRET) {
     throw new Error('ENCRYPTION_SECRET environment variable is required');
@@ -81,11 +79,18 @@ export async function buildApp() {
   // Register session middleware (global - runs on every request)
   fastify.addHook('onRequest', sessionMiddleware);
 
+  // Health check endpoint (ADMIN only)
+  fastify.get('/health', { preHandler: requireAdmin }, async () => {
+    return { status: 'ok', timestamp: new Date().toISOString() };
+  });
+
   // Register plugins
   await fastify.register(metricsPlugin);
   await fastify.register(dailySummaryPlugin);
 
-  // Register routes (auth routes FIRST - they don't require auth)
+  // Register routes (landing and checkout FIRST - public pages)
+  await fastify.register(landingRoutes);
+  await fastify.register(checkoutRoutes);
   await fastify.register(authRoutes);
   await fastify.register(actionRoutes);  // Token-based auth, no session required
   await fastify.register(settingsRoutes);

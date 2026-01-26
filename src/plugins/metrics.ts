@@ -2,6 +2,7 @@
 import type { FastifyInstance } from 'fastify';
 import fp from 'fastify-plugin';
 import { register, collectDefaultMetrics, Gauge, Counter, Histogram } from 'prom-client';
+import { requireAdmin } from '../middleware/authorization.js';
 
 /**
  * Metrics Plugin
@@ -90,8 +91,8 @@ async function metricsPlugin(fastify: FastifyInstance) {
     });
   });
 
-  // Expose metrics endpoint
-  fastify.get('/metrics', async (_request, reply) => {
+  // Expose metrics endpoint (ADMIN only)
+  fastify.get('/metrics', { preHandler: requireAdmin }, async (_request, reply) => {
     reply.header('Content-Type', register.contentType);
     return register.metrics();
   });

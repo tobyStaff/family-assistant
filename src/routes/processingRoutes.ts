@@ -3,7 +3,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { getUserId, getUserAuth } from '../lib/userContext.js';
-import { requireAuth } from '../middleware/session.js';
+import { requireAdmin } from '../middleware/authorization.js';
 import { processEmails, type ProcessingOptions } from '../utils/emailProcessor.js';
 import { getProcessingStats } from '../db/processedEmailsDb.js';
 import { cleanupPastItems } from '../utils/cleanupPastItems.js';
@@ -29,7 +29,7 @@ export async function processingRoutes(fastify: FastifyInstance): Promise<void> 
    */
   fastify.post<{
     Body: z.infer<typeof ProcessEmailsSchema>;
-  }>('/admin/process-emails', { preHandler: requireAuth }, async (request, reply) => {
+  }>('/admin/process-emails', { preHandler: requireAdmin }, async (request, reply) => {
     const bodyResult = ProcessEmailsSchema.safeParse(request.body);
     if (!bodyResult.success) {
       return reply.code(400).send({
@@ -92,7 +92,7 @@ export async function processingRoutes(fastify: FastifyInstance): Promise<void> 
    * POST /admin/cleanup
    * Manually trigger cleanup of past todos and events
    */
-  fastify.post('/admin/cleanup', { preHandler: requireAuth }, async (request, reply) => {
+  fastify.post('/admin/cleanup', { preHandler: requireAdmin }, async (request, reply) => {
     try {
       const userId = getUserId(request);
 
@@ -131,7 +131,7 @@ export async function processingRoutes(fastify: FastifyInstance): Promise<void> 
    * GET /admin/processing-status
    * Get processing status for user
    */
-  fastify.get('/admin/processing-status', { preHandler: requireAuth }, async (request, reply) => {
+  fastify.get('/admin/processing-status', { preHandler: requireAdmin }, async (request, reply) => {
     try {
       const userId = getUserId(request);
       const stats = getProcessingStats(userId);

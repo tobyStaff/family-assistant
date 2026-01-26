@@ -2,6 +2,7 @@
 import type { FastifyInstance } from 'fastify';
 import fp from 'fastify-plugin';
 import fastifyCron from 'fastify-cron';
+import { requireAdmin } from '../middleware/authorization.js';
 import { generatePersonalizedSummary, type PersonalizedSummary, type ChildSummary, type FamilySummary } from '../utils/personalizedSummaryBuilder.js';
 import { renderPersonalizedEmail, type PersonalizedSummaryWithActions, type TodoWithAction, type EventWithAction, type ChildSummaryWithActions, type FamilySummaryWithActions } from '../templates/personalizedEmailTemplate.js';
 import { sendInboxSummary } from '../utils/emailSender.js';
@@ -155,24 +156,25 @@ async function dailySummaryPlugin(fastify: FastifyInstance) {
   await fastify.register(fastifyCron, {
     jobs: [
       {
-        // Cron schedule: Daily at 8:00 AM UTC (can be configured via env)
+        // Cron schedule: Run every hour to check per-user send times
         // Format: second minute hour day-of-month month day-of-week
-        cronTime: process.env.CRON_SCHEDULE || '0 0 8 * * *',
+        cronTime: '0 0 * * * *',  // Every hour at :00
 
         // Job name for logging and manual triggering
         name: 'daily-summary',
 
         // Main cron job function
         onTick: async function () {
-          fastify.log.info('Starting daily summary cron job');
+          const currentHourUtc = new Date().getUTCHours();
+          fastify.log.info({ currentHourUtc }, 'Daily summary check running');
 
           try {
             // Get all users with stored auth
             const userIds = getAllUserIds();
-            fastify.log.info(`Processing daily summaries for ${userIds.length} users`);
 
             let successCount = 0;
             let errorCount = 0;
+            let skippedTimeCount = 0;
 
             // Process each user
             for (const userId of userIds) {
@@ -185,6 +187,15 @@ async function dailySummaryPlugin(fastify: FastifyInstance) {
                   fastify.log.debug({ userId }, 'Skipping user - daily summary disabled in settings');
                   continue;
                 }
+
+                // Check if current hour matches user's configured send time
+                const userSendHour = settings.summary_time_utc ?? 8;
+                if (currentHourUtc !== userSendHour) {
+                  skippedTimeCount++;
+                  continue;  // Not this user's send time
+                }
+
+                fastify.log.info({ userId, userSendHour }, 'Processing daily summary for user (time matched)');
 
                 // Check if there are any recipients configured
                 if (settings.summary_email_recipients.length === 0) {
@@ -271,9 +282,11 @@ async function dailySummaryPlugin(fastify: FastifyInstance) {
 
             fastify.log.info(
               {
+                currentHourUtc,
                 total: userIds.length,
                 success: successCount,
                 errors: errorCount,
+                skippedTime: skippedTimeCount,
               },
               'Daily summary cron job completed'
             );
@@ -581,7 +594,7 @@ async function dailySummaryPlugin(fastify: FastifyInstance) {
   });
 
   // Add route to manually trigger daily summary (for testing)
-  fastify.get('/admin/trigger-daily-summary', async (_request, reply) => {
+  fastify.get('/admin/trigger-daily-summary', { preHandler: requireAdmin }, async (_request, reply) => {
     try {
       fastify.log.info('Manually triggering daily summary job');
 
@@ -609,8 +622,8 @@ async function dailySummaryPlugin(fastify: FastifyInstance) {
     }
   });
 
-  // Add route to manually trigger event sync (for testing)
-  fastify.get('/admin/trigger-event-sync', async (_request, reply) => {
+  // Add route to manually trigger event sync (ADMIN only)
+  fastify.get('/admin/trigger-event-sync', { preHandler: requireAdmin }, async (_request, reply) => {
     try {
       fastify.log.info('Manually triggering event sync job');
 
@@ -639,7 +652,7 @@ async function dailySummaryPlugin(fastify: FastifyInstance) {
   });
 
   // Add route to manually trigger email fetch (for testing)
-  fastify.get('/admin/trigger-email-fetch', async (_request, reply) => {
+  fastify.get('/admin/trigger-email-fetch', { preHandler: requireAdmin }, async (_request, reply) => {
     try {
       fastify.log.info('Manually triggering email fetch job');
 
@@ -668,7 +681,7 @@ async function dailySummaryPlugin(fastify: FastifyInstance) {
   });
 
   // Add route to manually trigger email analysis (for testing)
-  fastify.get('/admin/trigger-email-analysis', async (_request, reply) => {
+  fastify.get('/admin/trigger-email-analysis', { preHandler: requireAdmin }, async (_request, reply) => {
     try {
       fastify.log.info('Manually triggering email analysis job');
 
@@ -698,8 +711,7 @@ async function dailySummaryPlugin(fastify: FastifyInstance) {
 
   fastify.log.info(
     {
-      schedule: process.env.CRON_SCHEDULE || '0 0 8 * * *',
-      timezone: process.env.TZ || 'UTC',
+      schedule: 'Every hour at :00 (checks per-user summary_time_utc setting)',
     },
     'Daily summary cron job registered'
   );

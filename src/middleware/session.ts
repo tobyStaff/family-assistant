@@ -1,10 +1,14 @@
 // src/middleware/session.ts
 import type { FastifyRequest, FastifyReply } from 'fastify';
 import { getSession } from '../db/sessionDb.js';
+import { getUserRoles, getUser } from '../db/userDb.js';
+import type { Role } from '../types/roles.js';
 
 /**
- * Session middleware - extracts user ID from session cookie
+ * Session middleware - extracts user ID and roles from session cookie
  * Runs on every request to attach user context
+ *
+ * Also handles impersonation for SUPER_ADMIN users
  *
  * @param request - Fastify request
  * @param reply - Fastify reply
@@ -26,6 +30,24 @@ export async function sessionMiddleware(
       if (session) {
         // Attach user_id to request for route handlers
         (request as any).userId = session.user_id;
+
+        // Fetch and attach user roles
+        const roles = getUserRoles(session.user_id);
+        (request as any).userRoles = roles;
+
+        // Check for impersonation cookie (SUPER_ADMIN only)
+        const impersonateCookie = (request as any).cookies?.impersonate_user_id;
+        if (impersonateCookie && roles.includes('SUPER_ADMIN')) {
+          const impersonateResult = (request as any).unsignCookie(impersonateCookie);
+          if (impersonateResult.valid && impersonateResult.value) {
+            const impersonatedUserId = impersonateResult.value;
+            // Verify the impersonated user exists
+            const impersonatedUser = getUser(impersonatedUserId);
+            if (impersonatedUser) {
+              (request as any).impersonatingUserId = impersonatedUserId;
+            }
+          }
+        }
       }
     }
   }

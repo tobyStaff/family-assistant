@@ -769,7 +769,7 @@ export function renderPersonalizedEmail(summary: PersonalizedSummaryWithActions)
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Family Briefing</title>
   <style>
-    * { box-sizing: border-box; }
+    /* Email-safe CSS - avoid flexbox, grid, gradients for Outlook compatibility */
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
       line-height: 1.6;
@@ -784,12 +784,7 @@ export function renderPersonalizedEmail(summary: PersonalizedSummaryWithActions)
       margin: 0 auto;
       background-color: #ffffff;
       border-radius: 12px;
-      box-shadow: 0 2px 16px rgba(0, 0, 0, 0.08);
       padding: 32px 40px;
-    }
-    @media (max-width: 640px) {
-      body { padding: 8px; }
-      .container { padding: 20px 16px; border-radius: 8px; }
     }
 
     /* Header */
@@ -820,29 +815,32 @@ export function renderPersonalizedEmail(summary: PersonalizedSummaryWithActions)
       font-style: italic;
     }
 
-    /* Highlight Banner */
+    /* Highlight Banner - using solid color for email compatibility */
     .highlight-banner {
-      background: linear-gradient(135deg, #fff9c4 0%, #fff59d 100%);
+      background-color: #fff9c4;
       border: 2px solid #ffd54f;
       border-radius: 12px;
       padding: 20px 24px;
       margin-bottom: 28px;
     }
     .highlight-header {
-      display: flex;
-      align-items: center;
+      display: block;
       margin-bottom: 12px;
     }
     .highlight-icon {
+      display: inline-block;
       font-size: 24px;
       margin-right: 10px;
+      vertical-align: middle;
     }
     .highlight-title {
+      display: inline-block;
       font-size: 14px;
       font-weight: 700;
       color: #f57f17;
       text-transform: uppercase;
       letter-spacing: 0.5px;
+      vertical-align: middle;
     }
     .highlight-content {
       font-size: 18px;
@@ -883,10 +881,10 @@ export function renderPersonalizedEmail(summary: PersonalizedSummaryWithActions)
       letter-spacing: 0.3px;
     }
     .section-count {
+      display: inline-block;
       font-size: 12px;
       color: #888;
-      float: right;
-      margin-top: 4px;
+      margin-left: 10px;
     }
     .items-list {
       display: block;
@@ -902,12 +900,8 @@ export function renderPersonalizedEmail(summary: PersonalizedSummaryWithActions)
       margin-bottom: 12px;
     }
     .todo-header {
+      display: block;
       margin-bottom: 8px;
-    }
-    .todo-header::after {
-      content: "";
-      display: table;
-      clear: both;
     }
     .todo-type {
       display: inline-block;
@@ -1015,16 +1009,9 @@ export function renderPersonalizedEmail(summary: PersonalizedSummaryWithActions)
       font-size: 14px;
     }
 
-    /* Items grid for evening reminders (smaller cards) */
+    /* Items grid for evening reminders - using block display for email compatibility */
     .items-grid {
-      display: grid;
-      grid-template-columns: repeat(2, 1fr);
-      gap: 10px;
-    }
-    @media (max-width: 500px) {
-      .items-grid {
-        grid-template-columns: 1fr;
-      }
+      display: block;
     }
 
     .child-badge {
@@ -1037,14 +1024,10 @@ export function renderPersonalizedEmail(summary: PersonalizedSummaryWithActions)
       font-size: 11px;
     }
 
-    /* Buttons - ensure white text in all states */
-    .action-button,
-    .action-button:link,
-    .action-button:visited,
-    .action-button:hover,
-    .action-button:active {
+    /* Buttons - email-safe styles (no :hover for email compatibility) */
+    .action-button {
       display: inline-block;
-      background: #43a047;
+      background-color: #43a047;
       color: #ffffff !important;
       padding: 8px 16px;
       border-radius: 6px;
@@ -1052,15 +1035,10 @@ export function renderPersonalizedEmail(summary: PersonalizedSummaryWithActions)
       font-weight: 600;
       font-size: 13px;
     }
-    .action-button:hover { background: #388e3c; }
 
-    .complete-button,
-    .complete-button:link,
-    .complete-button:visited,
-    .complete-button:hover,
-    .complete-button:active {
+    .complete-button {
       display: inline-block;
-      background: #667eea;
+      background-color: #667eea;
       color: #ffffff !important;
       padding: 8px 16px;
       border-radius: 6px;
@@ -1068,21 +1046,15 @@ export function renderPersonalizedEmail(summary: PersonalizedSummaryWithActions)
       font-weight: 600;
       font-size: 13px;
     }
-    .complete-button:hover { background: #5a6fd6; }
 
     .complete-button-small {
       padding: 5px 12px;
       font-size: 12px;
     }
 
-    .remove-button,
-    .remove-button:link,
-    .remove-button:visited,
-    .remove-button:hover,
-    .remove-button:active {
+    .remove-button {
       display: inline-block;
-      float: right;
-      background: #ef5350;
+      background-color: #ef5350;
       color: #ffffff !important;
       padding: 5px 12px;
       border-radius: 5px;
@@ -1090,7 +1062,6 @@ export function renderPersonalizedEmail(summary: PersonalizedSummaryWithActions)
       font-weight: 500;
       font-size: 12px;
     }
-    .remove-button:hover { background: #e53935; }
 
     .remove-button-small {
       padding: 4px 10px;
@@ -1120,28 +1091,26 @@ export function renderPersonalizedEmail(summary: PersonalizedSummaryWithActions)
       padding-bottom: 12px;
     }
     .diary-list {
-      display: flex;
-      flex-direction: column;
+      display: block;
     }
     .diary-row {
-      display: flex;
-      align-items: baseline;
-      padding: 10px 0;
+      display: block;
+      padding: 12px 0;
       border-bottom: 1px solid #e8e8e8;
     }
-    .diary-row:last-child {
-      border-bottom: none;
-    }
     .diary-date {
+      display: block;
       font-weight: 600;
       color: #333;
-      min-width: 100px;
       font-size: 14px;
+      margin-bottom: 4px;
     }
     .diary-event {
+      display: block;
       color: #555;
       font-size: 14px;
       line-height: 1.4;
+      padding-left: 12px;
     }
     .diary-child {
       color: #1976d2;

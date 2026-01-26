@@ -9,8 +9,11 @@ import { decrypt, encrypt } from './crypto.js';
  * Extract user ID from authenticated request
  * Requires session middleware to have run first
  *
+ * If impersonation is active (SUPER_ADMIN viewing as another user),
+ * returns the impersonated user's ID instead.
+ *
  * @param request - Fastify request
- * @returns User ID
+ * @returns User ID (or impersonated user ID if active)
  * @throws Error if not authenticated
  */
 export function getUserId(request: FastifyRequest): string {
@@ -20,7 +23,41 @@ export function getUserId(request: FastifyRequest): string {
     throw new Error('User not authenticated - missing session');
   }
 
+  // If impersonating another user, return their ID instead
+  const impersonatingUserId = (request as any).impersonatingUserId;
+  if (impersonatingUserId) {
+    return impersonatingUserId;
+  }
+
   return userId;
+}
+
+/**
+ * Get the real user ID (ignores impersonation)
+ * Use this when you need the actual logged-in admin's ID
+ *
+ * @param request - Fastify request
+ * @returns Real user ID (never impersonated)
+ * @throws Error if not authenticated
+ */
+export function getRealUserId(request: FastifyRequest): string {
+  const userId = (request as any).userId;
+
+  if (!userId) {
+    throw new Error('User not authenticated - missing session');
+  }
+
+  return userId;
+}
+
+/**
+ * Check if current request is in impersonation mode
+ *
+ * @param request - Fastify request
+ * @returns True if impersonating another user
+ */
+export function isImpersonating(request: FastifyRequest): boolean {
+  return !!(request as any).impersonatingUserId;
 }
 
 /**

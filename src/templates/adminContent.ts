@@ -1,0 +1,249 @@
+// src/templates/adminContent.ts
+import type { Role } from '../types/roles.js';
+
+interface UserWithRoles {
+  user_id: string;
+  email: string;
+  name?: string;
+  roles: Role[];
+}
+
+export interface AdminContentOptions {
+  userEmail: string;
+  userRoles: Role[];
+  isSuperAdmin: boolean;
+  impersonatedUser: { email: string } | null;
+  allUsers: UserWithRoles[];
+  impersonatingUserId: string | null;
+}
+
+/**
+ * Generate the admin dashboard content HTML (without layout wrapper)
+ */
+export function renderAdminContent(options: AdminContentOptions): string {
+  const { userEmail, userRoles, isSuperAdmin, impersonatedUser, allUsers, impersonatingUserId } = options;
+
+  return `
+    <style>
+      .admin-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+        gap: 20px;
+      }
+
+      .tools-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+        gap: 15px;
+      }
+
+      .tool-link {
+        display: block;
+        padding: 20px;
+        background: #f8f9fa;
+        border-radius: 8px;
+        color: #333;
+        text-decoration: none;
+        transition: all 0.2s;
+        border: 1px solid #e0e0e0;
+      }
+
+      .tool-link:hover {
+        background: #e9ecef;
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+      }
+
+      .tool-link h3 {
+        font-size: 16px;
+        margin-bottom: 8px;
+        color: #333;
+      }
+
+      .tool-link p {
+        font-size: 13px;
+        color: #666;
+        margin: 0;
+      }
+
+      .user-select {
+        width: 100%;
+        padding: 12px;
+        border-radius: 8px;
+        border: 1px solid #ddd;
+        background: white;
+        font-size: 14px;
+        margin-bottom: 15px;
+      }
+
+      .user-list {
+        max-height: 400px;
+        overflow-y: auto;
+      }
+
+      .user-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 12px;
+        border-bottom: 1px solid #e0e0e0;
+        background: #f8f9fa;
+        border-radius: 6px;
+        margin-bottom: 8px;
+      }
+
+      .user-item:last-child {
+        margin-bottom: 0;
+      }
+
+      .user-email {
+        font-size: 14px;
+        font-weight: 500;
+        color: #333;
+      }
+
+      .user-roles {
+        font-size: 12px;
+        color: #666;
+        margin-top: 4px;
+      }
+
+      .role-badge-small {
+        display: inline-block;
+        padding: 2px 8px;
+        border-radius: 10px;
+        font-size: 10px;
+        font-weight: 600;
+        margin-left: 4px;
+      }
+
+      .role-super { background: var(--danger-color); color: white; }
+      .role-admin { background: #f59e0b; color: white; }
+      .role-standard { background: #6c757d; color: white; }
+
+      .impersonate-info {
+        background: #fff3cd;
+        border: 1px solid #ffc107;
+        color: #856404;
+        padding: 12px;
+        border-radius: 8px;
+        margin-bottom: 15px;
+        font-size: 14px;
+      }
+
+      .section-description {
+        color: #666;
+        font-size: 14px;
+        margin-bottom: 15px;
+      }
+    </style>
+
+    <div class="admin-grid">
+      <!-- Admin Tools -->
+      <div class="card">
+        <div class="card-header">
+          <h3 class="card-title">🔧 Admin Tools</h3>
+        </div>
+        <div class="tools-grid">
+          <a href="#" class="tool-link" onclick="event.preventDefault(); submitPost('/admin/preview-personalized-summary')">
+            <h3>👁️ Preview Summary</h3>
+            <p>Preview the personalized daily summary email</p>
+          </a>
+          <a href="/admin/inbox-stats" class="tool-link">
+            <h3>📊 Inbox Stats</h3>
+            <p>View inbox statistics and email counts</p>
+          </a>
+          <a href="/admin/check-scopes" class="tool-link">
+            <h3>🔑 Check OAuth Scopes</h3>
+            <p>Verify current OAuth token permissions</p>
+          </a>
+          <a href="/emails-view" class="tool-link">
+            <h3>📧 Stored Emails</h3>
+            <p>View and manage stored emails</p>
+          </a>
+          <a href="/analyses-view" class="tool-link">
+            <h3>🔍 Email Analyses</h3>
+            <p>View AI analysis results</p>
+          </a>
+          <a href="/metrics/dashboard" class="tool-link">
+            <h3>📈 AI Metrics</h3>
+            <p>View AI performance metrics</p>
+          </a>
+        </div>
+      </div>
+
+      ${isSuperAdmin ? `
+      <!-- User Impersonation -->
+      <div class="card">
+        <div class="card-header">
+          <h3 class="card-title">👁️ User Impersonation</h3>
+        </div>
+        <p class="section-description">
+          View the app as another user to debug issues. This does not affect the user's data.
+        </p>
+        ${impersonatedUser ? `
+          <div class="impersonate-info">
+            Currently viewing as: <strong>${impersonatedUser.email}</strong>
+          </div>
+        ` : ''}
+        <form action="/admin/impersonate" method="POST">
+          <select name="targetUserId" class="user-select" required>
+            <option value="">Select a user to impersonate...</option>
+            ${allUsers.map(u => `
+              <option value="${u.user_id}" ${u.user_id === impersonatingUserId ? 'selected' : ''}>
+                ${u.email} (${u.roles.join(', ')})
+              </option>
+            `).join('')}
+          </select>
+          <div style="display: flex; gap: 10px;">
+            <button type="submit" class="btn btn-primary">Start Impersonation</button>
+            ${impersonatedUser ? `
+              <form action="/admin/stop-impersonation" method="POST" style="display: inline;">
+                <button type="submit" class="btn btn-danger">Stop Impersonating</button>
+              </form>
+            ` : ''}
+          </div>
+        </form>
+      </div>
+
+      <!-- All Users -->
+      <div class="card">
+        <div class="card-header">
+          <h3 class="card-title">👥 All Users (${allUsers.length})</h3>
+        </div>
+        <div class="user-list">
+          ${allUsers.map(u => `
+            <div class="user-item">
+              <div>
+                <div class="user-email">${u.email}</div>
+                <div class="user-roles">
+                  ${u.roles.map(role => `
+                    <span class="role-badge-small role-${role.toLowerCase()}">${role}</span>
+                  `).join('')}
+                </div>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+      ` : ''}
+    </div>
+  `;
+}
+
+/**
+ * Generate the admin dashboard JavaScript
+ */
+export function renderAdminScripts(): string {
+  return `
+    <script>
+      function submitPost(url) {
+        const form = document.createElement('form');
+        form.method = 'POST';
+        form.action = url;
+        document.body.appendChild(form);
+        form.submit();
+      }
+    </script>
+  `;
+}

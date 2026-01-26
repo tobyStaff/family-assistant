@@ -540,6 +540,31 @@ function runMigrations() {
 
     console.log('Migration 6 completed');
   }
+
+  // Migration 7: Add roles column to users table for RBAC
+  if (version < 7) {
+    console.log('Running migration 7: Adding roles column to users table');
+
+    db.transaction(() => {
+      // Add roles column - JSON array of role strings, defaults to ["STANDARD"]
+      db.exec(`ALTER TABLE users ADD COLUMN roles TEXT DEFAULT '["STANDARD"]';`);
+
+      // Grant all roles to super admin email
+      db.prepare(`
+        UPDATE users
+        SET roles = '["STANDARD", "ADMIN", "SUPER_ADMIN"]'
+        WHERE email = ?
+      `).run('tobystafford.assistant@gmail.com');
+
+      // Record migration
+      db.prepare('INSERT INTO schema_version (version, description) VALUES (?, ?)').run(
+        7,
+        'Add roles column to users table for role-based access control (RBAC)'
+      );
+    })();
+
+    console.log('Migration 7 completed');
+  }
 }
 
 // Run migrations after initial table creation

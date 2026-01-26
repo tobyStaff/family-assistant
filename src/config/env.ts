@@ -1,4 +1,36 @@
 import { z } from 'zod';
+import { config } from 'dotenv';
+import { existsSync } from 'fs';
+import { join } from 'path';
+
+/**
+ * Load environment variables from the appropriate .env file based on NODE_ENV.
+ * Priority: .env.{NODE_ENV} > .env.local > .env
+ */
+function loadEnvFile(): void {
+  const nodeEnv = process.env.NODE_ENV || 'development';
+  const cwd = process.cwd();
+
+  // List of env files to try, in order of priority
+  const envFiles = [
+    `.env.${nodeEnv}.local`,  // .env.production.local or .env.development.local (highest priority, gitignored)
+    `.env.${nodeEnv}`,         // .env.production or .env.development
+    '.env.local',              // Local overrides (gitignored)
+    '.env',                    // Default fallback
+  ];
+
+  // Load each file that exists (later files don't override earlier ones due to dotenv behavior)
+  // We load in reverse order so higher priority files take precedence
+  for (const file of [...envFiles].reverse()) {
+    const filePath = join(cwd, file);
+    if (existsSync(filePath)) {
+      config({ path: filePath });
+    }
+  }
+}
+
+// Load env files before schema validation
+loadEnvFile();
 
 /**
  * Environment variable schema using Zod.
@@ -83,6 +115,6 @@ export const fastifyEnvOptions = {
       },
     },
   } as const,
-  dotenv: true,
+  dotenv: false,  // We handle env file loading ourselves for multi-env support
   data: process.env,
 };

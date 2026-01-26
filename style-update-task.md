@@ -1,0 +1,2 @@
+ I like the calm style of the homepage, it would be good to make use of this styling in the html           
+  email. Make a plan to update the email styles using the same design elements as the landing page.

@@ -2,7 +2,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { getUserId, getUserAuth } from '../lib/userContext.js';
-import { requireAuth } from '../middleware/session.js';
+import { requireAdmin, requireSuperAdmin, isRequestUserSuperAdmin, getEffectiveUserId, isImpersonating } from '../middleware/authorization.js';
 import { fetchRecentEmails, fetchRecentEmailsWithBody } from '../utils/inboxFetcher.js';
 import { prepareEmailsForAI, sanitizeEmails } from '../utils/emailPreprocessor.js';
 import type { DateRange } from '../utils/inboxFetcher.js';
@@ -12,6 +12,10 @@ import { generateInboxSummary } from '../utils/summaryQueries.js';
 import { sendInboxSummary } from '../utils/emailSender.js';
 import { getOrCreateDefaultSettings } from '../db/settingsDb.js';
 import { saveSummary } from '../db/summaryDb.js';
+import { getAllUsersWithRoles, getUser, getUserWithRoles } from '../db/userDb.js';
+import type { Role } from '../types/roles.js';
+import { renderLayout } from '../templates/layout.js';
+import { renderAdminContent, renderAdminScripts } from '../templates/adminContent.js';
 
 /**
  * Zod schema for test endpoint
@@ -46,7 +50,7 @@ export async function adminRoutes(fastify: FastifyInstance): Promise<void> {
    */
   fastify.post<{
     Body: z.infer<typeof TestFetchSchema>;
-  }>('/admin/test-fetch-emails', { preHandler: requireAuth }, async (request, reply) => {
+  }>('/admin/test-fetch-emails', { preHandler: requireAdmin }, async (request, reply) => {
     // Validate body
     const bodyResult = TestFetchSchema.safeParse(request.body);
     if (!bodyResult.success) {
@@ -133,7 +137,7 @@ export async function adminRoutes(fastify: FastifyInstance): Promise<void> {
    * GET /admin/inbox-stats
    * Get quick stats about inbox
    */
-  fastify.get('/admin/inbox-stats', { preHandler: requireAuth }, async (request, reply) => {
+  fastify.get('/admin/inbox-stats', { preHandler: requireAdmin }, async (request, reply) => {
     try {
       const auth = await getUserAuth(request);
 
@@ -173,7 +177,7 @@ export async function adminRoutes(fastify: FastifyInstance): Promise<void> {
    */
   fastify.post<{
     Body: z.infer<typeof TestFetchSchema>;
-  }>('/admin/preview-email-summary', { preHandler: requireAuth }, async (request, reply) => {
+  }>('/admin/preview-email-summary', { preHandler: requireAdmin }, async (request, reply) => {
     // Validate body
     const bodyResult = TestFetchSchema.safeParse(request.body);
     if (!bodyResult.success) {
@@ -314,7 +318,7 @@ export async function adminRoutes(fastify: FastifyInstance): Promise<void> {
    * GET /admin/check-scopes
    * Check what OAuth scopes the current token has
    */
-  fastify.get('/admin/check-scopes', { preHandler: requireAuth }, async (request, reply) => {
+  fastify.get('/admin/check-scopes', { preHandler: requireAdmin }, async (request, reply) => {
     try {
       const auth = await getUserAuth(request);
       const tokenInfo = await auth.getTokenInfo(auth.credentials.access_token!);
@@ -338,7 +342,7 @@ export async function adminRoutes(fastify: FastifyInstance): Promise<void> {
    * POST /admin/test-gmail-send
    * Test Gmail send capability using the same code path as production
    */
-  fastify.post('/admin/test-gmail-send', { preHandler: requireAuth }, async (request, reply) => {
+  fastify.post('/admin/test-gmail-send', { preHandler: requireAdmin }, async (request, reply) => {
     try {
       const userId = getUserId(request);
       const auth = await getUserAuth(request);
@@ -434,7 +438,7 @@ export async function adminRoutes(fastify: FastifyInstance): Promise<void> {
    */
   fastify.post<{
     Body: z.infer<typeof SendSummarySchema>;
-  }>('/admin/send-daily-summary', { preHandler: requireAuth }, async (request, reply) => {
+  }>('/admin/send-daily-summary', { preHandler: requireAdmin }, async (request, reply) => {
     // Validate body
     const bodyResult = SendSummarySchema.safeParse(request.body);
     if (!bodyResult.success) {
@@ -609,7 +613,7 @@ export async function adminRoutes(fastify: FastifyInstance): Promise<void> {
    */
   fastify.post<{
     Body: z.infer<typeof SendSummarySchema>;
-  }>('/admin/view-raw-emails', { preHandler: requireAuth }, async (request, reply) => {
+  }>('/admin/view-raw-emails', { preHandler: requireAdmin }, async (request, reply) => {
     // Validate body
     const bodyResult = SendSummarySchema.safeParse(request.body);
     if (!bodyResult.success) {
@@ -703,7 +707,7 @@ export async function adminRoutes(fastify: FastifyInstance): Promise<void> {
    * POST /admin/preview-personalized-summary
    * Preview the new personalized summary (Phase 4 - uses stored events/todos)
    */
-  fastify.post('/admin/preview-personalized-summary', { preHandler: requireAuth }, async (request, reply) => {
+  fastify.post('/admin/preview-personalized-summary', { preHandler: requireAdmin }, async (request, reply) => {
     try {
       const userId = getUserId(request);
       const auth = await getUserAuth(request);
@@ -823,7 +827,7 @@ export async function adminRoutes(fastify: FastifyInstance): Promise<void> {
       dateRange?: string;
       maxResults?: number;
     };
-  }>('/admin/raw-emails', { preHandler: requireAuth }, async (request, reply) => {
+  }>('/admin/raw-emails', { preHandler: requireAdmin }, async (request, reply) => {
     try {
       const userId = getUserId(request);
       const auth = await getUserAuth(request);
@@ -858,5 +862,139 @@ export async function adminRoutes(fastify: FastifyInstance): Promise<void> {
         error: error.message || 'Failed to fetch emails',
       });
     }
+  });
+
+  // ============================================
+  // ADMIN DASHBOARD & USER MANAGEMENT
+  // ============================================
+
+  /**
+   * GET /admin
+   * Admin dashboard - shows admin tools and user list (for super admin)
+   */
+  fastify.get('/admin', { preHandler: requireAdmin }, async (request, reply) => {
+    const userId = (request as any).userId;
+    const userRoles = (request as any).userRoles as Role[];
+    const user = getUser(userId);
+    const isSuperAdmin = userRoles.includes('SUPER_ADMIN');
+    const impersonatingUserId = (request as any).impersonatingUserId;
+
+    // Get all users for super admin dropdown
+    const allUsers = isSuperAdmin ? getAllUsersWithRoles() : [];
+
+    // Get impersonated user info if active
+    let impersonatedUser = null;
+    if (impersonatingUserId) {
+      impersonatedUser = getUser(impersonatingUserId);
+    }
+
+    // Generate content
+    const content = renderAdminContent({
+      userEmail: user?.email || 'Unknown',
+      userRoles,
+      isSuperAdmin,
+      impersonatedUser: impersonatedUser ? { email: impersonatedUser.email } : null,
+      allUsers,
+      impersonatingUserId,
+    });
+
+    const scripts = renderAdminScripts();
+
+    // Render with layout
+    const html = renderLayout({
+      title: 'Admin Dashboard',
+      currentPath: '/admin',
+      user: {
+        name: user?.name,
+        email: user?.email || 'Unknown',
+        picture_url: user?.picture_url,
+      },
+      userRoles,
+      impersonating: impersonatedUser ? {
+        email: impersonatedUser.email,
+        name: impersonatedUser.name,
+      } : null,
+      content,
+      scripts,
+    });
+
+    return reply.type('text/html').send(html);
+  });
+
+  /**
+   * POST /admin/impersonate
+   * Start impersonating another user (SUPER_ADMIN only)
+   */
+  fastify.post<{
+    Body: { targetUserId: string };
+  }>('/admin/impersonate', { preHandler: requireSuperAdmin }, async (request, reply) => {
+    const targetUserId = request.body?.targetUserId;
+
+    if (!targetUserId) {
+      return reply.code(400).send({
+        error: 'Missing targetUserId',
+      });
+    }
+
+    // Verify target user exists
+    const targetUser = getUser(targetUserId);
+    if (!targetUser) {
+      return reply.code(404).send({
+        error: 'User not found',
+      });
+    }
+
+    // Set impersonation cookie
+    reply.setCookie('impersonate_user_id', targetUserId, {
+      path: '/',
+      signed: true,
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 60 * 60, // 1 hour
+    });
+
+    fastify.log.info(
+      { adminUserId: (request as any).userId, targetUserId, targetEmail: targetUser.email },
+      'Super admin started impersonation'
+    );
+
+    return reply.redirect('/admin');
+  });
+
+  /**
+   * POST /admin/stop-impersonation
+   * Stop impersonating and return to own account
+   */
+  fastify.post('/admin/stop-impersonation', { preHandler: requireSuperAdmin }, async (request, reply) => {
+    // Clear impersonation cookie
+    reply.clearCookie('impersonate_user_id', { path: '/' });
+
+    fastify.log.info(
+      { adminUserId: (request as any).userId },
+      'Super admin stopped impersonation'
+    );
+
+    return reply.redirect('/admin');
+  });
+
+  /**
+   * GET /admin/users
+   * Get all users (SUPER_ADMIN only, JSON API)
+   */
+  fastify.get('/admin/users', { preHandler: requireSuperAdmin }, async (request, reply) => {
+    const users = getAllUsersWithRoles();
+
+    return reply.code(200).send({
+      success: true,
+      users: users.map(u => ({
+        user_id: u.user_id,
+        email: u.email,
+        name: u.name,
+        roles: u.roles,
+        created_at: u.created_at,
+      })),
+      count: users.length,
+    });
   });
 }
