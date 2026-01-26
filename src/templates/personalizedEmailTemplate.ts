@@ -770,13 +770,16 @@ export function renderPersonalizedEmail(summary: PersonalizedSummaryWithActions)
   <title>Family Briefing</title>
   <style>
     /* Email-safe CSS - avoid flexbox, grid, gradients for Outlook compatibility */
+    * {
+      box-sizing: border-box;
+    }
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
       line-height: 1.6;
       color: #333;
       background-color: #f0f2f5;
       margin: 0;
-      padding: 16px;
+      padding: 8px;
     }
     .container {
       max-width: 700px;
@@ -784,7 +787,17 @@ export function renderPersonalizedEmail(summary: PersonalizedSummaryWithActions)
       margin: 0 auto;
       background-color: #ffffff;
       border-radius: 12px;
-      padding: 32px 40px;
+      padding: 24px 16px;
+    }
+    @media screen and (min-width: 480px) {
+      body { padding: 16px; }
+      .container { padding: 32px 40px; }
+    }
+
+    /* Prevent long text from causing overflow */
+    .todo-description, .event-title, .event-description, .highlight-content, .diary-event {
+      word-wrap: break-word;
+      overflow-wrap: break-word;
     }
 
     /* Header */
@@ -820,8 +833,11 @@ export function renderPersonalizedEmail(summary: PersonalizedSummaryWithActions)
       background-color: #fff9c4;
       border: 2px solid #ffd54f;
       border-radius: 12px;
-      padding: 20px 24px;
+      padding: 16px;
       margin-bottom: 28px;
+    }
+    @media screen and (min-width: 480px) {
+      .highlight-banner { padding: 20px 24px; }
     }
     .highlight-header {
       display: block;
@@ -893,11 +909,14 @@ export function renderPersonalizedEmail(summary: PersonalizedSummaryWithActions)
     /* Todo items - Large (default) */
     .todo-item {
       display: block;
-      padding: 20px 24px;
+      padding: 16px;
       background: #fafafa;
       border-radius: 10px;
       border-left: 4px solid #667eea;
       margin-bottom: 12px;
+    }
+    @media screen and (min-width: 480px) {
+      .todo-item { padding: 20px 24px; }
     }
     .todo-header {
       display: block;
@@ -966,11 +985,14 @@ export function renderPersonalizedEmail(summary: PersonalizedSummaryWithActions)
     /* Event items - Large (default) */
     .event-item {
       display: block;
-      padding: 20px 24px;
+      padding: 16px;
       background: #f0f7ff;
       border-radius: 10px;
       border-left: 4px solid #2196f3;
       margin-bottom: 12px;
+    }
+    @media screen and (min-width: 480px) {
+      .event-item { padding: 20px 24px; }
     }
     .event-header {
       margin-bottom: 6px;
@@ -1083,8 +1105,11 @@ export function renderPersonalizedEmail(summary: PersonalizedSummaryWithActions)
     /* Diary section */
     .diary-section {
       background: #f8f9fa;
-      padding: 20px 24px;
+      padding: 16px;
       border-radius: 10px;
+    }
+    @media screen and (min-width: 480px) {
+      .diary-section { padding: 20px 24px; }
     }
     .diary-section .section-header {
       border-bottom: none;

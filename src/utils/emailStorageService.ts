@@ -217,6 +217,12 @@ export async function fetchAndStoreEmails(
         // Fetch full email content
         const emailContent = await fetchEmailContent(auth, messageId);
 
+        // Check if attachment extraction failed (look for failure markers)
+        const attachmentExtractionFailed = emailContent.attachmentContent
+          ? /\[(?:PDF|DOCX|Text file) content - extraction failed/.test(emailContent.attachmentContent) ||
+            /- download failed:/.test(emailContent.attachmentContent)
+          : false;
+
         // Store in database
         const emailInput: CreateEmailInput = {
           gmail_message_id: emailContent.gmailMessageId,
@@ -230,6 +236,7 @@ export async function fetchAndStoreEmails(
           labels: emailContent.labels,
           has_attachments: emailContent.hasAttachments,
           attachment_content: emailContent.attachmentContent,
+          attachment_extraction_failed: attachmentExtractionFailed,
         };
 
         const emailId = createEmail(userId, emailInput);

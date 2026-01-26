@@ -565,6 +565,27 @@ function runMigrations() {
 
     console.log('Migration 7 completed');
   }
+
+  // Migration 8: Add attachment_extraction_failed column to emails table
+  if (version < 8) {
+    console.log('Running migration 8: Adding attachment_extraction_failed column to emails table');
+
+    db.transaction(() => {
+      // Add column to track attachment extraction failures
+      db.exec(`ALTER TABLE emails ADD COLUMN attachment_extraction_failed BOOLEAN DEFAULT 0;`);
+
+      // Create index for filtering failed extractions
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_emails_attachment_failed ON emails(attachment_extraction_failed);`);
+
+      // Record migration
+      db.prepare('INSERT INTO schema_version (version, description) VALUES (?, ?)').run(
+        8,
+        'Add attachment_extraction_failed column to emails table for tracking PDF/attachment failures'
+      );
+    })();
+
+    console.log('Migration 8 completed');
+  }
 }
 
 // Run migrations after initial table creation

@@ -19,6 +19,7 @@ export interface StoredEmail {
   labels?: string[]; // Parsed from JSON
   has_attachments: boolean;
   attachment_content?: string;
+  attachment_extraction_failed: boolean;
   processed: boolean;
   analyzed: boolean;
   gmail_labeled: boolean;
@@ -43,6 +44,7 @@ export interface CreateEmailInput {
   labels?: string[];
   has_attachments?: boolean;
   attachment_content?: string;
+  attachment_extraction_failed?: boolean;
 }
 
 /**
@@ -54,9 +56,9 @@ const insertStmt = db.prepare(`
     user_id, gmail_message_id, gmail_thread_id,
     from_email, from_name, subject, date,
     body_text, snippet, labels,
-    has_attachments, attachment_content,
+    has_attachments, attachment_content, attachment_extraction_failed,
     processed, analyzed, gmail_labeled
-  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0)
+  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0)
 `);
 
 const getByIdStmt = db.prepare(`
@@ -150,6 +152,7 @@ function parseEmailRow(row: any): StoredEmail {
     labels: row.labels ? JSON.parse(row.labels) : undefined,
     has_attachments: Boolean(row.has_attachments),
     attachment_content: row.attachment_content || undefined,
+    attachment_extraction_failed: Boolean(row.attachment_extraction_failed),
     processed: Boolean(row.processed),
     analyzed: Boolean(row.analyzed),
     gmail_labeled: Boolean(row.gmail_labeled),
@@ -180,7 +183,8 @@ export function createEmail(userId: string, emailData: CreateEmailInput): number
     emailData.snippet || null,
     emailData.labels ? JSON.stringify(emailData.labels) : null,
     emailData.has_attachments ? 1 : 0,
-    emailData.attachment_content || null
+    emailData.attachment_content || null,
+    emailData.attachment_extraction_failed ? 1 : 0
   );
 
   return result.lastInsertRowid as number;

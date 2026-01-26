@@ -23,10 +23,8 @@ export async function metricsRoutes(fastify: FastifyInstance) {
       const realUserId = (request as any).userId;
       const userRoles = (request as any).userRoles as Role[] || ['STANDARD'];
 
-      // Check for impersonation
-      const impersonatingUserId = request.cookies.impersonating_user_id
-        ? fastify.unsignCookie(request.cookies.impersonating_user_id).value
-        : null;
+      // Check for impersonation (already parsed by session middleware)
+      const impersonatingUserId = (request as any).impersonatingUserId;
 
       const effectiveUserId = impersonatingUserId || realUserId;
       const effectiveUser = impersonatingUserId ? getUser(impersonatingUserId) : null;

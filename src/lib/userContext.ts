@@ -69,7 +69,9 @@ export function isImpersonating(request: FastifyRequest): boolean {
  * @throws Error if not authenticated or auth not found
  */
 export async function getUserAuth(request: FastifyRequest): Promise<OAuth2Client> {
-  const userId = getUserId(request);
+  // Always use real user's OAuth tokens (not impersonated user)
+  // The impersonated user doesn't have Gmail permissions - only the logged-in admin does
+  const userId = getRealUserId(request);
 
   // Fetch encrypted tokens from database
   const authEntry = getAuth(userId);

@@ -421,13 +421,17 @@ export function renderDashboardScripts(userIsAdmin: boolean): string {
         btn.textContent = '⏳ Sending...';
 
         try {
-          const response = await fetch('/admin/trigger-daily-summary');
+          const response = await fetch('/admin/send-daily-summary', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({})
+          });
           const data = await response.json();
 
           if (response.ok && data.success) {
-            showResult('summary-result', '✅ Summary sent to configured recipients!', true);
+            showResult('summary-result', '✅ Summary sent to ' + data.emailsSent + ' recipient(s)!', true);
           } else {
-            throw new Error(data.error || 'Failed to send');
+            throw new Error(data.error || data.message || 'Failed to send');
           }
         } catch (error) {
           showResult('summary-result', '❌ ' + error.message, false);

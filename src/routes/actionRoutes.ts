@@ -76,10 +76,14 @@ export async function actionRoutes(fastify: FastifyInstance): Promise<void> {
   fastify.get<{ Params: { token: string } }>('/api/action/:token', async (request, reply) => {
     const { token } = request.params;
 
+    fastify.log.info({ token: token.substring(0, 8) + '...' }, 'Action token request received');
+
     // Validate and use the token
     const result = validateAndUseToken(token);
 
     if (!result.valid) {
+      fastify.log.warn({ token: token.substring(0, 8) + '...', error: result.error }, 'Action token validation failed');
+
       const errorMessage = result.error === 'Token has already been used'
         ? 'This action has already been completed.'
         : result.error === 'Token has expired'

@@ -18,8 +18,10 @@ export interface Attachment {
  */
 async function extractTextFromPDF(buffer: Buffer): Promise<string> {
   try {
-    // Import PDF.js library
-    const pdfjsLib = await import('pdfjs-dist');
+    // Import PDF.js library (use legacy build for Node.js compatibility)
+    // @ts-ignore - dynamic import path
+    const pdfjs = await import('pdfjs-dist/legacy/build/pdf.js');
+    const pdfjsLib = pdfjs.default || pdfjs;
 
     // Load PDF document (PDF.js requires Uint8Array, not Buffer)
     const loadingTask = pdfjsLib.getDocument({ data: new Uint8Array(buffer) });

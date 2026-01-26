@@ -29,7 +29,13 @@ services:
       # Google OAuth - MUST be set via .env file
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
       - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
-      - GOOGLE_REDIRECT_URI=${GOOGLE_REDIRECT_URI}
+      # Redirect URI - app picks _PROD since NODE_ENV=production
+      - GOOGLE_REDIRECT_URI_LOCAL=${GOOGLE_REDIRECT_URI_LOCAL}
+      - GOOGLE_REDIRECT_URI_PROD=${GOOGLE_REDIRECT_URI_PROD}
+
+      # Base URL for email action buttons - app picks _PROD since NODE_ENV=production
+      - BASE_URL_LOCAL=${BASE_URL_LOCAL}
+      - BASE_URL_PROD=${BASE_URL_PROD}
 
       # AI Provider (openai or anthropic)
       - AI_PROVIDER=${AI_PROVIDER:-openai}
