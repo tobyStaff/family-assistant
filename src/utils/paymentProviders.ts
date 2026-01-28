@@ -25,6 +25,19 @@ export interface PaymentProviderInfo {
 }
 
 /**
+ * Check if an amount string is valid (not null, empty, or invalid placeholder values)
+ * Filters out: null, "null", ":null", "/null", empty strings, etc.
+ */
+export function isValidAmount(amount: string | null | undefined): amount is string {
+  if (!amount) return false;
+  const trimmed = amount.trim().toLowerCase();
+  if (trimmed === '' || trimmed === 'null' || trimmed === ':null' || trimmed === '/null') {
+    return false;
+  }
+  return true;
+}
+
+/**
  * Extract payment provider info from a todo description
  * Returns provider name and default URL if known
  */
@@ -69,21 +82,38 @@ export function getPaymentUrl(todo: { url?: string | null; type: string; descrip
 }
 
 /**
+ * Check if a URL string is valid (not null, empty, or invalid placeholder values)
+ * Filters out: null, "null", ":null", "/null", empty strings, etc.
+ */
+function isValidUrl(url: string | null | undefined): url is string {
+  if (!url) return false;
+  const trimmed = url.trim().toLowerCase();
+  if (trimmed === '' || trimmed === 'null' || trimmed === ':null' || trimmed === '/null') {
+    return false;
+  }
+  return true;
+}
+
+/**
  * Get payment button info for a todo
  * Returns label and URL for the payment button, or null if no payment action
+ * Only shows payment buttons for PAY type todos
  */
 export function getPaymentButtonInfo(todo: { url?: string | null; type: string; description: string }): { label: string; url: string } | null {
-  // If todo has a direct URL, use it with standard label
-  if (todo.url) {
+  // Only show payment buttons for PAY type todos
+  if (todo.type !== 'PAY') {
+    return null;
+  }
+
+  // If todo has a valid direct URL, use it
+  if (isValidUrl(todo.url)) {
     return { label: 'Pay Now →', url: todo.url };
   }
 
-  // For PAY type todos, try to detect payment provider
-  if (todo.type === 'PAY') {
-    const provider = extractPaymentProvider(todo.description);
-    if (provider?.url) {
-      return { label: `Pay via ${provider.name} →`, url: provider.url };
-    }
+  // Try to detect payment provider from description
+  const provider = extractPaymentProvider(todo.description);
+  if (provider?.url) {
+    return { label: `Pay via ${provider.name} →`, url: provider.url };
   }
 
   return null;

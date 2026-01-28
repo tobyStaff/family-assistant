@@ -37,7 +37,8 @@
     "googleapis": "^169.0.0",
     "mammoth": "^1.11.0",
     "openai": "^6.15.0",
-    "pdfjs-dist": "3.11.174",
+    "pdf-to-img": "^5.0.0",
+    "pdfjs-dist": "5.4.530",
     "prom-client": "^15.1.3",
     "string-similarity": "^4.0.4",
     "zod": "^4.3.4"

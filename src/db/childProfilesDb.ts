@@ -13,6 +13,8 @@ interface ChildProfileRow {
   display_name: string | null;
   year_group: string | null;
   school_name: string | null;
+  class_name: string | null;
+  clubs: string | null;
   is_active: number;
   onboarding_completed: number;
   confidence_score: number | null;
@@ -32,6 +34,8 @@ function rowToProfile(row: ChildProfileRow): ChildProfile {
     display_name: row.display_name || undefined,
     year_group: row.year_group || undefined,
     school_name: row.school_name || undefined,
+    class_name: row.class_name || undefined,
+    clubs: row.clubs ? JSON.parse(row.clubs) : undefined,
     is_active: Boolean(row.is_active),
     onboarding_completed: Boolean(row.onboarding_completed),
     confidence_score: row.confidence_score || undefined,
@@ -49,8 +53,8 @@ export function createChildProfile(profile: ChildProfile): number {
   const stmt = db.prepare(`
     INSERT INTO child_profiles (
       user_id, real_name, display_name, year_group, school_name,
-      is_active, onboarding_completed, confidence_score, notes
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      class_name, clubs, is_active, onboarding_completed, confidence_score, notes
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   const result = stmt.run(
@@ -59,6 +63,8 @@ export function createChildProfile(profile: ChildProfile): number {
     profile.display_name || null,
     profile.year_group || null,
     profile.school_name || null,
+    profile.class_name || null,
+    profile.clubs ? JSON.stringify(profile.clubs) : '[]',
     profile.is_active ? 1 : 0,
     profile.onboarding_completed ? 1 : 0,
     profile.confidence_score || null,
@@ -129,6 +135,14 @@ export function updateChildProfile(
   if (updates.school_name !== undefined) {
     fields.push('school_name = ?');
     values.push(updates.school_name || null);
+  }
+  if (updates.class_name !== undefined) {
+    fields.push('class_name = ?');
+    values.push(updates.class_name || null);
+  }
+  if (updates.clubs !== undefined) {
+    fields.push('clubs = ?');
+    values.push(updates.clubs ? JSON.stringify(updates.clubs) : '[]');
   }
   if (updates.is_active !== undefined) {
     fields.push('is_active = ?');

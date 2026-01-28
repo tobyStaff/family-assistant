@@ -1,6 +1,6 @@
 // src/templates/todosContent.ts
 import { getTodoTypeEmoji, getTodoTypeLabel, TodoType } from '../types/extraction.js';
-import { getPaymentButtonInfo } from '../utils/paymentProviders.js';
+import { getPaymentButtonInfo, isValidAmount } from '../utils/paymentProviders.js';
 
 interface TodoItem {
   id: number;
@@ -101,7 +101,7 @@ export function renderTodosContent(options: TodosContentOptions): string {
             <span class="type-badge type-${todo.type}">
               ${getTodoTypeEmoji(todo.type)} ${getTodoTypeLabel(todo.type)}
             </span>
-            ${todo.amount ? `<span class="amount-badge">${todo.amount}</span>` : ''}
+            ${isValidAmount(todo.amount) ? `<span class="amount-badge">${todo.amount}</span>` : ''}
           </div>
         </div>
         <div class="todo-description">${escapeHtml(todo.description)}</div>

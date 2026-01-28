@@ -47,8 +47,8 @@ async function extractTextFromBuffer(
   try {
     // PDF
     if (mimeType === 'application/pdf') {
-      const pdfjs = await import('pdfjs-dist/legacy/build/pdf.js');
-      const pdfjsLib = pdfjs.default || pdfjs;
+      const pdfjs = await import('pdfjs-dist/build/pdf.mjs');
+      const pdfjsLib = pdfjs;
       const loadingTask = pdfjsLib.getDocument({ data: new Uint8Array(buffer) });
       const pdf = await loadingTask.promise;
 

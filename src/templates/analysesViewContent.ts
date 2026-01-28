@@ -101,6 +101,7 @@ export function renderAnalysesViewContent(options: AnalysesViewContentOptions): 
           </details>
           ${analysis.analysis_error ? `<div class="analysis-error">Error: ${escapeHtml(analysis.analysis_error)}</div>` : ''}
           <div class="analysis-actions">
+            <button class="btn btn-outline" onclick="reextractAttachments(${analysis.email_id}, ${analysis.id})">📎 Re-extract Attachments</button>
             <button class="btn btn-outline" onclick="reanalyzeEmail(${analysis.id})">🔄 Re-analyze</button>
             ${analysis.status === 'analyzed' ? `
               <button class="btn btn-primary" onclick="approveAnalysis(${analysis.id})">✅ Approve</button>
@@ -108,6 +109,7 @@ export function renderAnalysesViewContent(options: AnalysesViewContentOptions): 
             ` : ''}
             <button class="btn btn-danger" data-analysis-id="${analysis.id}" onclick="deleteAnalysis(this)">🗑️ Delete</button>
           </div>
+          <div class="reextract-result" id="reextract-result-${analysis.id}" style="display: none;"></div>
           <div class="reanalyze-result" id="reanalyze-result-${analysis.id}" style="display: none;"></div>
         </div>
       `;
@@ -292,16 +294,20 @@ export function renderAnalysesViewContent(options: AnalysesViewContentOptions): 
         flex-wrap: wrap;
       }
 
-      .reanalyze-result {
+      .reanalyze-result,
+      .reextract-result {
         margin-top: 10px;
         padding: 12px;
         border-radius: 6px;
         font-size: 13px;
       }
 
-      .reanalyze-result.loading { background: #e3f2fd; color: #1565c0; }
-      .reanalyze-result.success { background: #d4edda; color: #155724; }
-      .reanalyze-result.error { background: #f8d7da; color: #721c24; }
+      .reanalyze-result.loading,
+      .reextract-result.loading { background: #e3f2fd; color: #1565c0; }
+      .reanalyze-result.success,
+      .reextract-result.success { background: #d4edda; color: #155724; }
+      .reanalyze-result.error,
+      .reextract-result.error { background: #f8d7da; color: #721c24; }
 
       .empty-state {
         background: white;
@@ -482,6 +488,51 @@ export function renderAnalysesViewScripts(): string {
           alert('Error deleting analysis: ' + error.message);
           btn.disabled = false;
           btn.textContent = '🗑️ Delete';
+        }
+      }
+
+      async function reextractAttachments(emailId, analysisId) {
+        const resultDiv = document.getElementById('reextract-result-' + analysisId);
+        const card = document.querySelector('[data-analysis-id="' + analysisId + '"]');
+        const btn = card.querySelector('.btn-outline');
+
+        btn.disabled = true;
+        const originalText = btn.textContent;
+        btn.textContent = '⏳ Extracting...';
+        resultDiv.style.display = 'block';
+        resultDiv.className = 'reextract-result loading';
+        resultDiv.innerHTML = 'Re-extracting attachments with AI Vision... This may take a moment.';
+
+        try {
+          const response = await fetch('/admin/emails/' + emailId + '/reextract-attachments', {
+            method: 'POST'
+          });
+
+          const data = await response.json();
+
+          if (response.ok && data.success) {
+            resultDiv.className = 'reextract-result success';
+            let resultHtml = '<strong>✅ ' + data.message + '</strong><br>';
+            if (data.results && data.results.length > 0) {
+              resultHtml += '<ul style="margin: 8px 0; padding-left: 20px;">';
+              for (const r of data.results) {
+                const status = r.success ? '✅' : '❌';
+                const preview = r.extractedText ? r.extractedText.substring(0, 100) + '...' : (r.error || 'No text');
+                resultHtml += '<li><strong>' + status + ' ' + r.filename + '</strong>: ' + preview + '</li>';
+              }
+              resultHtml += '</ul>';
+            }
+            resultHtml += '<em>You can now click Re-analyze to process the new content.</em>';
+            resultDiv.innerHTML = resultHtml;
+          } else {
+            throw new Error(data.message || data.error || 'Re-extraction failed');
+          }
+        } catch (error) {
+          resultDiv.className = 'reextract-result error';
+          resultDiv.innerHTML = '<strong>❌ Error:</strong> ' + error.message;
+        } finally {
+          btn.disabled = false;
+          btn.textContent = originalText;
         }
       }
 

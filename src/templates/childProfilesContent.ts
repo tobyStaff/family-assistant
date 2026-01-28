@@ -389,6 +389,18 @@ export function renderChildProfilesContent(): string {
           </div>
 
           <div class="form-group">
+            <label for="edit-class-name">Class Name</label>
+            <input type="text" id="edit-class-name" placeholder="e.g., Elm, Lime, Beech">
+            <small>Helps match class-specific events like "Elm Woodland School"</small>
+          </div>
+
+          <div class="form-group">
+            <label for="edit-clubs">Clubs (comma separated)</label>
+            <input type="text" id="edit-clubs" placeholder="e.g., Rocksteady, Swimming, Football">
+            <small>Helps match club-specific events like "Rocksteady Concert"</small>
+          </div>
+
+          <div class="form-group">
             <label for="edit-notes">Notes</label>
             <textarea id="edit-notes" placeholder="Any additional notes..."></textarea>
           </div>
@@ -495,6 +507,18 @@ export function renderChildProfilesScripts(): string {
                     <span>\${escapeHtml(profile.school_name)}</span>
                   </div>
                 \` : ''}
+                \${profile.class_name ? \`
+                  <div class="profile-detail">
+                    <span class="profile-detail-icon">🎓</span>
+                    <span>Class: \${escapeHtml(profile.class_name)}</span>
+                  </div>
+                \` : ''}
+                \${profile.clubs && profile.clubs.length > 0 ? \`
+                  <div class="profile-detail">
+                    <span class="profile-detail-icon">⚽</span>
+                    <span>Clubs: \${profile.clubs.map(c => escapeHtml(c)).join(', ')}</span>
+                  </div>
+                \` : ''}
                 \${profile.confidence_score !== null && profile.confidence_score !== undefined ? \`
                   <div class="profile-detail">
                     <span class="profile-detail-icon">🎯</span>
@@ -561,6 +585,8 @@ export function renderChildProfilesScripts(): string {
         document.getElementById('edit-display-name').value = profile.display_name || '';
         document.getElementById('edit-year-group').value = profile.year_group || '';
         document.getElementById('edit-school-name').value = profile.school_name || '';
+        document.getElementById('edit-class-name').value = profile.class_name || '';
+        document.getElementById('edit-clubs').value = (profile.clubs || []).join(', ');
         document.getElementById('edit-notes').value = profile.notes || '';
         document.getElementById('edit-is-active').checked = profile.is_active;
         document.getElementById('edit-modal').classList.add('active');
@@ -575,11 +601,15 @@ export function renderChildProfilesScripts(): string {
         event.preventDefault();
 
         const profileId = document.getElementById('edit-profile-id').value;
+        const clubsInput = document.getElementById('edit-clubs').value.trim();
+        const clubs = clubsInput ? clubsInput.split(',').map(c => c.trim()).filter(c => c) : [];
         const data = {
           real_name: document.getElementById('edit-real-name').value.trim(),
           display_name: document.getElementById('edit-display-name').value.trim() || undefined,
           year_group: document.getElementById('edit-year-group').value.trim() || undefined,
           school_name: document.getElementById('edit-school-name').value.trim() || undefined,
+          class_name: document.getElementById('edit-class-name').value.trim() || undefined,
+          clubs: clubs.length > 0 ? clubs : undefined,
           notes: document.getElementById('edit-notes').value.trim() || undefined,
           is_active: document.getElementById('edit-is-active').checked,
         };
@@ -601,6 +631,8 @@ export function renderChildProfilesScripts(): string {
                 display_name: data.display_name || '',
                 year_group: data.year_group || '',
                 school_name: data.school_name || '',
+                class_name: data.class_name || '',
+                clubs: data.clubs || [],
                 notes: data.notes || ''
               }]
             };

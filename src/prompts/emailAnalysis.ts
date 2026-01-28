@@ -106,6 +106,28 @@ For the email, provide:
 - Do not invent events (e.g., don't create "PE Day" just because PE kit is mentioned)
 - If the email is just a task/reminder with a deadline, create a todo, not an event
 
+**CRITICAL: Calendar/Diary Lists (MUST EXTRACT ALL - NO FILTERING):**
+When you encounter a "Term Diary", "Calendar", "Upcoming Dates", or similar list of dates:
+- Extract EVERY SINGLE dated item as a separate event - do NOT summarize or skip items
+- Process the ENTIRE list from start to finish - do NOT stop early
+- Include ALL months mentioned (January through December if present)
+- School trips for ANY year group (e.g., "Year 2 to Marwell Zoo") → create event
+- Woodland School days → create event for EACH class/date mentioned
+- Special days (World Book Day, Science Week) → create event
+- Competitions, sales, concerts → create event
+- Term start/end dates, half-terms, inset days → create event
+- Swimming/sports starting dates → create event
+- Items coming home in book bags with return deadlines → create TODO with deadline
+
+**DO NOT FILTER BY RELEVANCE:**
+- Extract events for ALL year groups, not just the child's year group
+- The user will filter relevance later - your job is to capture EVERYTHING
+- Include both child-specific events AND whole-school events
+- A "Year 2 trip" should still be extracted even if the child is in Reception
+- If the calendar has 30+ items, you MUST extract all 30+ items
+
+Even if a newsletter has 30+ dated items, extract ALL of them. The user wants their calendar populated with every school date. Do not filter for "importance" - every dated item matters to parents.
+
 === SECTION 3: TODO EXTRACTION ===
 
 **Todo Type Classification:**
@@ -242,8 +264,8 @@ From: ${email.fromName} <${email.from}>
 Subject: ${email.subject}
 Date: ${email.receivedAt}
 Body Preview: ${email.snippet}
-${email.bodyText ? `\n\nFull Body:\n${email.bodyText.substring(0, 3000)}` : ''}
-${email.attachmentContent ? `\n\n=== ATTACHMENT CONTENT ===\n${email.attachmentContent.substring(0, 2000)}` : ''}
+${email.bodyText ? `\n\nFull Body:\n${email.bodyText.substring(0, 5000)}` : ''}
+${email.attachmentContent ? `\n\n=== ATTACHMENT CONTENT ===\n${email.attachmentContent.substring(0, 8000)}` : ''}
 ---
 `
     )
@@ -262,28 +284,81 @@ function buildChildProfilesSection(profiles: AnonymizedChildProfile[]): string {
   const childIds = profiles.map((p) => p.id).join(', ');
 
   return `
-=== CHILD PROFILES (IMPORTANT) ===
+=== CHILD PROFILES ===
 
 The family has these children:
 ${profilesList}
 
-**Relevance Filtering Rules:**
-- ONLY extract events/todos that are relevant to ${childIds} or the whole family
-- IGNORE events for year groups that none of the children are in
-- IGNORE events for schools that the children don't attend
-- Set child_name to the appropriate child ID (${childIds}) or "General" for family-wide items
-- If an event mentions a specific year group, check if any child matches before extracting
+**CRITICAL: You MUST filter out irrelevant events. Follow these steps IN ORDER:**
 
-**Examples of what to IGNORE:**
-- "Year 10 Parent Evening" when no child is in Year 10 → IGNORE completely
-- "St Mary's School Trip" when no child attends St Mary's → IGNORE completely
-- "Reception class assembly" when no child is in Reception → IGNORE completely
+**Step 1: Identify the source school**
+- Determine which school the email is from (sender address, letterhead, school name mentions)
+- Match to children by their school_name field
 
-**Examples of what to INCLUDE:**
-- Events that don't specify a year group (whole school events)
-- Events matching a child's year group or school
-- General parent information (term dates, school closures)
-- Payment requests that might apply to any child
+**Step 2: FILTER FIRST - Remove irrelevant events BEFORE adding to output**
+For EACH potential event/todo, check if it should be EXCLUDED:
+
+DO NOT INCLUDE (skip entirely - do not add to events/todos arrays):
+- Year-specific events when NO child is in that year
+  Example: "Year 2 Swimming" when child is in Reception → SKIP THIS EVENT
+  Example: "Y1 Woodland School" when child is in Reception → SKIP THIS EVENT
+- Class-specific events when NO child is in that class
+  Example: "Elm Woodland School" when child has no class_name or different class → SKIP THIS EVENT
+  Example: "Lime Woodland School", "Beech Woodland School", "Cherry Woodland School" → SKIP if child not in that class
+- Club-specific events when NO child is in that club
+  Example: "Rocksteady Concert" when child has no clubs or not in Rocksteady → SKIP THIS EVENT
+- Events for different schools
+  Example: "St Mary's trip" when children attend Milford → SKIP THIS EVENT
+
+ALWAYS INCLUDE (add to output):
+- Whole-school events (Inset Days, Half-terms, term start/end dates, World Book Day)
+- Events matching child's year group (e.g., "Year R to Woodland School" for Reception child)
+- Events matching child's class (if class_name is set)
+- Events matching child's clubs (if clubs are set)
+- Parent-focused events (Parents Evening, cake sales open to all)
+- Payment deadlines and return-by dates (these affect all families)
+- Ambiguous events - when unsure, INCLUDE
+
+**Step 3: Assign child_name to ALL remaining events (IMPORTANT)**
+After filtering, you MUST assign a child_name to every event/todo you include:
+
+SINGLE CHILD AT THE SOURCE SCHOOL:
+- Count how many children attend the school this email is from
+- If only ONE child attends this school: set child_name to that child's ID for EVERY event/todo
+- Do NOT use "General" when there's only one child - that child owns all events from their school
+- Example: If only "${childIds.split(', ')[0] || 'CHILD_1'}" attends Milford, then ALL Milford events get child_name: "${childIds.split(', ')[0] || 'CHILD_1'}"
+
+MULTIPLE CHILDREN AT SAME SCHOOL:
+- Year-specific events → assign to the child in that year
+- Class-specific events → assign to the child in that class
+- Whole-school events → use "General" or list all children comma-separated
+
+ALWAYS include school name in the location field.
+
+**FILTERING EXAMPLE - Child: Reception (Year R) at Milford, no class or clubs set:**
+
+From a term diary, you would INCLUDE:
+✓ "Year R to Woodland School" (matches year)
+✓ "Inset Day 4" (whole school)
+✓ "Half-term" (whole school)
+✓ "Parents Evening" (all parents)
+✓ "World Book Day" (whole school)
+✓ "Valentine Bake Off" (open to all)
+✓ "Easter Egg Hunt" (whole school)
+✓ "Science Week" (whole school)
+
+You would EXCLUDE (do not add to events array):
+✗ "Elm Woodland School" (class-specific)
+✗ "Lime Woodland School" (class-specific)
+✗ "Beech Woodland School" (class-specific)
+✗ "Cherry Woodland School" (class-specific)
+✗ "Y1 Woodland School" (Year 1 specific)
+✗ "Year 2 Swimming starts" (Year 2 specific)
+✗ "Year 2 to Woking Mosque" (Year 2 specific)
+✗ "Year 2 to Marwell Zoo" (Year 2 specific)
+✗ "Rocksteady Concert" (club-specific)
+
+The filtered output should have ~15-18 events, NOT 30+.
 
 `;
 }

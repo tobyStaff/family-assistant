@@ -4,7 +4,7 @@ import type { PersonalizedSummary, ChildSummary, FamilySummary } from '../utils/
 import type { Todo } from '../types/todo.js';
 import type { ExtractedEvent, TodoType } from '../types/extraction.js';
 import { getTodoTypeLabel, getTodoTypeEmoji } from '../types/extraction.js';
-import { getPaymentButtonInfo, extractPaymentProvider } from '../utils/paymentProviders.js';
+import { getPaymentButtonInfo, extractPaymentProvider, isValidAmount } from '../utils/paymentProviders.js';
 
 /**
  * Child summary with action URLs for todos and events
@@ -245,7 +245,7 @@ function renderTodo(todo: TodoWithAction, size: 'large' | 'small' = 'large'): st
   const typeEmoji = getTodoTypeEmoji(todo.type);
   const typeLabel = getTodoTypeLabel(todo.type);
   const dueDate = todo.due_date ? formatDate(todo.due_date) : null;
-  const amountBadge = todo.amount ? `<span class="amount-badge">${escapeHtml(todo.amount)}</span>` : '';
+  const amountBadge = isValidAmount(todo.amount) ? `<span class="amount-badge">${escapeHtml(todo.amount)}</span>` : '';
 
   // Action button for URL (with correct label based on type)
   let actionButton = '';
@@ -512,7 +512,7 @@ function renderItemsFlat(
 function getTodoBulletText(todo: TodoWithAction): string {
   const emoji = getTodoTypeEmoji(todo.type);
   const childPrefix = todo.child_name && todo.child_name !== 'General' ? `[${todo.child_name}] ` : '';
-  const amount = todo.amount ? ` (${todo.amount})` : '';
+  const amount = isValidAmount(todo.amount) ? ` (${todo.amount})` : '';
   return `${emoji} ${childPrefix}${todo.description}${amount}`;
 }
 

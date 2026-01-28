@@ -675,6 +675,26 @@ function runMigrations() {
 
     console.log('Migration 10 completed');
   }
+
+  if (version < 11) {
+    console.log('Running migration 11: Adding class_name and clubs to child_profiles');
+
+    db.transaction(() => {
+      // Add class_name for identifying which class the child is in (e.g., "Elm", "Lime")
+      db.exec(`ALTER TABLE child_profiles ADD COLUMN class_name TEXT;`);
+
+      // Add clubs as JSON array (e.g., ["Rocksteady", "Swimming"])
+      db.exec(`ALTER TABLE child_profiles ADD COLUMN clubs TEXT DEFAULT '[]';`);
+
+      // Record migration
+      db.prepare('INSERT INTO schema_version (version, description) VALUES (?, ?)').run(
+        11,
+        'Add class_name and clubs fields to child_profiles for better event matching'
+      );
+    })();
+
+    console.log('Migration 11 completed');
+  }
 }
 
 // Run migrations after initial table creation

@@ -1191,4 +1191,104 @@ export async function adminRoutes(fastify: FastifyInstance): Promise<void> {
       });
     }
   });
+
+  /**
+   * POST /admin/emails/:id/reextract-attachments
+   * Re-extract ALL attachments for an email (uses new AI Vision fallback)
+   * This forces re-extraction regardless of current status
+   */
+  fastify.post<{
+    Params: { id: string };
+  }>('/admin/emails/:id/reextract-attachments', { preHandler: requireAdmin }, async (request, reply) => {
+    try {
+      const emailId = parseInt(request.params.id, 10);
+      if (isNaN(emailId)) {
+        return reply.code(400).send({ error: 'Invalid email ID' });
+      }
+
+      const { retryExtraction, rebuildAttachmentContent } = await import('../utils/attachmentExtractor.js');
+      const { getAttachmentsByEmailId } = await import('../db/attachmentDb.js');
+
+      // Get ALL attachments for this email (not just failed)
+      const attachments = getAttachmentsByEmailId(emailId);
+
+      if (attachments.length === 0) {
+        return reply.code(200).send({
+          success: true,
+          message: 'No attachments found for this email',
+          retried: 0,
+          succeeded: 0,
+        });
+      }
+
+      // Re-extract each attachment (uses new vision fallback logic)
+      const results = await Promise.all(
+        attachments.map(async (attachment) => {
+          const result = await retryExtraction(attachment.id);
+          return {
+            id: attachment.id,
+            filename: attachment.filename,
+            mimeType: attachment.mime_type,
+            success: result.success,
+            extractedText: result.extractedText?.substring(0, 200), // Preview
+            error: result.error,
+          };
+        })
+      );
+
+      const succeeded = results.filter(r => r.success).length;
+
+      // Rebuild email's attachment_content
+      const { default: db } = await import('../db/db.js');
+      const newContent = rebuildAttachmentContent(emailId);
+
+      // Check if any attachments still failed
+      const updatedAttachments = getAttachmentsByEmailId(emailId);
+      const stillFailed = updatedAttachments.some(a => a.extraction_status === 'failed');
+
+      // Also update body_text - strip old attachment content and append new
+      // body_text = original email body + attachment content (combined)
+      const ATTACHMENT_MARKER = '\n\n=== IMPORTANT: ATTACHMENT CONTENT BELOW ===';
+      const email = db.prepare('SELECT body_text FROM emails WHERE id = ?').get(emailId) as { body_text: string } | undefined;
+
+      let newBodyText = email?.body_text || '';
+      // Remove old attachment content if present
+      const markerIndex = newBodyText.indexOf(ATTACHMENT_MARKER);
+      if (markerIndex !== -1) {
+        newBodyText = newBodyText.substring(0, markerIndex);
+      }
+      // Append new attachment content
+      if (newContent) {
+        newBodyText += newContent;
+      }
+
+      db.prepare(`
+        UPDATE emails
+        SET attachment_content = ?,
+            attachment_extraction_failed = ?,
+            body_text = ?,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+      `).run(newContent, stillFailed ? 1 : 0, newBodyText, emailId);
+
+      fastify.log.info(
+        { emailId, total: attachments.length, succeeded },
+        'Email attachment re-extraction completed'
+      );
+
+      return reply.code(200).send({
+        success: true,
+        message: `Re-extracted ${succeeded}/${attachments.length} attachments`,
+        total: attachments.length,
+        succeeded,
+        results,
+      });
+    } catch (error: any) {
+      fastify.log.error({ err: error }, 'Error re-extracting email attachments');
+      return reply.code(500).send({
+        error: 'Failed to re-extract attachments',
+        message: error.message,
+      });
+    }
+  });
 }

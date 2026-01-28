@@ -1,8 +1,7 @@
 # Bugs
-2. READ more Buttons -> Sometimes the buttons say pay now when the todo is nothing to do with payment.
-3. Smarter analysis of todos and events with the example of the Volcano homework todo and the event of the date to take it to school.
-4. Recurring events need attention, Ella's pe kit reminder has not been recurring in the diary. I think it only when in once.
-7. when a todo contains something that needs to be packed or brought to school on a certain day or date, then an extra event should be created (single or recurring). - Done / NEEDS WORK
+1. Smarter analysis of todos and events with the example of the Volcano homework todo and the event of the date to take it to school.
+1. Recurring events need attention, Ella's pe kit reminder has not been recurring in the diary. I think it only when in once.
+1. when a todo contains something that needs to be packed or brought to school on a certain day or date, then an extra event should be created (single or recurring). - Done / NEEDS WORK
 
 DONE
 X. impersonate doesn't work properly in prod, shows todos and events, but not email analysis and stored emails. __FIXED__
@@ -11,6 +10,8 @@ X. Attachment reading fails. __DONE__
 X. Send Summary email not working & also daily briefing didn't send this morning. __DONE__
 X. Something is making the email too wide so on a mobile screen it scrolls left to right slightly and isn't locked in place.
 X. Buttons -> "Done" buttons don't work
+X. READ more Buttons -> Sometimes the buttons say pay now when the todo is nothing to do with payment.
+
 
 -------------------------
 
@@ -19,12 +20,15 @@ X. Buttons -> "Done" buttons don't work
 2. "More detail" - Document links - render documents on a link for further reading. 1 click from the email.
 3. Capture WhatsApp group messages.
 4. Proper "onboarding".
-5. Reading text from images.
 6. Ability to sync data from prod to dev, to mess around with.
 7. Dedicated email address - Custom email domains. (partially done requires AWS setup)
 8. Calendar integrations with Gmail and outlook.
-9. Retry functionality - is there a way for admin or a user to retry an email parsing.
-10. Store the original attachments.
+1. Add "Dev" tag to the Summary email subject title when sent from localhost (dev env)
+
+Done
+X. Reading text from images. e.g pdf images, pngs etc.
+X. Retry functionality - is there a way for admin or a user to retry an email parsing.
+X. Store the original attachments.
 
 -------------------------
 

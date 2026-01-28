@@ -10,6 +10,8 @@ export interface ChildProfile {
   display_name?: string;          // Optional alias for privacy
   year_group?: string;            // e.g., "Year 3", "Reception"
   school_name?: string;           // School name
+  class_name?: string;            // e.g., "Elm", "Lime", "Beech" (for class-specific events)
+  clubs?: string[];               // e.g., ["Rocksteady", "Swimming"] (for club-specific events)
   is_active: boolean;             // Active enrollment
   onboarding_completed: boolean;  // User confirmed this profile
   confidence_score?: number;      // AI confidence (0.0-1.0)

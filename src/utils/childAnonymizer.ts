@@ -14,6 +14,8 @@ export interface ChildMapping {
   real_name: string;    // Actual child name
   year_group: string;   // e.g., "7", "5"
   school_name: string;  // e.g., "Rodborough"
+  class_name: string;   // e.g., "Elm", "Lime"
+  clubs: string[];      // e.g., ["Rocksteady", "Swimming"]
 }
 
 /**
@@ -23,6 +25,8 @@ export interface AnonymizedChildProfile {
   id: string;           // "CHILD_1"
   year_group: string;   // "7"
   school_name: string;  // "Rodborough"
+  class_name: string;   // "Elm"
+  clubs: string[];      // ["Rocksteady", "Swimming"]
 }
 
 /**
@@ -34,6 +38,8 @@ export function createChildMappings(profiles: ChildProfile[]): ChildMapping[] {
     real_name: profile.real_name,
     year_group: profile.year_group || 'Unknown',
     school_name: profile.school_name || 'Unknown',
+    class_name: profile.class_name || '',
+    clubs: profile.clubs || [],
   }));
 }
 
@@ -45,6 +51,8 @@ export function getAnonymizedProfiles(mappings: ChildMapping[]): AnonymizedChild
     id: m.id,
     year_group: m.year_group,
     school_name: m.school_name,
+    class_name: m.class_name,
+    clubs: m.clubs,
   }));
 }
 
@@ -125,6 +133,15 @@ export function formatProfilesForPrompt(profiles: AnonymizedChildProfile[]): str
   }
 
   return profiles
-    .map((p) => `- ${p.id}: Year ${p.year_group} at ${p.school_name}`)
+    .map((p) => {
+      let line = `- ${p.id}: Year ${p.year_group} at ${p.school_name}`;
+      if (p.class_name) {
+        line += `, Class: ${p.class_name}`;
+      }
+      if (p.clubs && p.clubs.length > 0) {
+        line += `, Clubs: ${p.clubs.join(', ')}`;
+      }
+      return line;
+    })
     .join('\n');
 }

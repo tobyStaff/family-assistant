@@ -151,7 +151,7 @@ async function extractWithAnthropic(
 
   const response = await anthropic.messages.create({
     model: 'claude-3-5-sonnet-20241022',
-    max_tokens: 4000,
+    max_tokens: 8000,
     temperature: 0.3,
     system: ANTHROPIC_SYSTEM_PROMPT,
     messages: [

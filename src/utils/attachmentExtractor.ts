@@ -9,6 +9,26 @@ import {
   getAttachmentsByEmailId,
   type StoredAttachment,
 } from '../db/attachmentDb.js';
+import {
+  extractTextWithVision,
+  isImageMimeType,
+  IMAGE_MIME_TYPES,
+} from './visionExtractor.js';
+
+/**
+ * Size and page limits for extraction
+ */
+const MAX_PDF_SIZE_MB = 5;
+const MAX_IMAGE_SIZE_MB = 2;
+const MAX_VISION_PDF_PAGES = 6;
+const MAX_IMAGES_PER_EMAIL = 5;
+
+/**
+ * Format file size in MB for display
+ */
+function formatSizeMB(bytes: number): string {
+  return (bytes / (1024 * 1024)).toFixed(1);
+}
 
 /**
  * Attachment metadata
@@ -31,14 +51,24 @@ export interface DownloadedAttachment extends Attachment {
 }
 
 /**
- * Extract text from PDF buffer using PDF.js
+ * Result from PDF text extraction
  */
-async function extractTextFromPDF(buffer: Buffer): Promise<string> {
+interface PDFExtractionResult {
+  text: string;
+  pageCount: number;
+  isEmpty: boolean;
+  error?: string;
+}
+
+/**
+ * Extract text from PDF buffer using PDF.js
+ * Returns structured result with page count for vision fallback decisions
+ */
+async function extractTextFromPDFWithMetadata(buffer: Buffer): Promise<PDFExtractionResult> {
   try {
-    // Import PDF.js library (use legacy build for Node.js compatibility)
-    // @ts-ignore - dynamic import path
-    const pdfjs = await import('pdfjs-dist/legacy/build/pdf.js');
-    const pdfjsLib = pdfjs.default || pdfjs;
+    // Import PDF.js library
+    const pdfjs = await import('pdfjs-dist/build/pdf.mjs');
+    const pdfjsLib = pdfjs;
 
     // Load PDF document (PDF.js requires Uint8Array, not Buffer)
     const loadingTask = pdfjsLib.getDocument({ data: new Uint8Array(buffer) });
@@ -61,14 +91,96 @@ async function extractTextFromPDF(buffer: Buffer): Promise<string> {
     const fullText = textParts.join('\n\n').trim();
     console.log(`✓ Extracted PDF: ${pdf.numPages} pages, ${fullText.length} characters`);
 
-    return fullText || '[PDF - no text content]';
+    // Consider PDF "empty" if it has very little text (likely scanned/image-based)
+    const isEmpty = fullText.length < 50;
+
+    return {
+      text: fullText,
+      pageCount: pdf.numPages,
+      isEmpty,
+    };
   } catch (error: any) {
     console.error('Failed to extract text from PDF:', {
       message: error.message,
       name: error.name
     });
-    return `[PDF content - extraction failed: ${error.message}]`;
+    return {
+      text: '',
+      pageCount: 0,
+      isEmpty: true,
+      error: error.message,
+    };
   }
+}
+
+/**
+ * Extract text from PDF buffer, with AI Vision fallback for scanned documents
+ */
+async function extractTextFromPDF(buffer: Buffer, filename: string): Promise<string> {
+  // First try standard text extraction
+  const result = await extractTextFromPDFWithMetadata(buffer);
+
+  // If extraction failed completely, report the error
+  if (result.error) {
+    return `[PDF content - extraction failed: ${result.error}]`;
+  }
+
+  // If we got text, return it
+  if (!result.isEmpty) {
+    return result.text;
+  }
+
+  // PDF appears to be scanned/image-based - try vision fallback
+  console.log(`📄 PDF appears scanned, attempting AI Vision fallback: ${filename}`);
+
+  // Check page count limit for vision
+  if (result.pageCount > MAX_VISION_PDF_PAGES) {
+    return `[Scanned PDF too long: ${result.pageCount} pages exceeds ${MAX_VISION_PDF_PAGES}-page OCR limit]`;
+  }
+
+  // Try vision extraction
+  const visionResult = await extractTextWithVision(buffer, 'application/pdf', filename);
+
+  if (visionResult.success && visionResult.text) {
+    // Check for "no content" responses from vision
+    if (visionResult.text === '[No text content]' || visionResult.text === '[Non-document image]') {
+      return `[PDF - no readable text detected]`;
+    }
+    return visionResult.text;
+  }
+
+  // Vision also failed
+  if (visionResult.error) {
+    return `[OCR failed: ${visionResult.error}]`;
+  }
+
+  return '[PDF - no text content]';
+}
+
+/**
+ * Extract text from image using AI Vision
+ */
+async function extractTextFromImage(buffer: Buffer, mimeType: string, filename: string): Promise<string> {
+  console.log(`🖼️ Extracting text from image: ${filename}`);
+
+  const result = await extractTextWithVision(buffer, mimeType, filename);
+
+  if (result.success && result.text) {
+    // Check for "no content" responses
+    if (result.text === '[No text content]') {
+      return `[Image - no readable text detected]`;
+    }
+    if (result.text === '[Non-document image]') {
+      return `[Image - photo/graphic, not a document]`;
+    }
+    return result.text;
+  }
+
+  if (result.error) {
+    return `[Image OCR failed: ${result.error}]`;
+  }
+
+  return `[Image - no text extracted]`;
 }
 
 /**
@@ -97,25 +209,56 @@ function extractTextFromPlainText(buffer: Buffer): string {
 }
 
 /**
+ * Check why an attachment cannot be extracted (for descriptive skip messages)
+ */
+export function getSkipReason(attachment: Attachment): string | null {
+  const mimeType = attachment.mimeType.toLowerCase();
+  const sizeMB = attachment.size / (1024 * 1024);
+
+  // Check PDF size limit
+  if (mimeType === 'application/pdf') {
+    if (sizeMB > MAX_PDF_SIZE_MB) {
+      return `[PDF too large: ${formatSizeMB(attachment.size)}MB exceeds ${MAX_PDF_SIZE_MB}MB limit]`;
+    }
+    return null; // PDF is extractable
+  }
+
+  // Check image size limit
+  if (isImageMimeType(mimeType)) {
+    if (sizeMB > MAX_IMAGE_SIZE_MB) {
+      return `[Image too large: ${formatSizeMB(attachment.size)}MB exceeds ${MAX_IMAGE_SIZE_MB}MB limit]`;
+    }
+    return null; // Image is extractable
+  }
+
+  // Check DOCX/DOC
+  if (
+    mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
+    mimeType === 'application/msword'
+  ) {
+    if (sizeMB > MAX_PDF_SIZE_MB) {
+      return `[Document too large: ${formatSizeMB(attachment.size)}MB exceeds ${MAX_PDF_SIZE_MB}MB limit]`;
+    }
+    return null; // DOCX is extractable
+  }
+
+  // Check text files
+  if (mimeType.startsWith('text/')) {
+    if (sizeMB > MAX_PDF_SIZE_MB) {
+      return `[Text file too large: ${formatSizeMB(attachment.size)}MB exceeds ${MAX_PDF_SIZE_MB}MB limit]`;
+    }
+    return null; // Text is extractable
+  }
+
+  // Unsupported format
+  return `[Unsupported format: ${attachment.mimeType}]`;
+}
+
+/**
  * Determine if attachment should be extracted based on mime type and size
  */
 export function shouldExtractAttachment(attachment: Attachment): boolean {
-  // Skip very large files (> 5MB)
-  if (attachment.size > 5 * 1024 * 1024) {
-    return false;
-  }
-
-  // Extract text from these types
-  const extractableTypes = [
-    'application/pdf',
-    'application/vnd.openxmlformats-officedocument.wordprocessingml.document', // DOCX
-    'application/msword', // DOC
-    'text/plain',
-    'text/html',
-    'text/csv',
-  ];
-
-  return extractableTypes.some((type) => attachment.mimeType.startsWith(type));
+  return getSkipReason(attachment) === null;
 }
 
 /**
@@ -127,9 +270,14 @@ async function extractTextFromAttachment(
   filename: string
 ): Promise<string> {
   try {
-    // PDF
+    // PDF (with vision fallback for scanned documents)
     if (mimeType === 'application/pdf') {
-      return await extractTextFromPDF(buffer);
+      return await extractTextFromPDF(buffer, filename);
+    }
+
+    // Images (via AI Vision)
+    if (isImageMimeType(mimeType)) {
+      return await extractTextFromImage(buffer, mimeType, filename);
     }
 
     // DOCX
@@ -150,10 +298,10 @@ async function extractTextFromAttachment(
       return text;
     }
 
-    return `[${filename} - unsupported format]`;
+    return `[${filename} - unsupported format: ${mimeType}]`;
   } catch (error: any) {
     console.error(`Failed to extract text from ${filename}:`, error.message);
-    return `[${filename} - extraction failed]`;
+    return `[${filename} - extraction failed: ${error.message}]`;
   }
 }
 
@@ -272,16 +420,42 @@ export async function getAttachmentText(
     return { text: '', downloadedAttachments: [], nonExtractableFilenames: [] };
   }
 
-  // Filter attachments we can extract text from
-  const extractableAttachments = attachments.filter(shouldExtractAttachment);
-  const nonExtractable = attachments.filter((a) => !shouldExtractAttachment(a));
-  const nonExtractableFilenames = nonExtractable.map((a) => a.filename);
+  // Categorize attachments with skip reasons
+  const extractableAttachments: Attachment[] = [];
+  const skippedWithReasons: { filename: string; reason: string }[] = [];
+  let imageCount = 0;
+
+  for (const attachment of attachments) {
+    const skipReason = getSkipReason(attachment);
+
+    if (skipReason) {
+      // Attachment cannot be extracted
+      skippedWithReasons.push({ filename: attachment.filename, reason: skipReason });
+    } else if (isImageMimeType(attachment.mimeType)) {
+      // Check image count limit
+      if (imageCount >= MAX_IMAGES_PER_EMAIL) {
+        skippedWithReasons.push({
+          filename: attachment.filename,
+          reason: `[Image skipped: exceeds ${MAX_IMAGES_PER_EMAIL} images per email limit]`,
+        });
+      } else {
+        extractableAttachments.push(attachment);
+        imageCount++;
+      }
+    } else {
+      extractableAttachments.push(attachment);
+    }
+  }
+
+  const nonExtractableFilenames = skippedWithReasons.map((s) => s.filename);
 
   if (extractableAttachments.length === 0) {
-    // List non-extractable attachment names
-    const fileList = nonExtractableFilenames.join(', ');
+    // Build detailed skip list
+    const skipList = skippedWithReasons
+      .map((s) => `${s.filename}: ${s.reason}`)
+      .join('\n');
     return {
-      text: `\n\n--- Attachments (no text extraction) ---\n${fileList}`,
+      text: `\n\n--- Attachments (skipped) ---\n${skipList}`,
       downloadedAttachments: [],
       nonExtractableFilenames,
     };
@@ -311,11 +485,12 @@ export async function getAttachmentText(
     }
   });
 
-  // List any non-extractable attachments
-  if (nonExtractableFilenames.length > 0) {
-    const fileList = nonExtractableFilenames.join(', ');
-    result += `\nNOTE: Additional attachments that could not be read: ${fileList}\n`;
-    result += 'These may contain images, forms, or other content requiring manual review.\n';
+  // List any skipped attachments with reasons
+  if (skippedWithReasons.length > 0) {
+    result += '\nNOTE: Some attachments were skipped:\n';
+    for (const skip of skippedWithReasons) {
+      result += `- ${skip.filename}: ${skip.reason}\n`;
+    }
   }
 
   result += '\n=== END ATTACHMENT CONTENT ===\n';
@@ -397,6 +572,7 @@ export function storeDownloadedAttachments(
 
 /**
  * Retry extraction for a single attachment
+ * Now includes AI Vision fallback for scanned PDFs and images
  *
  * @param attachmentId - Attachment ID from email_attachments table
  * @returns Result with success status and extracted text
@@ -405,10 +581,6 @@ export async function retryExtraction(
   attachmentId: number
 ): Promise<{ success: boolean; extractedText?: string; error?: string }> {
   // Get attachment record
-  const attachments = getAttachmentsByEmailId(0); // Need to get by ID instead
-  // Actually we need to get by attachment ID - let me check the DB module
-
-  // For now, use a direct query approach
   const { getAttachmentById } = await import('../db/attachmentDb.js');
   const attachment = getAttachmentById(attachmentId);
 
@@ -427,14 +599,19 @@ export async function retryExtraction(
   }
 
   try {
-    // Re-extract text
+    // Re-extract text (now with vision fallback support)
     const extractedText = await extractTextFromAttachment(
       buffer,
       attachment.mime_type || 'application/octet-stream',
       attachment.filename
     );
 
-    const failed = extractedText.includes('extraction failed');
+    // Check for various failure indicators
+    const failed =
+      extractedText.includes('extraction failed') ||
+      extractedText.includes('OCR failed') ||
+      extractedText.includes('too large') ||
+      extractedText.includes('too long');
 
     // Update DB record
     updateExtractionStatus(
