@@ -5,13 +5,26 @@ export interface SettingsContentOptions {
   summaryEnabled: boolean;
   summaryTimeUtc: number;
   timezone: string;
+  emailSource?: 'gmail' | 'hosted';
+  hostedAlias?: string | null;
+  hostedEmail?: string | null;
+  hostedDomain?: string;
 }
 
 /**
  * Generate the settings content HTML (without layout wrapper)
  */
 export function renderSettingsContent(options: SettingsContentOptions): string {
-  const { summaryEmailRecipients, summaryEnabled, summaryTimeUtc, timezone } = options;
+  const {
+    summaryEmailRecipients,
+    summaryEnabled,
+    summaryTimeUtc,
+    timezone,
+    emailSource = 'gmail',
+    hostedAlias,
+    hostedEmail,
+    hostedDomain = 'inbox.getfamilyassistant.com',
+  } = options;
 
   const recipientsHtml = summaryEmailRecipients.length > 0
     ? summaryEmailRecipients.map((email, index) => `
@@ -170,12 +183,199 @@ export function renderSettingsContent(options: SettingsContentOptions): string {
         font-size: 14px;
         font-style: italic;
       }
+
+      /* Email Source Styles */
+      .email-source-options {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+
+      .source-option {
+        display: flex;
+        align-items: flex-start;
+        gap: 12px;
+        padding: 15px;
+        border: 2px solid #e0e0e0;
+        border-radius: 10px;
+        cursor: pointer;
+        transition: all 0.2s;
+      }
+
+      .source-option:hover {
+        border-color: #ccc;
+        background: #fafafa;
+      }
+
+      .source-option.selected {
+        border-color: var(--primary-color);
+        background: #f0f7ff;
+      }
+
+      .source-option input[type="radio"] {
+        margin-top: 3px;
+        width: 18px;
+        height: 18px;
+      }
+
+      .source-option-content {
+        flex: 1;
+      }
+
+      .source-option-title {
+        font-weight: 600;
+        color: #333;
+        margin-bottom: 4px;
+      }
+
+      .source-option-desc {
+        font-size: 13px;
+        color: #666;
+        line-height: 1.4;
+      }
+
+      .alias-config {
+        margin-top: 15px;
+        padding: 15px;
+        background: #f5f5f5;
+        border-radius: 8px;
+        display: none;
+      }
+
+      .alias-config.visible {
+        display: block;
+      }
+
+      .alias-input-group {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-top: 10px;
+      }
+
+      .alias-input-group input {
+        flex: 1;
+        max-width: 200px;
+      }
+
+      .alias-domain {
+        color: #666;
+        font-size: 14px;
+      }
+
+      .alias-status {
+        margin-top: 10px;
+        padding: 10px;
+        border-radius: 6px;
+        font-size: 13px;
+        display: none;
+      }
+
+      .alias-status.checking {
+        display: block;
+        background: #fff3cd;
+        color: #856404;
+      }
+
+      .alias-status.available {
+        display: block;
+        background: #d4edda;
+        color: #155724;
+      }
+
+      .alias-status.taken {
+        display: block;
+        background: #f8d7da;
+        color: #721c24;
+      }
+
+      .alias-status.owned {
+        display: block;
+        background: #d1ecf1;
+        color: #0c5460;
+      }
+
+      .current-hosted-email {
+        margin-top: 12px;
+        padding: 12px;
+        background: #e8f4fd;
+        border-radius: 8px;
+        font-size: 14px;
+      }
+
+      .current-hosted-email strong {
+        color: var(--primary-color);
+      }
     </style>
 
     <div id="message" class="message"></div>
 
     <form id="settingsForm">
       <div class="settings-grid">
+        <!-- Email Source Section -->
+        <div class="card">
+          <div class="section-title">📬 Email Source</div>
+          <p class="help-text" style="margin-bottom: 15px;">Choose how you want to receive emails for processing.</p>
+
+          <div class="email-source-options">
+            <label class="source-option ${emailSource === 'gmail' ? 'selected' : ''}" id="gmailOption">
+              <input
+                type="radio"
+                name="emailSource"
+                value="gmail"
+                ${emailSource === 'gmail' ? 'checked' : ''}
+                onchange="selectEmailSource('gmail')"
+              >
+              <div class="source-option-content">
+                <div class="source-option-title">Gmail Integration</div>
+                <div class="source-option-desc">
+                  Connect your Gmail account and we'll automatically fetch and process your emails.
+                  Requires Google OAuth sign-in.
+                </div>
+              </div>
+            </label>
+
+            <label class="source-option ${emailSource === 'hosted' ? 'selected' : ''}" id="hostedOption">
+              <input
+                type="radio"
+                name="emailSource"
+                value="hosted"
+                ${emailSource === 'hosted' ? 'checked' : ''}
+                onchange="selectEmailSource('hosted')"
+              >
+              <div class="source-option-content">
+                <div class="source-option-title">Forwarding Address</div>
+                <div class="source-option-desc">
+                  Get a personal forwarding address. Set up auto-forwarding from your school or other email to send messages here.
+                </div>
+              </div>
+            </label>
+          </div>
+
+          <div class="alias-config ${emailSource === 'hosted' ? 'visible' : ''}" id="aliasConfig">
+            <label style="font-weight: 500; color: #555; font-size: 14px;">Your forwarding address:</label>
+            <div class="alias-input-group">
+              <input
+                type="text"
+                id="hostedAlias"
+                placeholder="yourname"
+                value="${hostedAlias || ''}"
+                oninput="checkAliasAvailability()"
+                pattern="[a-z0-9]+"
+                style="text-transform: lowercase;"
+              >
+              <span class="alias-domain">@${hostedDomain}</span>
+            </div>
+            <div class="alias-status" id="aliasStatus"></div>
+            ${hostedEmail ? `
+              <div class="current-hosted-email">
+                Your current address: <strong>${hostedEmail}</strong>
+                <br><small>Forward emails to this address to have them processed.</small>
+              </div>
+            ` : ''}
+          </div>
+        </div>
+
         <!-- Email Recipients Section -->
         <div class="card">
           <div class="section-title">📧 Daily Summary Recipients</div>
@@ -251,11 +451,14 @@ export function renderSettingsContent(options: SettingsContentOptions): string {
 /**
  * Generate the settings JavaScript
  */
-export function renderSettingsScripts(initialRecipients: string[]): string {
+export function renderSettingsScripts(initialRecipients: string[], initialEmailSource: string = 'gmail'): string {
   return `
     <script>
       // Store recipients in memory
       let recipients = ${JSON.stringify(initialRecipients)};
+      let currentEmailSource = '${initialEmailSource}';
+      let aliasCheckTimeout = null;
+      let lastCheckedAlias = '';
 
       function renderRecipients() {
         const list = document.getElementById('recipientsList');
@@ -315,6 +518,141 @@ export function renderSettingsScripts(initialRecipients: string[]): string {
         }, 5000);
       }
 
+      // Email source functions
+      function selectEmailSource(source) {
+        currentEmailSource = source;
+
+        // Update UI
+        document.getElementById('gmailOption').classList.toggle('selected', source === 'gmail');
+        document.getElementById('hostedOption').classList.toggle('selected', source === 'hosted');
+
+        const aliasConfig = document.getElementById('aliasConfig');
+        if (source === 'hosted') {
+          aliasConfig.classList.add('visible');
+          // Check alias if there's a value
+          const aliasInput = document.getElementById('hostedAlias');
+          if (aliasInput.value) {
+            checkAliasAvailability();
+          }
+        } else {
+          aliasConfig.classList.remove('visible');
+        }
+      }
+
+      function checkAliasAvailability() {
+        const aliasInput = document.getElementById('hostedAlias');
+        const statusEl = document.getElementById('aliasStatus');
+        let alias = aliasInput.value.toLowerCase().trim();
+
+        // Force lowercase
+        aliasInput.value = alias;
+
+        // Clear previous timeout
+        if (aliasCheckTimeout) {
+          clearTimeout(aliasCheckTimeout);
+        }
+
+        // Validate format locally first
+        if (!alias) {
+          statusEl.className = 'alias-status';
+          statusEl.textContent = '';
+          return;
+        }
+
+        if (!/^[a-z0-9]+$/.test(alias)) {
+          statusEl.className = 'alias-status taken';
+          statusEl.textContent = 'Only lowercase letters and numbers allowed';
+          return;
+        }
+
+        if (alias.length < 3) {
+          statusEl.className = 'alias-status taken';
+          statusEl.textContent = 'Alias must be at least 3 characters';
+          return;
+        }
+
+        if (alias.length > 30) {
+          statusEl.className = 'alias-status taken';
+          statusEl.textContent = 'Alias must be 30 characters or less';
+          return;
+        }
+
+        // Skip if same as last check
+        if (alias === lastCheckedAlias) {
+          return;
+        }
+
+        statusEl.className = 'alias-status checking';
+        statusEl.textContent = 'Checking availability...';
+
+        // Debounce the API call
+        aliasCheckTimeout = setTimeout(async () => {
+          try {
+            const response = await fetch('/api/settings/check-alias?alias=' + encodeURIComponent(alias));
+            const data = await response.json();
+            lastCheckedAlias = alias;
+
+            if (data.owned) {
+              statusEl.className = 'alias-status owned';
+              statusEl.textContent = 'You own this alias';
+            } else if (data.available) {
+              statusEl.className = 'alias-status available';
+              statusEl.textContent = 'Available!';
+            } else {
+              statusEl.className = 'alias-status taken';
+              statusEl.textContent = data.reason || 'Already taken';
+            }
+          } catch (error) {
+            statusEl.className = 'alias-status taken';
+            statusEl.textContent = 'Error checking availability';
+          }
+        }, 300);
+      }
+
+      async function saveEmailSource() {
+        const source = currentEmailSource;
+        const alias = source === 'hosted' ? document.getElementById('hostedAlias').value.toLowerCase().trim() : null;
+
+        if (source === 'hosted' && !alias) {
+          showMessage('Please enter an alias for your forwarding address', 'error');
+          return false;
+        }
+
+        try {
+          const response = await fetch('/api/settings/email-source', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ source, alias }),
+          });
+
+          const data = await response.json();
+
+          if (!response.ok) {
+            showMessage('Error: ' + (data.error || 'Failed to update email source'), 'error');
+            return false;
+          }
+
+          // Update the hosted email display if we got one
+          if (data.hostedEmail) {
+            const currentDisplay = document.querySelector('.current-hosted-email');
+            if (currentDisplay) {
+              currentDisplay.innerHTML = 'Your current address: <strong>' + data.hostedEmail + '</strong><br><small>Forward emails to this address to have them processed.</small>';
+            } else {
+              const aliasConfig = document.getElementById('aliasConfig');
+              const newDisplay = document.createElement('div');
+              newDisplay.className = 'current-hosted-email';
+              newDisplay.innerHTML = 'Your current address: <strong>' + data.hostedEmail + '</strong><br><small>Forward emails to this address to have them processed.</small>';
+              aliasConfig.appendChild(newDisplay);
+            }
+          }
+
+          return true;
+        } catch (error) {
+          showMessage('Error: Failed to update email source', 'error');
+          return false;
+        }
+      }
+
       // Show local time preview
       function updateLocalTimePreview() {
         const utcHour = parseInt(document.getElementById('summaryTimeUtc').value) || 0;
@@ -333,14 +671,23 @@ export function renderSettingsScripts(initialRecipients: string[]): string {
         submitBtn.disabled = true;
         submitBtn.textContent = 'Saving...';
 
-        const settings = {
-          summaryEmailRecipients: recipients,
-          summaryEnabled: document.getElementById('summaryEnabled').checked,
-          summaryTimeUtc: parseInt(document.getElementById('summaryTimeUtc').value),
-          timezone: document.getElementById('timezone').value,
-        };
-
         try {
+          // First save email source if needed
+          const emailSourceSaved = await saveEmailSource();
+          if (!emailSourceSaved) {
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'Save Settings';
+            return;
+          }
+
+          // Then save other settings
+          const settings = {
+            summaryEmailRecipients: recipients,
+            summaryEnabled: document.getElementById('summaryEnabled').checked,
+            summaryTimeUtc: parseInt(document.getElementById('summaryTimeUtc').value),
+            timezone: document.getElementById('timezone').value,
+          };
+
           const response = await fetch('/settings', {
             method: 'PUT',
             headers: {

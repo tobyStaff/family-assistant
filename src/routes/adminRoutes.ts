@@ -997,4 +997,198 @@ export async function adminRoutes(fastify: FastifyInstance): Promise<void> {
       count: users.length,
     });
   });
+
+  // ============================================
+  // ATTACHMENT RETRY ENDPOINTS
+  // ============================================
+
+  /**
+   * GET /admin/failed-attachments
+   * List all attachments with failed extraction
+   */
+  fastify.get('/admin/failed-attachments', { preHandler: requireAdmin }, async (request, reply) => {
+    try {
+      const { getFailedAttachments } = await import('../db/attachmentDb.js');
+
+      // Get effective user ID (handles impersonation)
+      const effectiveUserId = getEffectiveUserId(request);
+      const isSuperAdmin = isRequestUserSuperAdmin(request);
+
+      // Super admins can see all failed attachments, others only see their own
+      const failedAttachments = isSuperAdmin
+        ? getFailedAttachments()
+        : getFailedAttachments(effectiveUserId);
+
+      return reply.code(200).send({
+        success: true,
+        attachments: failedAttachments.map(a => ({
+          id: a.id,
+          email_id: a.email_id,
+          filename: a.filename,
+          mime_type: a.mime_type,
+          size: a.size,
+          extraction_status: a.extraction_status,
+          extraction_error: a.extraction_error,
+          created_at: a.created_at,
+          user_id: a.user_id,
+          subject: a.subject,
+          from_email: a.from_email,
+        })),
+        count: failedAttachments.length,
+      });
+    } catch (error: any) {
+      fastify.log.error({ err: error }, 'Error fetching failed attachments');
+      return reply.code(500).send({
+        error: 'Failed to fetch failed attachments',
+        message: error.message,
+      });
+    }
+  });
+
+  /**
+   * POST /admin/attachments/:id/retry
+   * Retry extraction for a single attachment
+   */
+  fastify.post<{
+    Params: { id: string };
+  }>('/admin/attachments/:id/retry', { preHandler: requireAdmin }, async (request, reply) => {
+    try {
+      const attachmentId = parseInt(request.params.id, 10);
+      if (isNaN(attachmentId)) {
+        return reply.code(400).send({ error: 'Invalid attachment ID' });
+      }
+
+      const { retryExtraction, rebuildAttachmentContent } = await import('../utils/attachmentExtractor.js');
+      const { getAttachmentById } = await import('../db/attachmentDb.js');
+      const { getEmailById } = await import('../db/emailDb.js');
+
+      // Get attachment to find email
+      const attachment = getAttachmentById(attachmentId);
+      if (!attachment) {
+        return reply.code(404).send({ error: 'Attachment not found' });
+      }
+
+      // Retry extraction
+      const result = await retryExtraction(attachmentId);
+
+      if (result.success) {
+        // Rebuild and update email's attachment_content
+        const { default: db } = await import('../db/db.js');
+        const newContent = rebuildAttachmentContent(attachment.email_id);
+
+        // Get email to update body_text
+        const email = getEmailById('', attachment.email_id); // User ID not needed for this query pattern
+
+        // Update email with new attachment content
+        db.prepare(`
+          UPDATE emails
+          SET attachment_content = ?,
+              attachment_extraction_failed = 0,
+              updated_at = CURRENT_TIMESTAMP
+          WHERE id = ?
+        `).run(newContent, attachment.email_id);
+
+        fastify.log.info(
+          { attachmentId, filename: attachment.filename },
+          'Attachment extraction retry succeeded'
+        );
+      }
+
+      return reply.code(200).send({
+        success: result.success,
+        attachmentId,
+        filename: attachment.filename,
+        extractedText: result.extractedText?.substring(0, 500), // Truncate for response
+        error: result.error,
+      });
+    } catch (error: any) {
+      fastify.log.error({ err: error }, 'Error retrying attachment extraction');
+      return reply.code(500).send({
+        error: 'Failed to retry extraction',
+        message: error.message,
+      });
+    }
+  });
+
+  /**
+   * POST /admin/emails/:id/retry-attachments
+   * Retry extraction for all failed attachments in an email
+   */
+  fastify.post<{
+    Params: { id: string };
+  }>('/admin/emails/:id/retry-attachments', { preHandler: requireAdmin }, async (request, reply) => {
+    try {
+      const emailId = parseInt(request.params.id, 10);
+      if (isNaN(emailId)) {
+        return reply.code(400).send({ error: 'Invalid email ID' });
+      }
+
+      const { retryExtraction, rebuildAttachmentContent } = await import('../utils/attachmentExtractor.js');
+      const { getAttachmentsByEmailId } = await import('../db/attachmentDb.js');
+
+      // Get all failed attachments for this email
+      const attachments = getAttachmentsByEmailId(emailId);
+      const failedAttachments = attachments.filter(a => a.extraction_status === 'failed');
+
+      if (failedAttachments.length === 0) {
+        return reply.code(200).send({
+          success: true,
+          message: 'No failed attachments to retry',
+          retried: 0,
+          succeeded: 0,
+        });
+      }
+
+      // Retry each failed attachment
+      const results = await Promise.all(
+        failedAttachments.map(async (attachment) => {
+          const result = await retryExtraction(attachment.id);
+          return {
+            id: attachment.id,
+            filename: attachment.filename,
+            success: result.success,
+            error: result.error,
+          };
+        })
+      );
+
+      const succeeded = results.filter(r => r.success).length;
+
+      // Rebuild email's attachment_content if any succeeded
+      if (succeeded > 0) {
+        const { default: db } = await import('../db/db.js');
+        const newContent = rebuildAttachmentContent(emailId);
+
+        // Check if any attachments still failed
+        const updatedAttachments = getAttachmentsByEmailId(emailId);
+        const stillFailed = updatedAttachments.some(a => a.extraction_status === 'failed');
+
+        db.prepare(`
+          UPDATE emails
+          SET attachment_content = ?,
+              attachment_extraction_failed = ?,
+              updated_at = CURRENT_TIMESTAMP
+          WHERE id = ?
+        `).run(newContent, stillFailed ? 1 : 0, emailId);
+      }
+
+      fastify.log.info(
+        { emailId, retried: failedAttachments.length, succeeded },
+        'Email attachment retry completed'
+      );
+
+      return reply.code(200).send({
+        success: true,
+        retried: failedAttachments.length,
+        succeeded,
+        results,
+      });
+    } catch (error: any) {
+      fastify.log.error({ err: error }, 'Error retrying email attachments');
+      return reply.code(500).send({
+        error: 'Failed to retry attachments',
+        message: error.message,
+      });
+    }
+  });
 }

@@ -302,3 +302,158 @@ export function ensureSuperAdminRoles(email: string): void {
     updateUserRoles(user.user_id, ['STANDARD', 'ADMIN', 'SUPER_ADMIN']);
   }
 }
+
+// ============================================
+// HOSTED EMAIL ALIAS FUNCTIONS
+// ============================================
+
+const HOSTED_EMAIL_DOMAIN = 'inbox.getfamilyassistant.com';
+
+// Prepared statements for hosted email
+const getByAliasStmt = db.prepare(`
+  SELECT * FROM users WHERE LOWER(hosted_email_alias) = LOWER(?)
+`);
+
+const checkAliasStmt = db.prepare(`
+  SELECT 1 FROM users WHERE LOWER(hosted_email_alias) = LOWER(?)
+`);
+
+const setAliasStmt = db.prepare(`
+  UPDATE users
+  SET hosted_email_alias = LOWER(?), updated_at = datetime('now')
+  WHERE user_id = ?
+`);
+
+const clearAliasStmt = db.prepare(`
+  UPDATE users
+  SET hosted_email_alias = NULL, updated_at = datetime('now')
+  WHERE user_id = ?
+`);
+
+const getAliasStmt = db.prepare(`
+  SELECT hosted_email_alias FROM users WHERE user_id = ?
+`);
+
+/**
+ * Get user by hosted email alias
+ * Used when receiving inbound emails to look up the user
+ *
+ * @param alias - The alias part (e.g., "toby" from "toby@inbox.getfamilyassistant.com")
+ * @returns User profile or null
+ */
+export function getUserByHostedAlias(alias: string): UserProfile | null {
+  const row = getByAliasStmt.get(alias.toLowerCase()) as any;
+  if (!row) return null;
+  return rowToUserProfile(row);
+}
+
+/**
+ * Check if a hosted email alias is available
+ *
+ * @param alias - The alias to check
+ * @returns true if available, false if taken
+ */
+export function isHostedAliasAvailable(alias: string): boolean {
+  const row = checkAliasStmt.get(alias.toLowerCase());
+  return !row;
+}
+
+/**
+ * Validate hosted email alias format
+ *
+ * @param alias - The alias to validate
+ * @returns Object with valid boolean and optional error message
+ */
+export function validateHostedAlias(alias: string): { valid: boolean; error?: string } {
+  if (!alias) {
+    return { valid: false, error: 'Alias is required' };
+  }
+
+  if (alias.length < 2) {
+    return { valid: false, error: 'Alias must be at least 2 characters' };
+  }
+
+  if (alias.length > 30) {
+    return { valid: false, error: 'Alias must be 30 characters or less' };
+  }
+
+  // Allow: letters, numbers, dots, hyphens, underscores
+  // Must start and end with letter or number
+  if (!/^[a-z0-9][a-z0-9._-]*[a-z0-9]$/i.test(alias) && alias.length > 1) {
+    return { valid: false, error: 'Alias can only contain letters, numbers, dots, hyphens, and underscores' };
+  }
+
+  // Single character aliases must be alphanumeric
+  if (alias.length === 2 && !/^[a-z0-9]{2}$/i.test(alias)) {
+    return { valid: false, error: 'Short aliases must be alphanumeric' };
+  }
+
+  // Reserved aliases
+  const reserved = ['admin', 'support', 'help', 'info', 'contact', 'mail', 'email', 'noreply', 'no-reply', 'postmaster', 'webmaster', 'abuse'];
+  if (reserved.includes(alias.toLowerCase())) {
+    return { valid: false, error: 'This alias is reserved' };
+  }
+
+  return { valid: true };
+}
+
+/**
+ * Set hosted email alias for a user
+ * Will fail if alias is already taken (unique constraint)
+ *
+ * @param userId - User ID
+ * @param alias - The alias to claim (will be lowercased)
+ * @returns true if successful, false if alias taken
+ */
+export function setHostedEmailAlias(userId: string, alias: string): boolean {
+  try {
+    const result = setAliasStmt.run(alias.toLowerCase(), userId);
+    return result.changes > 0;
+  } catch (error: any) {
+    // Unique constraint violation
+    if (error.code === 'SQLITE_CONSTRAINT' || error.message?.includes('UNIQUE')) {
+      return false;
+    }
+    throw error;
+  }
+}
+
+/**
+ * Clear hosted email alias for a user
+ * Used when switching back to Gmail mode
+ *
+ * @param userId - User ID
+ */
+export function clearHostedEmailAlias(userId: string): void {
+  clearAliasStmt.run(userId);
+}
+
+/**
+ * Get user's hosted email alias
+ *
+ * @param userId - User ID
+ * @returns Alias or null
+ */
+export function getHostedEmailAlias(userId: string): string | null {
+  const row = getAliasStmt.get(userId) as { hosted_email_alias: string | null } | undefined;
+  return row?.hosted_email_alias || null;
+}
+
+/**
+ * Get user's full hosted email address
+ *
+ * @param userId - User ID
+ * @returns Full email address or null if no alias set
+ */
+export function getHostedEmailAddress(userId: string): string | null {
+  const alias = getHostedEmailAlias(userId);
+  if (!alias) return null;
+  return `${alias}@${HOSTED_EMAIL_DOMAIN}`;
+}
+
+/**
+ * Get the hosted email domain
+ */
+export function getHostedEmailDomain(): string {
+  return HOSTED_EMAIL_DOMAIN;
+}

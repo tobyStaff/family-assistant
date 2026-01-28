@@ -1,10 +1,25 @@
 // src/routes/settingsRoutes.ts
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { upsertSettings, getOrCreateDefaultSettings } from '../db/settingsDb.js';
+import {
+  upsertSettings,
+  getOrCreateDefaultSettings,
+  getEmailSource,
+  setEmailSource,
+  type EmailSource,
+} from '../db/settingsDb.js';
 import { getUserId } from '../lib/userContext.js';
 import { requireAuth } from '../middleware/session.js';
-import { getUser } from '../db/userDb.js';
+import {
+  getUser,
+  isHostedAliasAvailable,
+  validateHostedAlias,
+  setHostedEmailAlias,
+  clearHostedEmailAlias,
+  getHostedEmailAlias,
+  getHostedEmailAddress,
+  getHostedEmailDomain,
+} from '../db/userDb.js';
 import type { Role } from '../types/roles.js';
 import { renderLayout } from '../templates/layout.js';
 import { renderSettingsContent, renderSettingsScripts } from '../templates/settingsContent.js';
@@ -47,15 +62,24 @@ export async function settingsRoutes(fastify: FastifyInstance): Promise<void> {
         const impersonatingUserId = (request as any).impersonatingUserId;
         const effectiveUser = impersonatingUserId ? getUser(impersonatingUserId) : null;
 
+        // Get email source info
+        const emailSource = getEmailSource(userId);
+        const hostedAlias = getHostedEmailAlias(userId);
+        const hostedEmail = hostedAlias ? getHostedEmailAddress(userId) : null;
+
         // Generate settings content
         const content = renderSettingsContent({
           summaryEmailRecipients: settings.summary_email_recipients,
           summaryEnabled: settings.summary_enabled,
           summaryTimeUtc: settings.summary_time_utc,
           timezone: settings.timezone,
+          emailSource,
+          hostedAlias,
+          hostedEmail,
+          hostedDomain: getHostedEmailDomain(),
         });
 
-        const scripts = renderSettingsScripts(settings.summary_email_recipients);
+        const scripts = renderSettingsScripts(settings.summary_email_recipients, emailSource);
 
         // Render with layout
         const html = renderLayout({
@@ -144,6 +168,185 @@ export async function settingsRoutes(fastify: FastifyInstance): Promise<void> {
       return reply.code(500).send({
         error: 'Internal server error',
       });
+    }
+  });
+
+  // ============================================
+  // EMAIL SOURCE ENDPOINTS
+  // ============================================
+
+  /**
+   * GET /api/settings/email-source
+   * Get current email source configuration
+   */
+  fastify.get('/api/settings/email-source', { preHandler: requireAuth }, async (request, reply) => {
+    try {
+      const userId = getUserId(request);
+
+      const emailSource = getEmailSource(userId);
+      const hostedAlias = getHostedEmailAlias(userId);
+      const hostedEmail = hostedAlias ? getHostedEmailAddress(userId) : null;
+
+      return reply.code(200).send({
+        emailSource,
+        hostedAlias,
+        hostedEmail,
+        hostedDomain: getHostedEmailDomain(),
+      });
+    } catch (error) {
+      fastify.log.error({ err: error }, 'Error getting email source');
+      return reply.code(500).send({ error: 'Internal server error' });
+    }
+  });
+
+  /**
+   * POST /api/settings/email-source
+   * Change email source (gmail or hosted)
+   */
+  fastify.post<{
+    Body: { source: EmailSource; alias?: string };
+  }>('/api/settings/email-source', { preHandler: requireAuth }, async (request, reply) => {
+    try {
+      const userId = getUserId(request);
+      const { source, alias } = request.body;
+
+      // Validate source
+      if (source !== 'gmail' && source !== 'hosted') {
+        return reply.code(400).send({ error: 'Invalid source. Must be "gmail" or "hosted"' });
+      }
+
+      if (source === 'hosted') {
+        // Must provide alias when switching to hosted
+        if (!alias) {
+          return reply.code(400).send({ error: 'Alias is required when switching to hosted email' });
+        }
+
+        // Validate alias format
+        const validation = validateHostedAlias(alias);
+        if (!validation.valid) {
+          return reply.code(400).send({ error: validation.error });
+        }
+
+        // Check availability (unless user already owns this alias)
+        const currentAlias = getHostedEmailAlias(userId);
+        if (currentAlias?.toLowerCase() !== alias.toLowerCase()) {
+          if (!isHostedAliasAvailable(alias)) {
+            return reply.code(409).send({ error: 'This alias is already taken' });
+          }
+
+          // Claim the alias
+          const success = setHostedEmailAlias(userId, alias);
+          if (!success) {
+            return reply.code(409).send({ error: 'Failed to claim alias. It may have been taken.' });
+          }
+        }
+
+        fastify.log.info({ userId, alias }, 'User claimed hosted email alias');
+      } else {
+        // Switching to Gmail - clear hosted alias
+        clearHostedEmailAlias(userId);
+        fastify.log.info({ userId }, 'User switched to Gmail, cleared hosted alias');
+      }
+
+      // Update email source preference
+      setEmailSource(userId, source);
+
+      const hostedEmail = source === 'hosted' ? getHostedEmailAddress(userId) : null;
+
+      return reply.code(200).send({
+        success: true,
+        emailSource: source,
+        hostedAlias: source === 'hosted' ? alias : null,
+        hostedEmail,
+      });
+    } catch (error) {
+      fastify.log.error({ err: error }, 'Error updating email source');
+      return reply.code(500).send({ error: 'Internal server error' });
+    }
+  });
+
+  /**
+   * GET /api/settings/check-alias
+   * Check if a hosted email alias is available
+   */
+  fastify.get<{
+    Querystring: { alias?: string };
+  }>('/api/settings/check-alias', { preHandler: requireAuth }, async (request, reply) => {
+    try {
+      const userId = getUserId(request);
+      const alias = request.query.alias?.toLowerCase().trim();
+
+      if (!alias) {
+        return reply.code(400).send({ error: 'Alias parameter is required' });
+      }
+
+      // Validate format first
+      const validation = validateHostedAlias(alias);
+      if (!validation.valid) {
+        return reply.code(200).send({
+          alias,
+          available: false,
+          reason: validation.error,
+        });
+      }
+
+      // Check if user already owns this alias
+      const currentAlias = getHostedEmailAlias(userId);
+      if (currentAlias?.toLowerCase() === alias.toLowerCase()) {
+        return reply.code(200).send({
+          alias,
+          available: true,
+          owned: true,
+          reason: 'You already own this alias',
+        });
+      }
+
+      // Check availability
+      const available = isHostedAliasAvailable(alias);
+
+      return reply.code(200).send({
+        alias,
+        available,
+        owned: false,
+        reason: available ? undefined : 'Already taken',
+      });
+    } catch (error) {
+      fastify.log.error({ err: error }, 'Error checking alias availability');
+      return reply.code(500).send({ error: 'Internal server error' });
+    }
+  });
+
+  /**
+   * DELETE /api/settings/email-source/alias
+   * Clear hosted email alias without switching source
+   */
+  fastify.delete('/api/settings/email-source/alias', { preHandler: requireAuth }, async (request, reply) => {
+    try {
+      const userId = getUserId(request);
+
+      const currentAlias = getHostedEmailAlias(userId);
+      if (!currentAlias) {
+        return reply.code(200).send({
+          success: true,
+          message: 'No alias to clear',
+        });
+      }
+
+      clearHostedEmailAlias(userId);
+
+      // Also switch back to Gmail
+      setEmailSource(userId, 'gmail');
+
+      fastify.log.info({ userId, clearedAlias: currentAlias }, 'User cleared hosted email alias');
+
+      return reply.code(200).send({
+        success: true,
+        message: 'Alias cleared and switched to Gmail',
+        clearedAlias: currentAlias,
+      });
+    } catch (error) {
+      fastify.log.error({ err: error }, 'Error clearing alias');
+      return reply.code(500).send({ error: 'Internal server error' });
     }
   });
 }

@@ -3,6 +3,11 @@
 import db from './db.js';
 
 /**
+ * Email source type
+ */
+export type EmailSourceType = 'gmail' | 'hosted';
+
+/**
  * Email stored in database
  */
 export interface StoredEmail {
@@ -25,6 +30,8 @@ export interface StoredEmail {
   gmail_labeled: boolean;
   fetch_error?: string;
   fetch_attempts: number;
+  source_type: EmailSourceType;
+  source_message_id?: string;
   created_at: Date;
   updated_at: Date;
 }
@@ -45,6 +52,8 @@ export interface CreateEmailInput {
   has_attachments?: boolean;
   attachment_content?: string;
   attachment_extraction_failed?: boolean;
+  source_type?: EmailSourceType;
+  source_message_id?: string;
 }
 
 /**
@@ -57,8 +66,9 @@ const insertStmt = db.prepare(`
     from_email, from_name, subject, date,
     body_text, snippet, labels,
     has_attachments, attachment_content, attachment_extraction_failed,
-    processed, analyzed, gmail_labeled
-  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0)
+    processed, analyzed, gmail_labeled,
+    source_type, source_message_id
+  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, ?, ?)
 `);
 
 const getByIdStmt = db.prepare(`
@@ -158,6 +168,8 @@ function parseEmailRow(row: any): StoredEmail {
     gmail_labeled: Boolean(row.gmail_labeled),
     fetch_error: row.fetch_error || undefined,
     fetch_attempts: row.fetch_attempts,
+    source_type: (row.source_type as EmailSourceType) || 'gmail',
+    source_message_id: row.source_message_id || undefined,
     created_at: new Date(row.created_at),
     updated_at: new Date(row.updated_at),
   };
@@ -171,6 +183,10 @@ function parseEmailRow(row: any): StoredEmail {
  * @returns Created email ID
  */
 export function createEmail(userId: string, emailData: CreateEmailInput): number {
+  // Determine source type and message ID
+  const sourceType = emailData.source_type || 'gmail';
+  const sourceMessageId = emailData.source_message_id || emailData.gmail_message_id;
+
   const result = insertStmt.run(
     userId,
     emailData.gmail_message_id,
@@ -184,7 +200,9 @@ export function createEmail(userId: string, emailData: CreateEmailInput): number
     emailData.labels ? JSON.stringify(emailData.labels) : null,
     emailData.has_attachments ? 1 : 0,
     emailData.attachment_content || null,
-    emailData.attachment_extraction_failed ? 1 : 0
+    emailData.attachment_extraction_failed ? 1 : 0,
+    sourceType,
+    sourceMessageId
   );
 
   return result.lastInsertRowid as number;
@@ -344,4 +362,89 @@ export function getEmailStats(userId: string): {
  */
 export function emailExists(userId: string, gmailMessageId: string): boolean {
   return getEmailByGmailId(userId, gmailMessageId) !== null;
+}
+
+// ============================================
+// SOURCE-BASED EMAIL FUNCTIONS
+// ============================================
+
+const getBySourceIdStmt = db.prepare(`
+  SELECT * FROM emails
+  WHERE user_id = ? AND source_type = ? AND source_message_id = ?
+`);
+
+const listBySourceStmt = db.prepare(`
+  SELECT * FROM emails
+  WHERE user_id = ? AND source_type = ?
+  ORDER BY date DESC
+  LIMIT ? OFFSET ?
+`);
+
+const countBySourceStmt = db.prepare(`
+  SELECT COUNT(*) as total FROM emails WHERE user_id = ? AND source_type = ?
+`);
+
+/**
+ * Get email by source type and source message ID
+ * Used for deduplication when receiving hosted emails
+ *
+ * @param userId - User ID
+ * @param sourceType - Source type ('gmail' or 'hosted')
+ * @param sourceMessageId - Source-specific message ID
+ * @returns Email or null
+ */
+export function getEmailBySourceId(
+  userId: string,
+  sourceType: EmailSourceType,
+  sourceMessageId: string
+): StoredEmail | null {
+  const row = getBySourceIdStmt.get(userId, sourceType, sourceMessageId) as any;
+  return row ? parseEmailRow(row) : null;
+}
+
+/**
+ * Check if email exists by source type and message ID
+ *
+ * @param userId - User ID
+ * @param sourceType - Source type
+ * @param sourceMessageId - Source message ID
+ * @returns true if exists
+ */
+export function emailExistsBySource(
+  userId: string,
+  sourceType: EmailSourceType,
+  sourceMessageId: string
+): boolean {
+  return getEmailBySourceId(userId, sourceType, sourceMessageId) !== null;
+}
+
+/**
+ * List emails by source type with pagination
+ *
+ * @param userId - User ID
+ * @param sourceType - Source type to filter by
+ * @param limit - Number of emails to return
+ * @param offset - Offset for pagination
+ * @returns Array of emails
+ */
+export function listEmailsBySource(
+  userId: string,
+  sourceType: EmailSourceType,
+  limit: number = 50,
+  offset: number = 0
+): StoredEmail[] {
+  const rows = listBySourceStmt.all(userId, sourceType, limit, offset) as any[];
+  return rows.map(parseEmailRow);
+}
+
+/**
+ * Count emails by source type
+ *
+ * @param userId - User ID
+ * @param sourceType - Source type to count
+ * @returns Count of emails
+ */
+export function countEmailsBySource(userId: string, sourceType: EmailSourceType): number {
+  const row = countBySourceStmt.get(userId, sourceType) as { total: number };
+  return row?.total || 0;
 }

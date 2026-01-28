@@ -11,6 +11,7 @@ interface StoredEmail {
   body_text?: string;
   labels?: string[];
   has_attachments: boolean;
+  attachment_extraction_failed: boolean;
   processed: boolean;
   analyzed: boolean;
   gmail_labeled: boolean;
@@ -44,6 +45,7 @@ export function renderEmailsViewContent(options: EmailsViewContentOptions): stri
               ${email.analyzed ? '<span class="badge badge-info">Analyzed</span>' : ''}
               ${email.gmail_labeled ? '<span class="badge badge-secondary">Gmail Labeled</span>' : ''}
               ${email.has_attachments ? '<span class="badge badge-attachment">📎 Attachment</span>' : ''}
+              ${email.attachment_extraction_failed ? '<span class="badge badge-error">⚠️ Extraction Failed</span>' : ''}
             </div>
           </div>
           <div class="email-meta">
@@ -62,6 +64,7 @@ export function renderEmailsViewContent(options: EmailsViewContentOptions): stri
           </details>
           ${email.fetch_error ? `<div class="email-error">Error: ${escapeHtml(email.fetch_error)}</div>` : ''}
           <div class="email-actions">
+            ${email.attachment_extraction_failed ? `<button class="btn btn-warning btn-sm" data-email-id="${email.id}" onclick="retryAttachments(this)">🔄 Retry Extraction</button>` : ''}
             <button class="btn btn-danger btn-sm" data-email-id="${email.id}" onclick="deleteEmail(this)">🗑️ Delete</button>
           </div>
         </div>
@@ -176,7 +179,17 @@ export function renderEmailsViewContent(options: EmailsViewContentOptions): stri
       .badge-warning { background: #fff3cd; color: #856404; }
       .badge-info { background: #d1ecf1; color: #0c5460; }
       .badge-secondary { background: #e2e3e5; color: #383d41; }
-      .badge-attachment { background: #f8d7da; color: #721c24; }
+      .badge-attachment { background: #e3f2fd; color: #1565c0; }
+      .badge-error { background: #f8d7da; color: #721c24; }
+
+      .btn-warning {
+        background: #ffc107;
+        color: #212529;
+        border: none;
+      }
+      .btn-warning:hover {
+        background: #e0a800;
+      }
 
       .email-meta {
         display: flex;
@@ -370,6 +383,48 @@ export function renderEmailsViewScripts(): string {
           resultDiv.style.display = 'block';
           btn.disabled = false;
           btn.textContent = '📥 Fetch Emails from Gmail';
+        }
+      }
+
+      async function retryAttachments(btn) {
+        const emailId = btn.dataset.emailId;
+        const card = btn.closest('.email-card');
+        const subject = card.querySelector('.email-subject')?.textContent || 'this email';
+
+        btn.disabled = true;
+        btn.textContent = '⏳ Retrying...';
+
+        try {
+          const response = await fetch('/admin/emails/' + emailId + '/retry-attachments', {
+            method: 'POST'
+          });
+
+          const data = await response.json();
+
+          if (response.ok && data.success) {
+            if (data.succeeded > 0) {
+              alert('✅ Retry successful! ' + data.succeeded + ' of ' + data.retried + ' attachments extracted.');
+              // Remove the error badge and retry button if all succeeded
+              if (data.succeeded === data.retried) {
+                const errorBadge = card.querySelector('.badge-error');
+                if (errorBadge) errorBadge.remove();
+                btn.remove();
+              } else {
+                btn.textContent = '🔄 Retry Extraction';
+                btn.disabled = false;
+              }
+            } else {
+              alert('❌ Retry failed. No attachments could be extracted.');
+              btn.textContent = '🔄 Retry Extraction';
+              btn.disabled = false;
+            }
+          } else {
+            throw new Error(data.error || data.message || 'Retry failed');
+          }
+        } catch (error) {
+          alert('Error retrying extraction: ' + error.message);
+          btn.disabled = false;
+          btn.textContent = '🔄 Retry Extraction';
         }
       }
 

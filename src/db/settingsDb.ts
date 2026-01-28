@@ -4,15 +4,21 @@ import type { UserSettings } from '../types/summary.js';
 import { getUser } from './userDb.js';
 
 /**
+ * Email source type
+ */
+export type EmailSource = 'gmail' | 'hosted';
+
+/**
  * Prepared statements for user settings operations
  */
 const getSettingsStmt = db.prepare(`
-  SELECT 
+  SELECT
     user_id,
     summary_email_recipients,
     summary_enabled,
     summary_time_utc,
     timezone,
+    email_source,
     created_at,
     updated_at
   FROM user_settings
@@ -41,12 +47,13 @@ const deleteSettingsStmt = db.prepare(`
 `);
 
 const getAllEnabledSettingsStmt = db.prepare(`
-  SELECT 
+  SELECT
     user_id,
     summary_email_recipients,
     summary_enabled,
     summary_time_utc,
     timezone,
+    email_source,
     created_at,
     updated_at
   FROM user_settings
@@ -56,15 +63,16 @@ const getAllEnabledSettingsStmt = db.prepare(`
 /**
  * Parse database row to UserSettings object
  */
-function parseRow(row: any): UserSettings {
+function parseRow(row: any): UserSettings & { email_source: EmailSource } {
   return {
     user_id: row.user_id,
-    summary_email_recipients: row.summary_email_recipients 
-      ? JSON.parse(row.summary_email_recipients) 
+    summary_email_recipients: row.summary_email_recipients
+      ? JSON.parse(row.summary_email_recipients)
       : [],
     summary_enabled: Boolean(row.summary_enabled),
     summary_time_utc: row.summary_time_utc,
     timezone: row.timezone,
+    email_source: (row.email_source as EmailSource) || 'gmail',
     created_at: row.created_at ? new Date(row.created_at) : undefined,
     updated_at: row.updated_at ? new Date(row.updated_at) : undefined,
   };
@@ -125,10 +133,10 @@ export function getAllEnabledSettings(): UserSettings[] {
  * @param userId - User ID
  * @returns User settings (existing or default)
  */
-export function getOrCreateDefaultSettings(userId: string): UserSettings {
+export function getOrCreateDefaultSettings(userId: string): UserSettings & { email_source: EmailSource } {
   const existing = getSettings(userId);
   if (existing) {
-    return existing;
+    return existing as UserSettings & { email_source: EmailSource };
   }
 
   // Get user's email to use as default recipient
@@ -142,5 +150,76 @@ export function getOrCreateDefaultSettings(userId: string): UserSettings {
     summary_enabled: true,
     summary_time_utc: 8,
     timezone: 'UTC',
+    email_source: 'gmail',
   };
+}
+
+// ============================================
+// EMAIL SOURCE FUNCTIONS
+// ============================================
+
+const getEmailSourceStmt = db.prepare(`
+  SELECT email_source FROM user_settings WHERE user_id = ?
+`);
+
+const setEmailSourceStmt = db.prepare(`
+  UPDATE user_settings
+  SET email_source = ?, updated_at = CURRENT_TIMESTAMP
+  WHERE user_id = ?
+`);
+
+const insertEmailSourceStmt = db.prepare(`
+  INSERT INTO user_settings (user_id, email_source, summary_enabled, summary_time_utc, timezone)
+  VALUES (?, ?, 1, 8, 'UTC')
+  ON CONFLICT(user_id) DO UPDATE SET
+    email_source = excluded.email_source,
+    updated_at = CURRENT_TIMESTAMP
+`);
+
+/**
+ * Get email source for a user
+ *
+ * @param userId - User ID
+ * @returns Email source ('gmail' or 'hosted'), defaults to 'gmail'
+ */
+export function getEmailSource(userId: string): EmailSource {
+  const row = getEmailSourceStmt.get(userId) as { email_source: string } | undefined;
+  return (row?.email_source as EmailSource) || 'gmail';
+}
+
+/**
+ * Set email source for a user
+ * Creates settings record if it doesn't exist
+ *
+ * @param userId - User ID
+ * @param source - Email source ('gmail' or 'hosted')
+ */
+export function setEmailSource(userId: string, source: EmailSource): void {
+  // Try update first
+  const result = setEmailSourceStmt.run(source, userId);
+
+  // If no rows updated, insert new settings record
+  if (result.changes === 0) {
+    insertEmailSourceStmt.run(userId, source);
+  }
+}
+
+/**
+ * Check if user is using hosted email
+ *
+ * @param userId - User ID
+ * @returns true if using hosted email
+ */
+export function isUsingHostedEmail(userId: string): boolean {
+  return getEmailSource(userId) === 'hosted';
+}
+
+/**
+ * Check if user is using Gmail
+ *
+ * @param userId - User ID
+ * @returns true if using Gmail
+ */
+export function isUsingGmail(userId: string): boolean {
+  return getEmailSource(userId) === 'gmail';
 }

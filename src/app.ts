@@ -19,6 +19,7 @@ import { processingRoutes } from './routes/processingRoutes.js';
 import { actionRoutes } from './routes/actionRoutes.js';
 import { landingRoutes } from './routes/landingRoutes.js';
 import { checkoutRoutes } from './routes/checkoutRoutes.js';
+import { emailInboundRoutes } from './routes/emailInboundRoutes.js';
 import dailySummaryPlugin from './plugins/dailySummary.js';
 import metricsPlugin from './plugins/metrics.js';
 import { sessionMiddleware } from './middleware/session.js';
@@ -102,6 +103,7 @@ export async function buildApp() {
   await fastify.register(todoRoutes);
   await fastify.register(eventRoutes);
   await fastify.register(emailRoutes);
+  await fastify.register(emailInboundRoutes);  // Hosted email webhook (no session required)
   await fastify.register(commandProcessorRoutes);
 
   return fastify;

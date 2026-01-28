@@ -3,7 +3,11 @@
 import { google } from 'googleapis';
 import type { OAuth2Client } from 'google-auth-library';
 import type { DateRange } from './inboxFetcher.js';
-import { getAttachmentText } from './attachmentExtractor.js';
+import {
+  getAttachmentText,
+  storeDownloadedAttachments,
+  type DownloadedAttachment,
+} from './attachmentExtractor.js';
 import {
   createEmail,
   markEmailProcessed,
@@ -97,6 +101,7 @@ async function fetchEmailContent(
   labels: string[];
   hasAttachments: boolean;
   attachmentContent?: string;
+  downloadedAttachments: DownloadedAttachment[];
 }> {
   const gmail = google.gmail({ version: 'v1', auth });
 
@@ -136,14 +141,17 @@ async function fetchEmailContent(
 
   // Extract attachment text if present
   let attachmentContent: string | undefined;
+  let downloadedAttachments: DownloadedAttachment[] = [];
+
   if (hasAttachments) {
     try {
-      const attachmentText = await getAttachmentText(auth, msg.id!, msg.payload);
-      if (attachmentText) {
-        attachmentContent = attachmentText;
+      const result = await getAttachmentText(auth, msg.id!, msg.payload);
+      if (result.text) {
+        attachmentContent = result.text;
         // Also append to body for combined content
-        bodyText += attachmentText;
+        bodyText += result.text;
       }
+      downloadedAttachments = result.downloadedAttachments;
     } catch (error: any) {
       console.error(`Failed to extract attachments for email ${msg.id}:`, error.message);
     }
@@ -161,6 +169,7 @@ async function fetchEmailContent(
     labels,
     hasAttachments,
     attachmentContent,
+    downloadedAttachments,
   };
 }
 
@@ -240,6 +249,16 @@ export async function fetchAndStoreEmails(
         };
 
         const emailId = createEmail(userId, emailInput);
+
+        // Store attachments to filesystem and create DB records
+        if (emailContent.downloadedAttachments.length > 0) {
+          const storedCount = storeDownloadedAttachments(
+            userId,
+            emailId,
+            emailContent.downloadedAttachments
+          );
+          console.log(`[EmailStorage] Stored ${storedCount} attachments for email ${emailId}`);
+        }
 
         // Mark as processed in DB
         markEmailProcessed(userId, emailId);

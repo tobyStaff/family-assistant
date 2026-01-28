@@ -586,6 +586,95 @@ function runMigrations() {
 
     console.log('Migration 8 completed');
   }
+
+  // Migration 9: Create email_attachments table for storing original attachments
+  if (version < 9) {
+    console.log('Running migration 9: Creating email_attachments table for original file storage');
+
+    db.transaction(() => {
+      // Create email_attachments table to track individual attachments
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS email_attachments (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          email_id INTEGER NOT NULL,
+
+          -- Attachment metadata
+          filename TEXT NOT NULL,
+          mime_type TEXT,
+          size INTEGER,
+
+          -- Storage location (relative path from data/attachments/)
+          storage_path TEXT NOT NULL,
+
+          -- Extraction tracking
+          extraction_status TEXT DEFAULT 'pending'
+            CHECK(extraction_status IN ('pending', 'success', 'failed', 'skipped')),
+          extraction_error TEXT,
+          extracted_text TEXT,
+
+          -- Timestamps
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+
+          FOREIGN KEY (email_id) REFERENCES emails(id) ON DELETE CASCADE
+        );
+
+        -- Indexes for performance
+        CREATE INDEX IF NOT EXISTS idx_email_attachments_email_id ON email_attachments(email_id);
+        CREATE INDEX IF NOT EXISTS idx_email_attachments_status ON email_attachments(extraction_status);
+        CREATE INDEX IF NOT EXISTS idx_email_attachments_failed
+          ON email_attachments(extraction_status) WHERE extraction_status = 'failed';
+      `);
+
+      // Add column to emails table to track if attachments are stored
+      db.exec(`ALTER TABLE emails ADD COLUMN attachments_stored BOOLEAN DEFAULT 0;`);
+
+      // Record migration
+      db.prepare('INSERT INTO schema_version (version, description) VALUES (?, ?)').run(
+        9,
+        'Create email_attachments table for storing original attachment files with extraction tracking'
+      );
+    })();
+
+    console.log('Migration 9 completed');
+  }
+
+  // Migration 10: Add hosted email support
+  if (version < 10) {
+    console.log('Running migration 10: Adding hosted email support');
+
+    db.transaction(() => {
+      // 1. Add hosted email alias to users (user-chosen)
+      // e.g., "toby" for toby@inbox.getfamilyassistant.com
+      // Note: SQLite doesn't support UNIQUE in ALTER TABLE, so we add unique index separately
+      db.exec(`ALTER TABLE users ADD COLUMN hosted_email_alias TEXT;`);
+
+      // 2. Add email source preference to settings
+      // 'gmail' = fetch from Gmail API, 'hosted' = receive via webhook
+      db.exec(`ALTER TABLE user_settings ADD COLUMN email_source TEXT DEFAULT 'gmail' CHECK(email_source IN ('gmail', 'hosted'));`);
+
+      // 3. Add source tracking to emails table
+      db.exec(`ALTER TABLE emails ADD COLUMN source_type TEXT DEFAULT 'gmail' CHECK(source_type IN ('gmail', 'hosted'));`);
+      db.exec(`ALTER TABLE emails ADD COLUMN source_message_id TEXT;`);
+
+      // 4. Backfill source_message_id from gmail_message_id for existing emails
+      db.exec(`UPDATE emails SET source_message_id = gmail_message_id WHERE source_type = 'gmail';`);
+
+      // 5. Create index for source-based queries
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_emails_source ON emails(source_type);`);
+
+      // 6. Create unique index on hosted_email_alias for fast lookups and uniqueness
+      db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_users_hosted_alias ON users(hosted_email_alias);`);
+
+      // Record migration
+      db.prepare('INSERT INTO schema_version (version, description) VALUES (?, ?)').run(
+        10,
+        'Add hosted email support with user-chosen aliases and email source tracking'
+      );
+    })();
+
+    console.log('Migration 10 completed');
+  }
 }
 
 // Run migrations after initial table creation
