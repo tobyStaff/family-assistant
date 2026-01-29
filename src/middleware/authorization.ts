@@ -149,3 +149,18 @@ export function getEffectiveUserId(request: FastifyRequest): string {
 export function isImpersonating(request: FastifyRequest): boolean {
   return !!(request as any).impersonatingUserId;
 }
+
+/**
+ * PreHandler that blocks the request if the admin is currently impersonating another user.
+ * Use this on endpoints that fetch from external APIs (Gmail, Google Calendar) to prevent
+ * cross-contamination: admin's OAuth tokens fetching data that gets stored under the
+ * impersonated user's account.
+ */
+export async function requireNoImpersonation(request: FastifyRequest, reply: FastifyReply): Promise<void> {
+  if ((request as any).impersonatingUserId) {
+    return reply.code(403).send({
+      error: 'Forbidden',
+      message: 'This operation cannot be performed while impersonating another user. Stop impersonation first.',
+    });
+  }
+}

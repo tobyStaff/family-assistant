@@ -2,7 +2,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { getUserId, getUserAuth } from '../lib/userContext.js';
-import { requireAdmin, requireSuperAdmin, isRequestUserSuperAdmin, getEffectiveUserId, isImpersonating } from '../middleware/authorization.js';
+import { requireAdmin, requireSuperAdmin, isRequestUserSuperAdmin, getEffectiveUserId, isImpersonating, requireNoImpersonation } from '../middleware/authorization.js';
 import { fetchRecentEmails, fetchRecentEmailsWithBody } from '../utils/inboxFetcher.js';
 import { prepareEmailsForAI, sanitizeEmails } from '../utils/emailPreprocessor.js';
 import type { DateRange } from '../utils/inboxFetcher.js';
@@ -50,7 +50,7 @@ export async function adminRoutes(fastify: FastifyInstance): Promise<void> {
    */
   fastify.post<{
     Body: z.infer<typeof TestFetchSchema>;
-  }>('/admin/test-fetch-emails', { preHandler: requireAdmin }, async (request, reply) => {
+  }>('/admin/test-fetch-emails', { preHandler: [requireAdmin, requireNoImpersonation] }, async (request, reply) => {
     // Validate body
     const bodyResult = TestFetchSchema.safeParse(request.body);
     if (!bodyResult.success) {
@@ -137,7 +137,7 @@ export async function adminRoutes(fastify: FastifyInstance): Promise<void> {
    * GET /admin/inbox-stats
    * Get quick stats about inbox
    */
-  fastify.get('/admin/inbox-stats', { preHandler: requireAdmin }, async (request, reply) => {
+  fastify.get('/admin/inbox-stats', { preHandler: [requireAdmin, requireNoImpersonation] }, async (request, reply) => {
     try {
       const auth = await getUserAuth(request);
 
@@ -177,7 +177,7 @@ export async function adminRoutes(fastify: FastifyInstance): Promise<void> {
    */
   fastify.post<{
     Body: z.infer<typeof TestFetchSchema>;
-  }>('/admin/preview-email-summary', { preHandler: requireAdmin }, async (request, reply) => {
+  }>('/admin/preview-email-summary', { preHandler: [requireAdmin, requireNoImpersonation] }, async (request, reply) => {
     // Validate body
     const bodyResult = TestFetchSchema.safeParse(request.body);
     if (!bodyResult.success) {
@@ -318,7 +318,7 @@ export async function adminRoutes(fastify: FastifyInstance): Promise<void> {
    * GET /admin/check-scopes
    * Check what OAuth scopes the current token has
    */
-  fastify.get('/admin/check-scopes', { preHandler: requireAdmin }, async (request, reply) => {
+  fastify.get('/admin/check-scopes', { preHandler: [requireAdmin, requireNoImpersonation] }, async (request, reply) => {
     try {
       const auth = await getUserAuth(request);
       const tokenInfo = await auth.getTokenInfo(auth.credentials.access_token!);
@@ -342,7 +342,7 @@ export async function adminRoutes(fastify: FastifyInstance): Promise<void> {
    * POST /admin/test-gmail-send
    * Test Gmail send capability using the same code path as production
    */
-  fastify.post('/admin/test-gmail-send', { preHandler: requireAdmin }, async (request, reply) => {
+  fastify.post('/admin/test-gmail-send', { preHandler: [requireAdmin, requireNoImpersonation] }, async (request, reply) => {
     try {
       const userId = getUserId(request);
       const auth = await getUserAuth(request);
@@ -613,7 +613,7 @@ export async function adminRoutes(fastify: FastifyInstance): Promise<void> {
    */
   fastify.post<{
     Body: z.infer<typeof SendSummarySchema>;
-  }>('/admin/view-raw-emails', { preHandler: requireAdmin }, async (request, reply) => {
+  }>('/admin/view-raw-emails', { preHandler: [requireAdmin, requireNoImpersonation] }, async (request, reply) => {
     // Validate body
     const bodyResult = SendSummarySchema.safeParse(request.body);
     if (!bodyResult.success) {
@@ -827,7 +827,7 @@ export async function adminRoutes(fastify: FastifyInstance): Promise<void> {
       dateRange?: string;
       maxResults?: number;
     };
-  }>('/admin/raw-emails', { preHandler: requireAdmin }, async (request, reply) => {
+  }>('/admin/raw-emails', { preHandler: [requireAdmin, requireNoImpersonation] }, async (request, reply) => {
     try {
       const userId = getUserId(request);
       const auth = await getUserAuth(request);

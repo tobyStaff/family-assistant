@@ -115,13 +115,21 @@ ssh "$REMOTE_USER@$DROPLET_IP" << 'EOF'
   docker compose ps
 
   echo "[SERVER] Checking application health..."
-  if curl -f http://localhost:3000/health >/dev/null 2>&1; then
-    echo "[SERVER] ✓ Application is healthy"
-  else
-    echo "[SERVER] ✗ Health check failed - checking logs..."
-    docker compose logs --tail=50 app
-    exit 1
-  fi
+  MAX_RETRIES=10
+  RETRY_INTERVAL=3
+  for i in $(seq 1 $MAX_RETRIES); do
+    if curl -f http://localhost:3000/health >/dev/null 2>&1; then
+      echo "[SERVER] ✓ Application is healthy"
+      break
+    fi
+    if [ "$i" -eq "$MAX_RETRIES" ]; then
+      echo "[SERVER] ✗ Health check failed after $MAX_RETRIES attempts - checking logs..."
+      docker compose logs --tail=50 app
+      exit 1
+    fi
+    echo "[SERVER] Waiting for health check (attempt $i/$MAX_RETRIES)..."
+    sleep $RETRY_INTERVAL
+  done
 
   echo "[SERVER] Setting up backup cron job..."
   # Check if cron job already exists

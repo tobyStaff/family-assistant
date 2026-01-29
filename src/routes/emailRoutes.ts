@@ -23,7 +23,7 @@ import { getUser } from '../db/userDb.js';
 import { analyzeEmail, analyzeUnanalyzedEmails, reanalyzeEmail } from '../parsers/twoPassAnalyzer.js';
 import { getUserId, getUserAuth } from '../lib/userContext.js';
 import { requireAuth } from '../middleware/session.js';
-import { requireAdmin } from '../middleware/authorization.js';
+import { requireAdmin, requireNoImpersonation } from '../middleware/authorization.js';
 import { fetchAndStoreEmails, syncProcessedLabels } from '../utils/emailStorageService.js';
 import type { DateRange } from '../utils/inboxFetcher.js';
 import type { Role } from '../types/roles.js';
@@ -102,7 +102,7 @@ export async function emailRoutes(fastify: FastifyInstance): Promise<void> {
       dateRange?: string;
       maxResults?: number;
     };
-  }>('/api/emails/fetch', { preHandler: requireAuth }, async (request, reply) => {
+  }>('/api/emails/fetch', { preHandler: [requireAuth, requireNoImpersonation] }, async (request, reply) => {
     try {
       const userId = getUserId(request);
       const auth = await getUserAuth(request);
