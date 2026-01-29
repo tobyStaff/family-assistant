@@ -13,7 +13,8 @@
     "test": "vitest",
     "test:ui": "vitest --ui",
     "test:coverage": "vitest --coverage",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "clone-user": "tsx src/scripts/cloneUserData.ts"
   },
   "keywords": [],
   "author": "",
