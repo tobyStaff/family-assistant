@@ -13,7 +13,8 @@
  *
  * Full automation:
  *   --host <user@host>     SSH host — will export remotely, SCP, and import locally
- *   --remote-dir <path>    Remote project directory (default: /app)
+ *   --container <name>     Docker container name (default: inbox-manager)
+ *   --remote-dir <path>    Remote project directory inside container (default: /app)
  */
 
 import { parseArgs } from 'node:util';
@@ -46,15 +47,14 @@ interface ExportData {
   tables: Record<string, unknown[]>;
 }
 
-function exportUserData(userEmail: string, dbPath?: string) {
+async function exportUserData(userEmail: string, dbPath?: string) {
   // Set DB_PATH before importing db module
   if (dbPath) {
     process.env.DB_PATH = dbPath;
   }
 
-  // Dynamic import so DB_PATH env is set first
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const Database = require('better-sqlite3');
+  const DatabaseModule = await import('better-sqlite3');
+  const Database = (DatabaseModule as any).default || DatabaseModule;
   const resolvedPath = dbPath || process.env.DB_PATH || join(process.cwd(), 'data', 'app.db');
   const db = new Database(resolvedPath, { readonly: true });
   db.pragma('journal_mode = WAL');
@@ -105,15 +105,14 @@ function exportUserData(userEmail: string, dbPath?: string) {
   return data;
 }
 
-function importUserData(filePath: string) {
+async function importUserData(filePath: string) {
   const raw = readFileSync(filePath, 'utf-8');
   const data: ExportData = JSON.parse(raw);
 
   console.log(`Importing data for ${data.user_email} (exported ${data.exported_at})`);
 
-  // Import db module (uses default DB_PATH)
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const Database = require('better-sqlite3');
+  const DatabaseModule = await import('better-sqlite3');
+  const Database = (DatabaseModule as any).default || DatabaseModule;
   const resolvedPath = process.env.DB_PATH || join(process.cwd(), 'data', 'app.db');
   const db = new Database(resolvedPath);
   db.pragma('journal_mode = WAL');
@@ -178,6 +177,7 @@ async function main() {
       file: { type: 'string', default: './data/export-user.json' },
       'db-path': { type: 'string' },
       host: { type: 'string' },
+      container: { type: 'string', default: 'inbox-manager' },
       'remote-dir': { type: 'string', default: '/app' },
     },
     strict: true,
@@ -194,23 +194,69 @@ async function main() {
     }
 
     const host = values.host;
-    const remoteDir = values['remote-dir']!;
-    const remoteFile = `${remoteDir}/data/export-user.json`;
-    const dbPathArg = values['db-path'] ? ` --db-path ${values['db-path']}` : '';
 
-    console.log(`\n1/3 Exporting from ${host}...`);
-    execSync(
-      `ssh ${host} "bash -lc 'cd ${remoteDir} && npx tsx src/scripts/cloneUserData.ts --export --user-email ${email}${dbPathArg}'"`,
-      { stdio: 'inherit' }
-    );
+    const container = values['container']!;
+    const remoteExportScript = '/app/_clone_export.cjs';
+    const remoteExportOutput = '/app/data/export-user.json';
 
-    console.log(`\n2/3 Copying export file...`);
+    // Build a self-contained Node.js script to run inside the container
+    const tablesNormal = USER_TABLES.filter((t) => !TABLES_VIA_EMAIL.has(t as string));
+    const exportScript = [
+      `const Database = require("better-sqlite3");`,
+      `const fs = require("fs");`,
+      `const db = new Database(process.env.DB_PATH || "./data/app.db", { readonly: true });`,
+      `db.pragma("journal_mode = WAL");`,
+      `const user = db.prepare("SELECT * FROM users WHERE email = ?").get(${JSON.stringify(email)});`,
+      `if (!user) { console.error("User not found"); process.exit(1); }`,
+      `const uid = user.user_id;`,
+      `console.log("Exporting user " + uid);`,
+      `const tables = {};`,
+      ...tablesNormal.map(
+        (t) =>
+          `try { tables[${JSON.stringify(t)}] = db.prepare("SELECT * FROM ${t} WHERE user_id = ?").all(uid); console.log("  ${t}: " + tables[${JSON.stringify(t)}].length); } catch(e) { tables[${JSON.stringify(t)}] = []; }`
+      ),
+      `try { tables["email_attachments"] = db.prepare("SELECT ea.* FROM email_attachments ea JOIN emails e ON ea.email_id = e.id WHERE e.user_id = ?").all(uid); console.log("  email_attachments: " + tables["email_attachments"].length); } catch(e) { tables["email_attachments"] = []; }`,
+      `const data = { exported_at: new Date().toISOString(), user_email: ${JSON.stringify(email)}, user_id: uid, tables };`,
+      `fs.writeFileSync(${JSON.stringify(remoteExportOutput)}, JSON.stringify(data, null, 2));`,
+      `console.log("Written to ${remoteExportOutput}");`,
+      `db.close();`,
+    ].join('\n');
+
+    // Write the export script to a local temp file
+    const localTmpScript = join(dirname(file), '_clone_export.cjs');
+    writeFileSync(localTmpScript, exportScript);
+
+    console.log(`\n1/3 Uploading export script to ${host}...`);
+    execSync(`scp ${localTmpScript} ${host}:${remoteExportScript}`, { stdio: 'inherit' });
+    // Copy script into Docker container
+    execSync(`ssh ${host} "docker cp ${remoteExportScript} ${container}:${remoteExportScript}"`, {
+      stdio: 'inherit',
+    });
+
+    console.log(`\n2/3 Exporting from container ${container}...`);
+    execSync(`ssh ${host} "docker exec ${container} node ${remoteExportScript}"`, {
+      stdio: 'inherit',
+    });
+
+    console.log(`\n3/3 Copying export and importing locally...`);
     const localDir = dirname(file);
     if (!existsSync(localDir)) mkdirSync(localDir, { recursive: true });
-    execSync(`scp ${host}:${remoteFile} ${file}`, { stdio: 'inherit' });
+    // Copy JSON out of container → host /tmp → local
+    const hostTmpOutput = '/tmp/_clone_export.json';
+    execSync(
+      `ssh ${host} "docker cp ${container}:${remoteExportOutput} ${hostTmpOutput}"`,
+      { stdio: 'inherit' },
+    );
+    execSync(`scp ${host}:${hostTmpOutput} ${file}`, { stdio: 'inherit' });
 
-    console.log(`\n3/3 Importing locally...`);
-    importUserData(file);
+    // Cleanup temp files
+    try {
+      execSync(`ssh ${host} "rm -f ${hostTmpOutput}"`, { stdio: 'ignore' });
+      require('fs').unlinkSync(localTmpScript);
+    } catch { /* best effort */ }
+
+    console.log(`\nImporting locally...`);
+    await importUserData(file);
     return;
   }
 
@@ -222,7 +268,7 @@ async function main() {
       process.exit(1);
     }
 
-    const data = exportUserData(email, values['db-path']);
+    const data = await exportUserData(email, values['db-path']);
 
     const dir = dirname(file);
     if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
@@ -237,7 +283,7 @@ async function main() {
       console.error(`File not found: ${file}`);
       process.exit(1);
     }
-    importUserData(file);
+    await importUserData(file);
     return;
   }
 

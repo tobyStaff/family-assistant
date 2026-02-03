@@ -695,6 +695,126 @@ function runMigrations() {
 
     console.log('Migration 11 completed');
   }
+
+  // Migration 12: Add onboarding tracking and sender filters
+  if (version < 12) {
+    console.log('Running migration 12: Adding onboarding tracking, gmail_connected, and sender_filters');
+
+    db.transaction(() => {
+      // Track onboarding progress (0=not started, 1=account created, 2=gmail connected, 3=senders selected, 4=children confirmed, 5=complete)
+      db.exec(`ALTER TABLE users ADD COLUMN onboarding_step INTEGER DEFAULT 0;`);
+
+      // Track whether user has granted Gmail permissions
+      db.exec(`ALTER TABLE users ADD COLUMN gmail_connected BOOLEAN DEFAULT 0;`);
+
+      // Backfill existing users: if they have auth tokens, they've completed onboarding
+      db.exec(`
+        UPDATE users SET onboarding_step = 5, gmail_connected = 1
+        WHERE user_id IN (SELECT user_id FROM auth);
+      `);
+
+      // Sender filters table for include/exclude lists
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS sender_filters (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          user_id TEXT NOT NULL,
+          sender_email TEXT NOT NULL,
+          sender_name TEXT,
+          status TEXT NOT NULL CHECK(status IN ('include', 'exclude')),
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE,
+          UNIQUE(user_id, sender_email)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_sender_filters_user ON sender_filters(user_id);
+        CREATE INDEX IF NOT EXISTS idx_sender_filters_status ON sender_filters(user_id, status);
+      `);
+
+      // Record migration
+      db.prepare('INSERT INTO schema_version (version, description) VALUES (?, ?)').run(
+        12,
+        'Add onboarding_step, gmail_connected to users and create sender_filters table'
+      );
+    })();
+
+    console.log('Migration 12 completed');
+  }
+
+  if (version < 13) {
+    console.log('Running migration 13: Adding relevance_feedback table for AI training');
+
+    db.transaction(() => {
+      // Relevance feedback table for training AI on what's relevant
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS relevance_feedback (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          user_id TEXT NOT NULL,
+          item_type TEXT NOT NULL CHECK(item_type IN ('todo', 'event')),
+          item_text TEXT NOT NULL,
+          source_sender TEXT,
+          source_subject TEXT,
+          is_relevant INTEGER,  -- NULL = ungraded, 1 = relevant, 0 = not relevant
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_relevance_feedback_user ON relevance_feedback(user_id);
+        CREATE INDEX IF NOT EXISTS idx_relevance_feedback_graded ON relevance_feedback(user_id, is_relevant);
+      `);
+
+      // Record migration
+      db.prepare('INSERT INTO schema_version (version, description) VALUES (?, ?)').run(
+        13,
+        'Add relevance_feedback table for AI training during onboarding'
+      );
+    })();
+
+    console.log('Migration 13 completed');
+  }
+
+  // Migration 14: Add sender scoring columns for relevance tracking
+  if (version < 14) {
+    console.log('Running migration 14: Adding sender scoring columns to sender_filters');
+
+    db.transaction(() => {
+      // Add relevance scoring columns to sender_filters
+      db.exec(`ALTER TABLE sender_filters ADD COLUMN relevance_score REAL;`);
+      db.exec(`ALTER TABLE sender_filters ADD COLUMN relevant_count INTEGER DEFAULT 0;`);
+      db.exec(`ALTER TABLE sender_filters ADD COLUMN not_relevant_count INTEGER DEFAULT 0;`);
+      db.exec(`ALTER TABLE sender_filters ADD COLUMN last_score_update DATETIME;`);
+
+      // Create index for filtering by score
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_sender_filters_score ON sender_filters(user_id, relevance_score);`);
+
+      // Record migration
+      db.prepare('INSERT INTO schema_version (version, description) VALUES (?, ?)').run(
+        14,
+        'Add relevance_score, relevant_count, not_relevant_count, last_score_update to sender_filters'
+      );
+    })();
+
+    console.log('Migration 14 completed');
+  }
+
+  // Migration 15: Add calendar_connected field to users table
+  if (version < 15) {
+    console.log('Running migration 15: Adding calendar_connected field to users table');
+
+    db.transaction(() => {
+      // Add calendar_connected column - defaults to false for new users
+      // Existing users who had calendar access via the old combined OAuth will need to re-authenticate
+      db.exec(`ALTER TABLE users ADD COLUMN calendar_connected BOOLEAN DEFAULT 0;`);
+
+      // Record migration
+      db.prepare('INSERT INTO schema_version (version, description) VALUES (?, ?)').run(
+        15,
+        'Add calendar_connected field to users table for separate Google Calendar integration'
+      );
+    })();
+
+    console.log('Migration 15 completed');
+  }
 }
 
 // Run migrations after initial table creation

@@ -79,12 +79,13 @@ function applyTimeDefaults(result: any): any {
  */
 async function extractWithOpenAI(
   emails: EmailMetadata[],
-  childProfiles: AnonymizedChildProfile[] = []
+  childProfiles: AnonymizedChildProfile[] = [],
+  fewShotSection: string = ''
 ): Promise<EnhancedExtractionResult> {
   console.log('🔍 Extracting events and todos with OpenAI (enhanced prompt)...');
 
   const openai = getOpenAIClient();
-  const prompt = buildEmailAnalysisPrompt(emails, new Date(), childProfiles);
+  const prompt = buildEmailAnalysisPrompt(emails, new Date(), childProfiles, fewShotSection);
 
   const response = await openai.chat.completions.create({
     model: 'gpt-4o-2024-08-06',
@@ -142,12 +143,13 @@ async function extractWithOpenAI(
  */
 async function extractWithAnthropic(
   emails: EmailMetadata[],
-  childProfiles: AnonymizedChildProfile[] = []
+  childProfiles: AnonymizedChildProfile[] = [],
+  fewShotSection: string = ''
 ): Promise<EnhancedExtractionResult> {
   console.log('🔍 Extracting events and todos with Anthropic (enhanced prompt)...');
 
   const anthropic = getAnthropicClient();
-  const prompt = buildEmailAnalysisPrompt(emails, new Date(), childProfiles);
+  const prompt = buildEmailAnalysisPrompt(emails, new Date(), childProfiles, fewShotSection);
 
   const response = await anthropic.messages.create({
     model: 'claude-3-5-sonnet-20241022',
@@ -283,11 +285,13 @@ export async function extractEventsAndTodos(
  * @param emails - Array of email metadata (with anonymized child names if profiles provided)
  * @param provider - AI provider to use
  * @param childProfiles - Anonymized child profiles for relevance filtering
+ * @param fewShotSection - Optional few-shot examples section from user feedback
  */
 export async function extractEventsAndTodosEnhanced(
   emails: EmailMetadata[],
   provider: 'openai' | 'anthropic' = 'openai',
-  childProfiles: AnonymizedChildProfile[] = []
+  childProfiles: AnonymizedChildProfile[] = [],
+  fewShotSection: string = ''
 ): Promise<EnhancedExtractionResult> {
   if (emails.length === 0) {
     return {
@@ -305,8 +309,8 @@ export async function extractEventsAndTodosEnhanced(
   }
 
   if (provider === 'openai') {
-    return extractWithOpenAI(emails, childProfiles);
+    return extractWithOpenAI(emails, childProfiles, fewShotSection);
   } else {
-    return extractWithAnthropic(emails, childProfiles);
+    return extractWithAnthropic(emails, childProfiles, fewShotSection);
   }
 }

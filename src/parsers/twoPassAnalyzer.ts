@@ -21,6 +21,7 @@ import {
   type ChildMapping,
 } from '../utils/childAnonymizer.js';
 import { cleanupPastItems } from '../utils/cleanupPastItems.js';
+import { buildFewShotExamples } from '../prompts/fewShotBuilder.js';
 
 /**
  * Check if a string is a valid ISO8601 date
@@ -253,9 +254,15 @@ export async function analyzeEmail(
       }
     }
 
+    // Build few-shot examples from user's graded feedback
+    const { promptSection: fewShotSection, exampleCount } = buildFewShotExamples(userId, mappings, 3);
+    if (exampleCount > 0) {
+      console.log(`[TwoPass] Including ${exampleCount} few-shot examples from user feedback`);
+    }
+
     // Run AI extraction with anonymized profiles for relevance filtering
     console.log(`[TwoPass] Analyzing email ${emailId}: "${email.subject}" (${mappings.length} child profiles)`);
-    let extraction = await extractEventsAndTodosEnhanced([emailMetadata], aiProvider, anonymizedProfiles);
+    let extraction = await extractEventsAndTodosEnhanced([emailMetadata], aiProvider, anonymizedProfiles, fewShotSection);
 
     // Deanonymize the extraction result (replace CHILD_1, CHILD_2 with real names)
     if (mappings.length > 0) {

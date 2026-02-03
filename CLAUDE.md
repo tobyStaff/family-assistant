@@ -83,6 +83,9 @@ Resolution in `config/env.ts` picks based on `NODE_ENV`.
 - `ADMIN` - Access to admin routes
 - `SUPER_ADMIN` - Can impersonate users (email: tobystafford.assistant@gmail.com)
 
+## Rules
+- **Avoid duplicating functionality** — always search for existing code that might be similar or the same before adding new code.
+
 ## Common Patterns
 
 ### Adding a new route

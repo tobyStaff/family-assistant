@@ -186,7 +186,8 @@ export async function fetchAndStoreEmails(
   userId: string,
   auth: OAuth2Client,
   dateRange: DateRange = 'last3days',
-  maxResults: number = 500
+  maxResults: number = 500,
+  extraQuery: string = ''
 ): Promise<FetchAndStoreResult> {
   const result: FetchAndStoreResult = {
     fetched: 0,
@@ -201,7 +202,7 @@ export async function fetchAndStoreEmails(
 
   try {
     // Step 1: Get unprocessed message IDs from Gmail
-    const messageIds = await getUnprocessedMessageIds(auth, dateRange, maxResults);
+    const messageIds = await getUnprocessedMessageIds(auth, dateRange, maxResults, extraQuery);
     result.fetched = messageIds.length;
 
     console.log(`[EmailStorage] Found ${messageIds.length} unprocessed emails in Gmail`);

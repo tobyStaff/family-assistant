@@ -4,14 +4,14 @@
 export const LANDING_PAGE_CONTENT = {
   // Meta & SEO
   meta: {
-    title: "Family Filter AI - Your Family's Peace of Mind, in One Daily Email",
+    title: "Never dig through a 4-page school newsletter again",
     description:
-      "Exchange the morning panic for a morning coffee. We distill the noise of school emails and WhatsApp threads into a single, 60-second briefing.",
+      "Family Assistant AI automatically sifts your inbox, reads every attachment, and summarises the actions into a 60-second morning brief. Stop hunting for dates and reclaim your focus.",
   },
 
   // Brand
   brand: {
-    name: 'Family Filter AI',
+    name: 'Family Assistant AI',
     tagline:
       'Built by a parent, for parents. Reclaim your headspace from school admin overload.',
   },
@@ -32,10 +32,9 @@ export const LANDING_PAGE_CONTENT = {
 
   // Hero Section
   hero: {
-    headline: "Your Family's Peace of Mind, in One Daily Email.",
-    subheadline:
-      "No more digging through 50 emails, 500-word newsletters and 50 group-chat messages. We filter the school noise so you can focus on what matters.",
-    cta: 'Start Your 7-Day Peace-of-Mind Trial',
+    headline: "Never dig through a 4-page school newsletter again",
+    subheadline: "Family Assistant AI automatically sifts your inbox, reads every attachment, and summarises the actions into a 60-second morning brief. Stop hunting for dates and reclaim your focus.",
+    cta: 'Link your Inbox now',
     liveCounter: 'admin hours recovered for busy parents',
   },
 
@@ -45,37 +44,56 @@ export const LANDING_PAGE_CONTENT = {
     readTime: '45s read',
     title: 'Your Daily Family Briefing',
     urgentItem: {
-      title: 'Action Required: Permission Slip',
-      description: 'Year 4 Science Museum Trip - Reply needed by 3pm today',
+      title: 'Action Required: £1 for Ice Cream sale',
+      description: 'Remember to Bring £1 for the After school Ice Cream sale on Friday!',
     },
     calendarItem: {
       title: 'Auto-Synced to Calendar',
-      description: 'Parents Evening - Thu 6pm (No work conflicts found)',
+      description: 'Parents Evening - Thu 6pm',
     },
     timeSaved: '18 min admin time saved today',
   },
 
   // Features Section
   features: {
-    sectionTitle: 'Reduce Your Mental Load',
-    sectionSubtitle: 'Three ways we help you reclaim your focus',
+    sectionTitle: 'The End of School Admin Fatigue',
+    sectionSubtitle: 'We built the tools every Surrey parent actually needs.',
     cards: [
       {
-        title: 'The Digital Sieve',
+        title: 'PDF & Newsletter Sieve',
         description:
-          '<strong>The End of the Admin Scroll.</strong> Our AI acts as a sieve for your primary inbox, catching the "must-acts"—like hidden forms and fees—while letting the newsletters and spam fall away.',
+          '<strong>We read the 5-page PDFs.</strong> Even if they are just images of text. Our AI scans every newsletter attachment, sifting through the fluff to find the one sentence about "Bring your Teddy Day" or "Inset Days."',
       },
       {
-        title: 'Group Chat Guardian',
+        title: 'Homework Updates, Automated',
         description:
-          "<strong>WhatsApp Noise Filter.</strong> Skip the 40-message 'lost jumper' thread. We monitor your school groups to surface only the deadlines and events that actually require your attention.",
+          '<strong>No more login-panic.</strong> We read update emails from <strong>Google Classroom</strong> and <strong>Sparx Maths</strong>. See exactly what’s due and when, without ever hunting for a student password.',
       },
       {
-        title: 'Automated Focus',
+        title: 'AI Vision for Flyers',
         description:
-          '<strong>Seamless Calendar Sync.</strong> Dates extracted from school communications are moved straight to your calendar. No manual entry, no forgotten kit days, no conflicts.',
+          '<strong>Snap a photo, then forget it.</strong> Took a quick photo of a crumpled school trip letter or a club flyer? Just forward the photo to your AI. We’ll extract the dates and add them to your calendar automatically.',
       },
     ],
+  },
+
+  // The "Everything Else" Section (The feature depth)
+  extraFeatures: {
+    title: "And everything else you'd expect from a great assistant:",
+    items: [
+      {
+        title: 'Recurring Event Logic',
+        text: 'Tell us once that PE is on Tuesdays, and we’ll handle the weekly reminders and kit-list alerts.'
+      },
+      {
+        title: 'One-Tap Summaries',
+        text: 'Need the full context? Every briefing item includes a "Quick Summary" link so you can read the highlights of a 10-page document in 10 seconds.'
+      },
+      {
+        title: 'Calendar Conflict Detection',
+        text: 'If a school play clashes with your work meeting, we’ll flag it in your morning briefing.'
+      }
+    ]
   },
 
   // Founder Story Section

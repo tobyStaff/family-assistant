@@ -88,11 +88,23 @@ const childProfileExtractionSchema = {
 function generateExtractionPrompt(emails: EmailMetadata[]): string {
   const emailSummaries = emails
     .map(
-      (email, index) =>
-        `[${index + 1}] From: ${email.fromName} <${email.from}>
+      (email, index) => {
+        // Use body text if available, otherwise snippet
+        let content = email.snippet;
+        if (email.bodyText) {
+          const body = email.bodyText;
+          if (body.length <= 600) {
+            content = body;
+          } else {
+            // First 400 chars (intro, child names) + last 200 chars (signatures, school name)
+            content = body.substring(0, 400) + '\n[...]\n' + body.substring(body.length - 200);
+          }
+        }
+        return `[${index + 1}] From: ${email.fromName} <${email.from}>
 Subject: ${email.subject}
-Snippet: ${email.snippet}
-`
+Content: ${content}
+`;
+      }
     )
     .join('\n');
 
@@ -107,19 +119,23 @@ Your task is to identify:
 **IMPORTANT RULES:**
 
 1. **Child Name Detection:**
-   - Look for specific child names mentioned in email subjects and snippets
-   - Common patterns: "Ella's class", "for Leo", "Dear parents of Ella"
+   - Look for specific child names mentioned in email subjects and body content
+   - Common patterns: "Ella's class", "for Leo", "Dear parents of Ella", greetings like "Hi Sarah's mum"
    - DO NOT extract: teacher names, class names without specific children, generic references
    - Each child should be mentioned in at least 2 different emails to be confident
 
 2. **Year Group Detection:**
-   - Extract explicit year groups: "Year 3", "Year 1", "Reception", "Nursery"
-   - Format consistently: "Year X" (not "Yr X" or "year x")
+   - Extract year groups from ANY mention: "Year 3", "Year 1", "Reception", "Nursery", "KS1", "KS2", "Key Stage 1"
+   - Also look for class names that imply year groups: "Class 3B" → "Year 3", "Reception Robins" → "Reception"
+   - Format consistently: "Year X" (not "Yr X" or "year x"), "Reception", or "Nursery"
    - If not mentioned, use empty string ""
 
 3. **School Name Detection:**
-   - Look for school names in sender domains, signatures, or email content
+   - **IMPORTANT: Check the sender name first** — it often IS the school name (e.g., From: "Woodlands Primary" or "St Mary's School Office")
+   - Also check sender email domains (e.g., office@stmarys.school.uk → "St Mary's")
+   - Also check email footers/signatures at the end of the content
    - Extract full school name (e.g., "St Mary's Primary School")
+   - Even if a child isn't detected, still populate schools_detected from sender names
    - If not mentioned, use empty string ""
 
 4. **Confidence Scoring:**

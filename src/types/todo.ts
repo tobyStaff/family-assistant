@@ -66,6 +66,9 @@ export interface UserProfile {
   picture_url?: string | undefined;
   created_at?: Date | undefined;
   updated_at?: Date | undefined;
+  onboarding_step?: number;
+  gmail_connected?: boolean;
+  calendar_connected?: boolean;
 }
 
 /**

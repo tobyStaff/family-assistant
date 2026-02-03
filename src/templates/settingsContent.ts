@@ -445,6 +445,34 @@ export function renderSettingsContent(options: SettingsContentOptions): string {
 
       <button type="submit" class="btn btn-primary btn-save">Save Settings</button>
     </form>
+
+    <!-- Sender Filters Section -->
+    <div class="card" style="margin-top: 20px;">
+      <div class="section-title">📨 Monitored Senders</div>
+      <p class="help-text" style="margin-bottom: 15px;">Manage which email senders we monitor for school and family information.</p>
+
+      <div id="senderSummary" style="background:#f8f9fa;border-radius:8px;padding:16px;margin-bottom:16px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+          <div>
+            <span id="senderSummaryText" style="font-size:14px;color:#666;">Loading...</span>
+          </div>
+          <a href="/settings/senders" class="btn btn-primary" style="text-decoration:none;">Manage Senders</a>
+        </div>
+      </div>
+    </div>
+
+    <!-- Relevance Training Section -->
+    <div class="card" style="margin-top: 20px;">
+      <div class="section-title">🎯 Relevance Training</div>
+      <p class="help-text" style="margin-bottom: 15px;">Grade extracted items to train the AI on what's relevant to you.</p>
+
+      <div id="trainingSummary" style="background:#f8f9fa;border-radius:8px;padding:16px;margin-bottom:16px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+          <div id="trainingSummaryText" style="font-size:14px;color:#666;">Loading...</div>
+          <a href="/settings/training" class="btn btn-primary" style="text-decoration:none;">Manage Training</a>
+        </div>
+      </div>
+    </div>
   `;
 }
 
@@ -710,6 +738,55 @@ export function renderSettingsScripts(initialRecipients: string[], initialEmailS
           submitBtn.textContent = 'Save Settings';
         }
       });
+
+      // ============================================
+      // SENDER FILTERS SUMMARY
+      // ============================================
+      async function loadSenderSummary() {
+        try {
+          const response = await fetch('/api/sender-filters');
+          const data = await response.json();
+
+          const filters = data.filters || [];
+          const included = filters.filter(f => f.status === 'include').length;
+          const excluded = filters.filter(f => f.status === 'exclude').length;
+
+          const summaryEl = document.getElementById('senderSummaryText');
+          if (filters.length === 0) {
+            summaryEl.textContent = 'No senders configured yet';
+          } else {
+            summaryEl.innerHTML = \`<strong>\${included}</strong> included, <strong>\${excluded}</strong> excluded\`;
+          }
+        } catch (error) {
+          document.getElementById('senderSummaryText').textContent = 'Failed to load';
+        }
+      }
+      loadSenderSummary();
+
+      // ============================================
+      // RELEVANCE TRAINING SUMMARY
+      // ============================================
+      async function loadTrainingSummary() {
+        try {
+          const response = await fetch('/api/relevance-feedback');
+          const data = await response.json();
+
+          const summaryEl = document.getElementById('trainingSummaryText');
+          if (!data.stats || data.stats.total === 0) {
+            summaryEl.textContent = 'No training data yet';
+          } else {
+            summaryEl.innerHTML = \`
+              <strong>\${data.stats.total}</strong> items ·
+              <span style="color:#28a745;">\${data.stats.relevant} relevant</span> ·
+              <span style="color:#dc3545;">\${data.stats.notRelevant} not relevant</span> ·
+              <span style="color:#ffc107;">\${data.stats.ungraded} ungraded</span>
+            \`;
+          }
+        } catch (error) {
+          document.getElementById('trainingSummaryText').textContent = 'Failed to load';
+        }
+      }
+      loadTrainingSummary();
     </script>
   `;
 }

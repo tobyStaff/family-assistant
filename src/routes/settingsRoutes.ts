@@ -23,6 +23,8 @@ import {
 import type { Role } from '../types/roles.js';
 import { renderLayout } from '../templates/layout.js';
 import { renderSettingsContent, renderSettingsScripts } from '../templates/settingsContent.js';
+import { renderSendersContent, renderSendersScripts } from '../templates/sendersContent.js';
+import { renderRelevanceTrainingContent, renderRelevanceTrainingScripts } from '../templates/relevanceTrainingContent.js';
 
 /**
  * Zod schema for PUT /settings request validation
@@ -346,6 +348,92 @@ export async function settingsRoutes(fastify: FastifyInstance): Promise<void> {
       });
     } catch (error) {
       fastify.log.error({ err: error }, 'Error clearing alias');
+      return reply.code(500).send({ error: 'Internal server error' });
+    }
+  });
+
+  // ============================================
+  // SENDERS MANAGEMENT PAGE
+  // ============================================
+
+  /**
+   * GET /settings/senders
+   * Dedicated page for managing sender filters
+   */
+  fastify.get('/settings/senders', { preHandler: requireAuth }, async (request, reply) => {
+    try {
+      const userId = getUserId(request);
+      const user = getUser(userId);
+      const userRoles = (request as any).userRoles as Role[] || ['STANDARD'];
+
+      // Check for impersonation
+      const impersonatingUserId = (request as any).impersonatingUserId;
+      const effectiveUser = impersonatingUserId ? getUser(impersonatingUserId) : null;
+
+      const content = renderSendersContent();
+      const scripts = renderSendersScripts();
+
+      const html = renderLayout({
+        title: 'Monitored Senders',
+        currentPath: '/settings',
+        user: {
+          name: user?.name,
+          email: user?.email || 'Unknown',
+          picture_url: user?.picture_url,
+        },
+        userRoles,
+        impersonating: effectiveUser ? {
+          email: effectiveUser.email,
+          name: effectiveUser.name,
+        } : null,
+        content,
+        scripts,
+      });
+
+      return reply.type('text/html').send(html);
+    } catch (error) {
+      fastify.log.error({ err: error }, 'Error loading senders page');
+      return reply.code(500).send({ error: 'Internal server error' });
+    }
+  });
+
+  /**
+   * GET /settings/training
+   * Dedicated page for relevance training
+   */
+  fastify.get('/settings/training', { preHandler: requireAuth }, async (request, reply) => {
+    try {
+      const userId = getUserId(request);
+      const user = getUser(userId);
+      const userRoles = (request as any).userRoles as Role[] || ['STANDARD'];
+
+      // Check for impersonation
+      const impersonatingUserId = (request as any).impersonatingUserId;
+      const effectiveUser = impersonatingUserId ? getUser(impersonatingUserId) : null;
+
+      const content = renderRelevanceTrainingContent();
+      const scripts = renderRelevanceTrainingScripts();
+
+      const html = renderLayout({
+        title: 'Relevance Training',
+        currentPath: '/settings',
+        user: {
+          name: user?.name,
+          email: user?.email || 'Unknown',
+          picture_url: user?.picture_url,
+        },
+        userRoles,
+        impersonating: effectiveUser ? {
+          email: effectiveUser.email,
+          name: effectiveUser.name,
+        } : null,
+        content,
+        scripts,
+      });
+
+      return reply.type('text/html').send(html);
+    } catch (error) {
+      fastify.log.error({ err: error }, 'Error loading training page');
       return reply.code(500).send({ error: 'Internal server error' });
     }
   });

@@ -26,6 +26,7 @@ import { requireAuth } from '../middleware/session.js';
 import { requireAdmin, requireNoImpersonation } from '../middleware/authorization.js';
 import { fetchAndStoreEmails, syncProcessedLabels } from '../utils/emailStorageService.js';
 import type { DateRange } from '../utils/inboxFetcher.js';
+import { getIncludedSenders, hasSenderFilters } from '../db/senderFilterDb.js';
 import type { Role } from '../types/roles.js';
 import { renderLayout } from '../templates/layout.js';
 import { renderEmailsViewContent, renderEmailsViewScripts } from '../templates/emailsViewContent.js';
@@ -110,9 +111,18 @@ export async function emailRoutes(fastify: FastifyInstance): Promise<void> {
       const dateRange = (request.body?.dateRange || 'last3days') as DateRange;
       const maxResults = request.body?.maxResults || 100;
 
-      fastify.log.info({ userId, dateRange, maxResults }, 'Manual email fetch triggered');
+      // Build sender filter query if user has configured filters
+      let senderQuery = '';
+      if (hasSenderFilters(userId)) {
+        const includedSenders = getIncludedSenders(userId);
+        if (includedSenders.length > 0) {
+          senderQuery = `{${includedSenders.map(s => `from:${s}`).join(' OR ')}}`;
+        }
+      }
 
-      const result = await fetchAndStoreEmails(userId, auth, dateRange, maxResults);
+      fastify.log.info({ userId, dateRange, maxResults, hasSenderFilter: !!senderQuery }, 'Manual email fetch triggered');
+
+      const result = await fetchAndStoreEmails(userId, auth, dateRange, maxResults, senderQuery);
 
       // Also sync any pending labels
       const labelSync = await syncProcessedLabels(userId, auth);

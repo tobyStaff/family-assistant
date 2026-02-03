@@ -41,6 +41,8 @@ const NAV_ITEMS: NavItem[] = [
   { href: '/todos-view', icon: '📝', label: 'TODOs' },
   { href: '/events-view', icon: '📅', label: 'Events' },
   { href: '/child-profiles-manage', icon: '👶', label: 'Child Profiles' },
+  { href: '/settings/senders', icon: '📨', label: 'Monitored Senders' },
+  { href: '/settings/training', icon: '🎯', label: 'Relevance Training' },
   { href: '/settings', icon: '⚙️', label: 'Settings' },
 ];
 

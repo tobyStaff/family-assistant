@@ -12,7 +12,7 @@ import { generateInboxSummary } from '../utils/summaryQueries.js';
 import { sendInboxSummary } from '../utils/emailSender.js';
 import { getOrCreateDefaultSettings } from '../db/settingsDb.js';
 import { saveSummary } from '../db/summaryDb.js';
-import { getAllUsersWithRoles, getUser, getUserWithRoles } from '../db/userDb.js';
+import { getAllUsersWithRoles, getUser, getUserWithRoles, resetUserData } from '../db/userDb.js';
 import type { Role } from '../types/roles.js';
 import { renderLayout } from '../templates/layout.js';
 import { renderAdminContent, renderAdminScripts } from '../templates/adminContent.js';
@@ -1287,6 +1287,55 @@ export async function adminRoutes(fastify: FastifyInstance): Promise<void> {
       fastify.log.error({ err: error }, 'Error re-extracting email attachments');
       return reply.code(500).send({
         error: 'Failed to re-extract attachments',
+        message: error.message,
+      });
+    }
+  });
+
+  // ============================================
+  // USER RESET (SUPER_ADMIN ONLY)
+  // ============================================
+
+  /**
+   * POST /admin/reset-user/:userId
+   * Reset a user's account to initial state (SUPER_ADMIN only)
+   * Deletes all data but preserves the user account and session
+   */
+  fastify.post<{
+    Params: { userId: string };
+  }>('/admin/reset-user/:userId', { preHandler: requireSuperAdmin }, async (request, reply) => {
+    try {
+      const targetUserId = request.params.userId;
+
+      // Verify target user exists
+      const targetUser = getUser(targetUserId);
+      if (!targetUser) {
+        return reply.code(404).send({ error: 'User not found' });
+      }
+
+      fastify.log.info(
+        { adminUserId: (request as any).userId, targetUserId, targetEmail: targetUser.email },
+        'Super admin resetting user data'
+      );
+
+      const summary = resetUserData(targetUserId);
+
+      const totalDeleted = Object.values(summary).reduce((a, b) => a + b, 0);
+
+      fastify.log.info(
+        { targetUserId, targetEmail: targetUser.email, summary, totalDeleted },
+        'User data reset complete'
+      );
+
+      return reply.code(200).send({
+        success: true,
+        message: `Reset ${targetUser.email} — ${totalDeleted} records deleted`,
+        summary,
+      });
+    } catch (error: any) {
+      fastify.log.error({ err: error }, 'Error resetting user data');
+      return reply.code(500).send({
+        error: 'Failed to reset user',
         message: error.message,
       });
     }

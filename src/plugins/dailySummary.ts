@@ -16,6 +16,7 @@ import { cleanupExpiredSessions } from '../db/sessionDb.js';
 import { getOrCreateDefaultSettings } from '../db/settingsDb.js';
 import { fetchAndStoreEmails, syncProcessedLabels } from '../utils/emailStorageService.js';
 import { analyzeUnanalyzedEmails } from '../parsers/twoPassAnalyzer.js';
+import { getIncludedSenders, hasSenderFilters } from '../db/senderFilterDb.js';
 import { createActionToken, cleanupExpiredTokens } from '../db/emailActionTokenDb.js';
 import { cleanupPastItems } from '../utils/cleanupPastItems.js';
 import type { Todo } from '../types/todo.js';
@@ -377,8 +378,17 @@ async function dailySummaryPlugin(fastify: FastifyInstance) {
                 // Get user's OAuth2 client
                 const auth = await getUserAuth(userId);
 
+                // Build sender filter query if user has configured filters
+                let senderQuery = '';
+                if (hasSenderFilters(userId)) {
+                  const includedSenders = getIncludedSenders(userId);
+                  if (includedSenders.length > 0) {
+                    senderQuery = `{${includedSenders.map(s => `from:${s}`).join(' OR ')}}`;
+                  }
+                }
+
                 // Fetch and store unprocessed emails (last 3 days by default)
-                const result = await fetchAndStoreEmails(userId, auth, 'last3days', 500);
+                const result = await fetchAndStoreEmails(userId, auth, 'last3days', 500, senderQuery);
 
                 totalFetched += result.fetched;
                 totalStored += result.stored;

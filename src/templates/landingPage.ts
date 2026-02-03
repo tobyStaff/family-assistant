@@ -289,6 +289,40 @@ export function generateLandingPage(data: LandingPageData): string {
     </div>
   </section>
 
+  <!-- Extra Features Section -->
+  <section class="bg-alabaster py-16 px-6 lg:px-12 border-t border-slate-100">
+    <div class="max-w-6xl mx-auto">
+      <h3 class="font-display text-2xl md:text-3xl text-trust-blue mb-10 text-center fade-in-up">
+        ${content.extraFeatures.title}
+      </h3>
+
+      <div class="grid md:grid-cols-3 gap-8">
+        ${content.extraFeatures.items.map((item, index) => `
+        <div class="flex gap-4 p-5 rounded-2xl hover:bg-white hover:shadow-sm transition-all duration-200 fade-in-up">
+          <div class="text-trust-blue mt-1 flex-shrink-0">
+            ${index === 0 ? `
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+            </svg>` : ''}
+            ${index === 1 ? `
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+            </svg>` : ''}
+            ${index === 2 ? `
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+            </svg>` : ''}
+          </div>
+          <div>
+            <h4 class="font-bold text-slate-900 mb-1 text-[1.1rem]">${item.title}</h4>
+            <p class="text-slate-600 text-sm leading-relaxed">${item.text}</p>
+          </div>
+        </div>
+        `).join('')}
+      </div>
+    </div>
+  </section>
+
   <!-- Founder Story Section -->
   <section class="py-16 lg:py-24 px-6 lg:px-12 bg-sky/30">
     <div class="max-w-3xl mx-auto text-center fade-in-up">

@@ -166,13 +166,14 @@ export async function removeProcessedLabel(
 export async function getUnprocessedMessageIds(
   auth: OAuth2Client,
   dateRange: DateRange = 'last3days',
-  maxResults: number = 500
+  maxResults: number = 500,
+  extraQuery: string = ''
 ): Promise<string[]> {
   const gmail = google.gmail({ version: 'v1', auth });
 
   // Build Gmail query to exclude PROCESSED label
   const afterDate = getDateForRange(dateRange);
-  const query = `after:${afterDate} -in:spam -in:trash -in:sent -label:${PROCESSED_LABEL_NAME}`;
+  const query = `after:${afterDate} -in:spam -in:trash -in:sent -label:${PROCESSED_LABEL_NAME} ${extraQuery}`.trim();
 
   try {
     const listResponse = await gmail.users.messages.list({

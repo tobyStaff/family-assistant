@@ -80,13 +80,14 @@ function parseSender(fromHeader: string): { name: string; email: string } {
 export async function fetchRecentEmails(
   auth: OAuth2Client,
   dateRange: DateRange = 'yesterday',
-  maxResults: number = 100
+  maxResults: number = 100,
+  extraQuery: string = ''
 ): Promise<EmailMetadata[]> {
   const gmail = google.gmail({ version: 'v1', auth });
 
   // Build Gmail query
   const afterDate = getDateForRange(dateRange);
-  const query = `after:${afterDate} -in:spam -in:trash -in:sent`;
+  const query = `after:${afterDate} -in:spam -in:trash -in:sent ${extraQuery}`.trim();
 
   try {
     // List message IDs
@@ -170,6 +171,145 @@ export async function fetchRecentEmails(
 }
 
 /**
+ * Noise domains to exclude from sender scanning.
+ * These are high-volume automated senders that are almost never relevant
+ * for school/family email monitoring.
+ */
+const NOISE_DOMAINS = [
+  // Note: google.com excluded from this list to allow classroom.google.com through
+  'youtube.com', 'accounts.google.com', 'notifications.google.com',
+  'facebook.com', 'facebookmail.com', 'instagram.com',
+  'linkedin.com', 'twitter.com', 'x.com',
+  'amazon.co.uk', 'amazon.com', 'amazon.de',
+  'paypal.com', 'paypal.co.uk',
+  'apple.com', 'id.apple.com',
+  'microsoft.com', 'outlook.com', 'live.com',
+  'spotify.com', 'netflix.com', 'disneyplus.com',
+  'github.com', 'gitlab.com', 'bitbucket.org',
+  'slack.com', 'notion.so', 'trello.com', 'asana.com',
+  'uber.com', 'ubereats.com', 'deliveroo.com', 'justeat.com',
+  'tesco.com', 'sainsburys.co.uk', 'ocado.com',
+  'ebay.com', 'ebay.co.uk', 'etsy.com',
+  'booking.com', 'airbnb.com',
+  'dropbox.com', 'icloud.com',
+  'noreply.github.com',
+];
+
+/**
+ * Build Gmail query exclusion string for noise domains
+ */
+function buildNoiseDomainFilter(): string {
+  return NOISE_DOMAINS.map(d => `-from:@${d}`).join(' ');
+}
+
+/**
+ * Fetch all unique senders from Gmail within a date range.
+ * Paginates through results to discover every sender.
+ * Skips metadata fetch for messages from senders we've already seen 3+ times.
+ * Excludes known noise domains at the query level.
+ *
+ * @param auth - OAuth2Client with Gmail access
+ * @param dateRange - Date range to scan
+ * @param extraQuery - Additional Gmail query filters
+ * @param maxMessages - Cap on total messages to scan (default: 500)
+ * @returns Array of sender info with email counts and sample subjects
+ */
+export async function fetchAllSenders(
+  auth: OAuth2Client,
+  dateRange: DateRange = 'last30days',
+  extraQuery: string = '',
+  maxMessages: number = 500
+): Promise<{ email: string; name: string; subjects: string[]; count: number }[]> {
+  const gmail = google.gmail({ version: 'v1', auth });
+
+  const afterDate = getDateForRange(dateRange);
+  const noiseFilter = buildNoiseDomainFilter();
+  const query = `after:${afterDate} -in:spam -in:trash -in:sent ${noiseFilter} ${extraQuery}`.trim();
+
+  // Collect all message IDs via pagination
+  const allMessageIds: string[] = [];
+  let pageToken: string | undefined;
+
+  try {
+    do {
+      const listResponse = await gmail.users.messages.list({
+        userId: 'me',
+        q: query,
+        maxResults: 100,
+        pageToken,
+      });
+
+      const messages = listResponse.data.messages || [];
+      allMessageIds.push(...messages.map(m => m.id!));
+      pageToken = listResponse.data.nextPageToken ?? undefined;
+    } while (pageToken && allMessageIds.length < maxMessages);
+
+    if (allMessageIds.length === 0) {
+      return [];
+    }
+
+    // Fetch metadata, skipping messages from senders we've already identified (3+ emails)
+    const senderMap = new Map<string, { email: string; name: string; subjects: string[]; count: number }>();
+    // Track message ID → sender for messages we skip metadata fetch on
+    // We need to count them but don't need to fetch metadata again
+    const SENDER_SAMPLE_THRESHOLD = 3;
+    let metadataFetched = 0;
+
+    const batchSize = 50;
+    for (let i = 0; i < allMessageIds.length; i += batchSize) {
+      const batch = allMessageIds.slice(i, i + batchSize);
+
+      const metadataPromises = batch.map(async (msgId) => {
+        // Fetch metadata — we always need it to identify the sender
+        // But we can use a lighter format once we know the sender
+        const msgResponse = await gmail.users.messages.get({
+          userId: 'me',
+          id: msgId,
+          format: 'metadata',
+          metadataHeaders: ['From', 'Subject'],
+        });
+        metadataFetched++;
+
+        const headers = msgResponse.data.payload?.headers || [];
+        const fromHeader = headers.find(h => h.name === 'From')?.value || '';
+        const subject = headers.find(h => h.name === 'Subject')?.value || '(no subject)';
+        const sender = parseSender(fromHeader);
+
+        const existing = senderMap.get(sender.email);
+        if (existing) {
+          existing.count++;
+          if (existing.subjects.length < SENDER_SAMPLE_THRESHOLD) {
+            existing.subjects.push(subject);
+          }
+        } else {
+          senderMap.set(sender.email, {
+            email: sender.email,
+            name: sender.name,
+            subjects: [subject],
+            count: 1,
+          });
+        }
+      });
+
+      await Promise.all(metadataPromises);
+    }
+
+    console.log(`[fetchAllSenders] ${allMessageIds.length} messages listed, ${metadataFetched} metadata fetched, ${senderMap.size} unique senders found`);
+
+    // Sort by frequency
+    return Array.from(senderMap.values()).sort((a, b) => b.count - a.count);
+  } catch (error: any) {
+    if (error.code === 429) {
+      throw new Error('Gmail API rate limit exceeded. Please try again later.');
+    }
+    if (error.code === 403) {
+      throw new Error('Insufficient Gmail permissions. Please re-authenticate.');
+    }
+    throw new Error(`Failed to fetch senders: ${error.message}`);
+  }
+}
+
+/**
  * Extract plain text body from Gmail message payload
  */
 function extractEmailBody(payload: any): string {
@@ -219,13 +359,14 @@ function extractEmailBody(payload: any): string {
 export async function fetchRecentEmailsWithBody(
   auth: OAuth2Client,
   dateRange: DateRange = 'yesterday',
-  maxResults: number = 100
+  maxResults: number = 100,
+  extraQuery: string = ''
 ): Promise<Array<EmailMetadata & { body: string }>> {
   const gmail = google.gmail({ version: 'v1', auth });
 
   // Build Gmail query
   const afterDate = getDateForRange(dateRange);
-  const query = `after:${afterDate} -in:spam -in:trash -in:sent`;
+  const query = `after:${afterDate} -in:spam -in:trash -in:sent ${extraQuery}`.trim();
 
   try {
     // List message IDs

@@ -222,6 +222,7 @@ export function renderAdminContent(options: AdminContentOptions): string {
                   `).join('')}
                 </div>
               </div>
+              <button class="btn btn-danger btn-sm" onclick="resetUser('${u.user_id}', '${u.email}')" style="font-size: 12px; padding: 4px 10px;">Reset</button>
             </div>
           `).join('')}
         </div>
@@ -243,6 +244,27 @@ export function renderAdminScripts(): string {
         form.action = url;
         document.body.appendChild(form);
         form.submit();
+      }
+
+      async function resetUser(userId, email) {
+        if (!confirm('Reset all data for ' + email + '? This will delete all emails, todos, events, analyses, child profiles, and OAuth tokens. The user will need to re-onboard.')) {
+          return;
+        }
+        if (!confirm('Are you sure? This cannot be undone.')) {
+          return;
+        }
+        try {
+          const res = await fetch('/admin/reset-user/' + userId, { method: 'POST' });
+          const data = await res.json();
+          if (data.success) {
+            alert(data.message);
+            location.reload();
+          } else {
+            alert('Error: ' + (data.error || 'Unknown error'));
+          }
+        } catch (err) {
+          alert('Failed: ' + err.message);
+        }
       }
     </script>
   `;

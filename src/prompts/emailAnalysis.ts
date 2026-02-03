@@ -33,12 +33,14 @@ Always respond with valid JSON matching the schema provided in the user message.
  * @param emails - Array of emails to analyze (with anonymized child names)
  * @param currentDate - Current date for context
  * @param childProfiles - Anonymized child profiles for relevance filtering
+ * @param fewShotSection - Optional few-shot examples section from user feedback
  * @returns The formatted prompt string
  */
 export function buildEmailAnalysisPrompt(
   emails: EmailMetadata[],
   currentDate: Date,
-  childProfiles: AnonymizedChildProfile[] = []
+  childProfiles: AnonymizedChildProfile[] = [],
+  fewShotSection: string = ''
 ): string {
   const emailSummaries = formatEmailsForPrompt(emails);
   const currentDateStr = currentDate.toISOString().split('T')[0];
@@ -238,7 +240,7 @@ Email B: "PE this Wednesday" → recurring: false (specific date reference)
 Email C: "Don't forget PE on Wednesday" → recurring: false (assumes reader knows, one-off reminder)
 
 ---
-
+${fewShotSection}
 **Emails to analyze (${emails.length} total):**
 
 ${emailSummaries}

@@ -156,7 +156,60 @@ function rowToUserProfile(row: any): UserProfile {
     picture_url: row.picture_url || undefined,
     created_at: row.created_at ? new Date(row.created_at) : undefined,
     updated_at: row.updated_at ? new Date(row.updated_at) : undefined,
+    onboarding_step: row.onboarding_step ?? 0,
+    gmail_connected: !!row.gmail_connected,
+    calendar_connected: !!row.calendar_connected,
   };
+}
+
+// ============================================
+// ONBOARDING STATE FUNCTIONS
+// ============================================
+
+const updateOnboardingStepStmt = db.prepare(`
+  UPDATE users SET onboarding_step = ?, updated_at = datetime('now') WHERE user_id = ?
+`);
+
+const updateGmailConnectedStmt = db.prepare(`
+  UPDATE users SET gmail_connected = ?, updated_at = datetime('now') WHERE user_id = ?
+`);
+
+/**
+ * Update a user's onboarding step
+ */
+export function updateOnboardingStep(userId: string, step: number): void {
+  updateOnboardingStepStmt.run(step, userId);
+}
+
+/**
+ * Mark a user's Gmail as connected
+ */
+export function setGmailConnected(userId: string, connected: boolean): void {
+  updateGmailConnectedStmt.run(connected ? 1 : 0, userId);
+}
+
+// Calendar connection state
+const updateCalendarConnectedStmt = db.prepare(`
+  UPDATE users SET calendar_connected = ?, updated_at = datetime('now') WHERE user_id = ?
+`);
+
+const isCalendarConnectedStmt = db.prepare(`
+  SELECT calendar_connected FROM users WHERE user_id = ?
+`);
+
+/**
+ * Mark a user's Google Calendar as connected
+ */
+export function setCalendarConnected(userId: string, connected: boolean): void {
+  updateCalendarConnectedStmt.run(connected ? 1 : 0, userId);
+}
+
+/**
+ * Check if a user has connected Google Calendar
+ */
+export function isCalendarConnected(userId: string): boolean {
+  const row = isCalendarConnectedStmt.get(userId) as { calendar_connected: number } | undefined;
+  return !!row?.calendar_connected;
 }
 
 // ============================================
@@ -456,4 +509,71 @@ export function getHostedEmailAddress(userId: string): string | null {
  */
 export function getHostedEmailDomain(): string {
   return HOSTED_EMAIL_DOMAIN;
+}
+
+// ============================================
+// USER RESET (SUPER_ADMIN ONLY)
+// ============================================
+
+/**
+ * Reset a user's account to initial state.
+ * Deletes all user data but preserves the users row and active sessions.
+ * Resets onboarding_step to 0 and gmail_connected to 0.
+ *
+ * @param userId - User ID to reset
+ * @returns Summary of deleted records per table
+ */
+export function resetUserData(userId: string): Record<string, number> {
+  const summary: Record<string, number> = {};
+
+  const deletions = db.transaction(() => {
+    // Order matters: delete child tables before parent tables
+
+    // Delete email_attachments (via emails join)
+    const attachmentResult = db.prepare(`
+      DELETE FROM email_attachments WHERE email_id IN (
+        SELECT id FROM emails WHERE user_id = ?
+      )
+    `).run(userId);
+    summary['email_attachments'] = attachmentResult.changes;
+
+    // Tables with direct user_id foreign key
+    const tables = [
+      'email_analyses',
+      'emails',
+      'todos',
+      'events',
+      'email_summaries',
+      'child_profiles',
+      'recurring_activities',
+      'processed_emails',
+      'email_action_tokens',
+      'sender_filters',
+      'user_settings',
+      'ai_metrics',
+      'auth',
+    ];
+
+    for (const table of tables) {
+      try {
+        const result = db.prepare(`DELETE FROM ${table} WHERE user_id = ?`).run(userId);
+        summary[table] = result.changes;
+      } catch {
+        // Table may not exist
+        summary[table] = 0;
+      }
+    }
+
+    // Reset onboarding state on users row
+    const resetResult = db.prepare(`
+      UPDATE users
+      SET onboarding_step = 0, gmail_connected = 0, hosted_email_alias = NULL, updated_at = datetime('now')
+      WHERE user_id = ?
+    `).run(userId);
+    console.log(`[resetUserData] Reset onboarding state for ${userId}, rows affected: ${resetResult.changes}`);
+
+    return summary;
+  });
+
+  return deletions();
 }
