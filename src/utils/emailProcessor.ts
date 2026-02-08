@@ -8,6 +8,7 @@ import { createCalendarEventsBatch, eventExists } from './calendarIntegration.js
 import { createTodosBatch } from '../db/todoDb.js';
 import { markEmailAsProcessed, isEmailProcessed } from '../db/processedEmailsDb.js';
 import { cleanupPastItems } from './cleanupPastItems.js';
+import { isCalendarConnected } from '../db/userDb.js';
 
 /**
  * Result from processing emails
@@ -154,7 +155,7 @@ export async function processEmails(
       // Filter out any event IDs that were just deleted by cleanup
       const remainingEventIds = eventIds.filter(id => !cleanup.eventIds.includes(id));
 
-      if (remainingEventIds.length > 0) {
+      if (remainingEventIds.length > 0 && isCalendarConnected(userId)) {
         console.log(`\n☁️  Syncing ${remainingEventIds.length} events to Google Calendar...`);
         const { syncEventsToCalendar } = await import('./calendarIntegration.js');
         const syncResult = await syncEventsToCalendar(userId, auth, remainingEventIds);
@@ -165,8 +166,10 @@ export async function processEmails(
         if (syncResult.failed > 0) {
           console.log(`⚠️  ${syncResult.failed} events failed to sync (will retry automatically)`);
         }
-      } else {
+      } else if (remainingEventIds.length === 0) {
         console.log(`\n☁️  No events to sync (all were past items)`);
+      } else {
+        console.log(`\n☁️  Skipping calendar sync (calendar not connected)`);
       }
     }
 

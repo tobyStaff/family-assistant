@@ -108,38 +108,85 @@ For the email, provide:
 - Do not invent events (e.g., don't create "PE Day" just because PE kit is mentioned)
 - If the email is just a task/reminder with a deadline, create a todo, not an event
 
-**CRITICAL: Calendar/Diary Lists (MUST EXTRACT ALL - NO FILTERING):**
+**Calendar/Diary Lists:**
 When you encounter a "Term Diary", "Calendar", "Upcoming Dates", or similar list of dates:
-- Extract EVERY SINGLE dated item as a separate event - do NOT summarize or skip items
+- Extract dated items as separate events - do NOT summarize or skip items
 - Process the ENTIRE list from start to finish - do NOT stop early
 - Include ALL months mentioned (January through December if present)
-- School trips for ANY year group (e.g., "Year 2 to Marwell Zoo") → create event
-- Woodland School days → create event for EACH class/date mentioned
 - Special days (World Book Day, Science Week) → create event
 - Competitions, sales, concerts → create event
 - Term start/end dates, half-terms, inset days → create event
-- Swimming/sports starting dates → create event
 - Items coming home in book bags with return deadlines → create TODO with deadline
-
-**DO NOT FILTER BY RELEVANCE:**
-- Extract events for ALL year groups, not just the child's year group
-- The user will filter relevance later - your job is to capture EVERYTHING
-- Include both child-specific events AND whole-school events
-- A "Year 2 trip" should still be extracted even if the child is in Reception
-- If the calendar has 30+ items, you MUST extract all 30+ items
-
-Even if a newsletter has 30+ dated items, extract ALL of them. The user wants their calendar populated with every school date. Do not filter for "importance" - every dated item matters to parents.
+${childProfiles.length === 0 ? `
+**NO CHILD PROFILES CONFIGURED - Extract Everything:**
+Since no child profiles are set up, extract ALL events regardless of year group or class.
+- Extract events for ALL year groups
+- Include both specific events AND whole-school events
+- The user will filter relevance later
+` : `
+**CHILD PROFILES ARE CONFIGURED - See filtering rules in CHILD PROFILES section below.**
+Only extract events relevant to the configured children. Skip events for other year groups/classes.
+`}
 
 === SECTION 3: TODO EXTRACTION ===
 
 **Todo Type Classification:**
-- **PAY**: Payment required (extract amount and URL - see payment link rules below)
+- **PAY**: Payment required for CONFIRMED commitment (extract amount and URL - see payment link rules below)
 - **BUY**: Need to purchase from shop
 - **PACK**: Need to pack/send item from home (item already exists, just needs packing)
 - **SIGN**: Need to sign a document/form
 - **FILL**: Need to complete a form/questionnaire
 - **READ**: Need to read document/attachment
+- **DECIDE**: Review an OPTIONAL opportunity that requires a decision (club sign-up, optional trip, etc.)
 - **REMIND**: General reminder, repair tasks, fix tasks, or anything that doesn't fit above categories
+
+**CRITICAL: Optional Opportunities vs Confirmed Commitments**
+
+Before creating PAY todos or calendar events, determine if the item is:
+
+**OPTIONAL (requires sign-up decision):**
+Signal phrases:
+- "We are pleased to offer..."
+- "If you would like your child to..."
+- "Places must be booked..."
+- "If your child is interested..."
+- "Sign up via..."
+- "Booking required"
+- "Limited places available"
+
+→ Create ONE todo of type **DECIDE** with description like:
+  "Consider [activity name] - £X, [key details], sign up by [deadline if known]"
+→ Do NOT create PAY todos (parent hasn't decided yet)
+→ Do NOT create calendar events (child not enrolled yet)
+
+**CONFIRMED (already committed):**
+Signal phrases:
+- "Reminder: your child is attending..."
+- "Payment is now due for [thing child is already signed up for]..."
+- "Your child has been selected for..."
+- Mandatory school events (trips, PE, assemblies)
+- Things listed on the school calendar/term dates
+
+→ Create PAY todos if payment required
+→ Create calendar events for the dates
+
+**Example - OPTIONAL after-school club offer:**
+Email: "We are offering Boxercise Club, Thursdays 3:30-4:30pm, £40 for 5 sessions. Book via Arbor."
+
+CORRECT:
+- Todo: "Consider Boxercise Club sign-up (£40, 5 Thursdays from 26 Feb, book via Arbor)" type=DECIDE
+- Events: NONE (child not enrolled)
+
+WRONG:
+- Todo: "Pay £40 for Boxercise" type=PAY ← assumes decision made
+- Events: 5 calendar entries ← assumes child enrolled
+
+**Example - CONFIRMED trip:**
+Email: "Reminder: Year 5 trip to Winchester Science Centre. Payment of £15 due by Friday."
+
+CORRECT:
+- Todo: "Pay £15 for Winchester Science Centre trip" type=PAY (this is a reminder, child already going)
+- Event: Winchester Science Centre trip
 
 **Payment Link Detection (IMPORTANT for PAY type):**
 When extracting payment todos, look carefully for actual payment provider URLs, NOT school website links.
@@ -183,6 +230,34 @@ Known UK school payment providers (prioritize these domains):
 - "Trip costs £15" → explicit todo: "Pay £15" (not inferred)
 - "Please read the attached newsletter" → explicit todo: "Read newsletter" (not inferred)
 - "Swimming starts next term" → inferred todo: "Pack swimming kit" (recurring, inferred=true)
+
+**TODO CONSOLIDATION (avoid over-granularity):**
+A single-topic email typically needs only ONE todo, even if it lists multiple preparation steps.
+
+CONSOLIDATE into ONE todo when:
+- Email has numbered/bulleted sub-steps for ONE task (e.g., "1. Choose theme 2. Gather materials 3. Bring to school")
+- Steps are all part of preparing for the same event/activity
+- Steps don't have different deadlines
+
+CREATE SEPARATE todos when:
+- Actions are genuinely DISTINCT (e.g., "Pay for trip" AND "Sign permission slip" = 2 todos)
+- Actions have DIFFERENT deadlines
+- Actions are different TYPES (e.g., PAY + PACK = 2 todos)
+
+**Consolidation Example:**
+Email: "For Animaltastic week, please: (i) help child choose animal theme (ii) gather research materials (iii) source materials for 3D model if making one"
+
+CORRECT - ONE consolidated todo:
+- "Prepare for Animaltastic week: help child choose theme and gather materials/resources" (type=REMIND)
+
+WRONG - over-granular:
+- "Help child decide on animal theme" ← these are all sub-steps
+- "Gather information and resources" ← of the same task
+- "Source materials for 3D model" ← don't create 3 separate todos
+
+**Events vs Todos Rule:**
+- Multiple DATES in one email → create multiple EVENTS (one per date) ✓
+- Multiple STEPS for one task → create ONE consolidated TODO ✓
 
 **Due Date Rules:**
 - For PACK items: due date = when item is needed (the event date)
@@ -238,6 +313,50 @@ Key points:
 Email A: "PE is every Wednesday" → recurring: true, recurrence_pattern: "weekly on Wednesdays"
 Email B: "PE this Wednesday" → recurring: false (specific date reference)
 Email C: "Don't forget PE on Wednesday" → recurring: false (assumes reader knows, one-off reminder)
+
+**Example 5: OPTIONAL Club Sign-up Offer (IMPORTANT - do NOT create events or PAY todos)**
+Email: "We are pleased to offer Boxercise Club for pupils. Thursdays 3:30-4:30pm starting 26th Feb for 5 weeks. Cost £40 total. Book via Arbor."
+
+Analysis:
+- Events: NONE (this is an OFFER - child is not enrolled yet)
+- Todo: "Consider Boxercise Club sign-up (£40, 5 Thursdays from 26 Feb, book via Arbor)" type=DECIDE
+
+Key points:
+- "We are pleased to offer" = OPTIONAL opportunity, not confirmed
+- Do NOT create PAY todo - parent hasn't decided to sign up yet
+- Do NOT create 5 calendar events - child is not enrolled
+- Create ONE DECIDE todo so parent can review the opportunity
+
+**Example 6: CONFIRMED Trip (contrast with Example 5)**
+Email: "Reminder: Your child is signed up for the Year 5 trip to Winchester. Payment of £15 due by Friday."
+
+Analysis:
+- Event: "Year 5 Trip to Winchester Science Centre" (date from context)
+- Todo: "Pay £15 for Winchester trip" type=PAY
+
+Key points:
+- "Your child is signed up" = CONFIRMED commitment
+- Create PAY todo because child is already going
+- Create calendar event because it's happening
+
+**Example 7: TODO CONSOLIDATION (single topic with multiple steps)**
+Email: "Animaltastic Learning Week is Feb 9-12. Please: (i) help your child choose an animal theme (ii) help gather research materials (iii) if making a 3D model, source materials at home."
+
+CORRECT Analysis:
+- Event: "Animaltastic Learning Week" Feb 9-12 (one event for the date range)
+- Todo: "Prepare for Animaltastic week: help child choose theme and gather research materials" type=REMIND (ONE consolidated todo)
+
+WRONG Analysis (over-granular):
+- Todo 1: "Help child decide on animal theme" ← NO
+- Todo 2: "Gather information and resources" ← NO
+- Todo 3: "Source materials for 3D model" ← NO
+These are sub-steps of ONE preparation task, not 3 separate todos.
+
+Key points:
+- Single-topic email = typically ONE todo
+- Numbered sub-steps (i, ii, iii) are part of the same task
+- Consolidate into one actionable todo
+- Multiple events only if multiple DATES
 
 ---
 ${fewShotSection}
@@ -302,8 +421,13 @@ For EACH potential event/todo, check if it should be EXCLUDED:
 
 DO NOT INCLUDE (skip entirely - do not add to events/todos arrays):
 - Year-specific events when NO child is in that year
-  Example: "Year 2 Swimming" when child is in Reception → SKIP THIS EVENT
-  Example: "Y1 Woodland School" when child is in Reception → SKIP THIS EVENT
+  **Year patterns to match:** "Year X", "Y1", "Y2", "Y3", "Y4", "Y5", "Y6", "Y7", "Y8", "Year R", "Reception"
+  Examples of SKIPPING:
+  - "Year 8 Parent Consultation Evening" when child is Year 7 → SKIP (wrong year)
+  - "Y4 Residential to Sayers Croft" when child is Year 5 → SKIP (wrong year)
+  - "Year 2 Swimming" when child is in Reception → SKIP (wrong year)
+  - "Y1 Woodland School" when child is in Year 2 → SKIP (wrong year)
+  - "Year 6 SATs prep" when child is in Year 5 → SKIP (wrong year)
 - Class-specific events when NO child is in that class
   Example: "Elm Woodland School" when child has no class_name or different class → SKIP THIS EVENT
   Example: "Lime Woodland School", "Beech Woodland School", "Cherry Woodland School" → SKIP if child not in that class
@@ -337,30 +461,49 @@ MULTIPLE CHILDREN AT SAME SCHOOL:
 
 ALWAYS include school name in the location field.
 
-**FILTERING EXAMPLE - Child: Reception (Year R) at Milford, no class or clubs set:**
+**FILTERING EXAMPLES:**
 
-From a term diary, you would INCLUDE:
+**Example A - Child: Year 7 at Rodborough School:**
+INCLUDE:
+✓ "Year 7 Parent Consultation Evening" (matches year)
+✓ "Y7&8 Girls Netball" (child is in Year 7)
+✓ "Half Term" (whole school)
+✓ "Inset Day" (whole school)
+✓ "End of Term" (whole school)
+
+EXCLUDE (wrong year - do NOT add):
+✗ "Year 8 Parent Consultation Evening" (Year 8 ≠ Year 7)
+✗ "Year 9 Parent Consultation Evening" (Year 9 ≠ Year 7)
+✗ "Y8 Germany trip" (Year 8 ≠ Year 7)
+✗ "Year 6 SATs" (Year 6 ≠ Year 7)
+
+**Example B - Child: Year 5 at Busbridge Junior School:**
+INCLUDE:
+✓ "Year 5 Trip to Winchester Science Centre" (matches year)
+✓ "5W Class Assembly" (Year 5)
+✓ "Swimming Gala Years 4, 5 and 6" (child is Year 5)
+✓ "Inset Day" (whole school)
+✓ "Parents Evening" (all parents)
+
+EXCLUDE (wrong year - do NOT add):
+✗ "Y4 Residential to Sayers Croft" (Year 4 ≠ Year 5)
+✗ "Year 3 Romans Day" (Year 3 ≠ Year 5)
+✗ "Year 4 Vikings Day" (Year 4 ≠ Year 5)
+✗ "3B Class Assembly" (Year 3 class)
+✗ "4GT Class Assembly" (Year 4 class)
+
+**Example C - Child: Reception (Year R) at Milford, no class set:**
+INCLUDE:
 ✓ "Year R to Woodland School" (matches year)
-✓ "Inset Day 4" (whole school)
+✓ "Inset Day" (whole school)
 ✓ "Half-term" (whole school)
 ✓ "Parents Evening" (all parents)
-✓ "World Book Day" (whole school)
-✓ "Valentine Bake Off" (open to all)
-✓ "Easter Egg Hunt" (whole school)
-✓ "Science Week" (whole school)
 
-You would EXCLUDE (do not add to events array):
-✗ "Elm Woodland School" (class-specific)
-✗ "Lime Woodland School" (class-specific)
-✗ "Beech Woodland School" (class-specific)
-✗ "Cherry Woodland School" (class-specific)
-✗ "Y1 Woodland School" (Year 1 specific)
-✗ "Year 2 Swimming starts" (Year 2 specific)
-✗ "Year 2 to Woking Mosque" (Year 2 specific)
-✗ "Year 2 to Marwell Zoo" (Year 2 specific)
-✗ "Rocksteady Concert" (club-specific)
-
-The filtered output should have ~15-18 events, NOT 30+.
+EXCLUDE (wrong year/class - do NOT add):
+✗ "Y1 Woodland School" (Year 1 ≠ Reception)
+✗ "Year 2 Swimming" (Year 2 ≠ Reception)
+✗ "Elm Woodland School" (class-specific, child has no class set)
+✗ "Rocksteady Concert" (club-specific, child not in club)
 
 `;
 }

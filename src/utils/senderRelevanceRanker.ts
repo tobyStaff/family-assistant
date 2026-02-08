@@ -113,6 +113,8 @@ interface SenderInput {
 export interface RankedSender extends SenderInput {
   relevance: number;
   category: 'school' | 'activity' | 'other';
+  school_name?: string;
+  year_hints?: string[];
 }
 
 /**
@@ -144,6 +146,22 @@ function emailLocalPartMatchesSchoolPlatform(email: string): boolean {
 }
 
 /**
+ * Attempt to extract a school name from a sender's display name.
+ * Returns the name if it doesn't appear to be just a platform name.
+ */
+function extractSchoolNameFromSender(name: string): string {
+  if (!name) return '';
+  const lowerName = name.toLowerCase().trim();
+  // If the name is exactly a known platform name, it's not a school name
+  const isJustPlatform = SCHOOL_PLATFORMS.some(p => lowerName === p.toLowerCase());
+  if (isJustPlatform) return '';
+  // If the name contains school-like keywords, it's likely a school name
+  const schoolKeywords = ['school', 'primary', 'academy', 'college', 'nursery', 'infant', 'junior', 'prep', 'grammar', 'high school', 'secondary'];
+  if (schoolKeywords.some(k => lowerName.includes(k))) return name.trim();
+  return '';
+}
+
+/**
  * Rank senders by relevance to school/family using GPT-4o-mini.
  * Known school platforms are automatically ranked highest.
  * Only sends privacy-safe data: domain, display name, up to 3 subject lines.
@@ -154,12 +172,15 @@ export async function rankSenderRelevance(
   if (senders.length === 0) return [];
 
   // Pre-score known school platforms (no AI needed)
-  const scores: { relevance: number; category: 'school' | 'activity' | 'other' }[] = senders.map(s => {
+  const scores: { relevance: number; category: 'school' | 'activity' | 'other'; school_name: string; year_hints: string[] }[] = senders.map(s => {
     const domain = s.email.split('@')[1] || '';
     if (matchesSchoolPlatform(domain) || nameMatchesSchoolPlatform(s.name) || emailLocalPartMatchesSchoolPlatform(s.email)) {
-      return { relevance: 0.95, category: 'school' as const };
+      // Attempt basic school name extraction from sender name
+      // If the name isn't just a platform name, it may contain the school name
+      const schoolName = extractSchoolNameFromSender(s.name);
+      return { relevance: 0.95, category: 'school' as const, school_name: schoolName, year_hints: [] };
     }
-    return { relevance: 0.5, category: 'other' as const };
+    return { relevance: 0.5, category: 'other' as const, school_name: '', year_hints: [] };
   });
 
   // Find senders that need AI ranking (not already matched to known platforms)
@@ -180,6 +201,8 @@ export async function rankSenderRelevance(
       ...s,
       relevance: scores[i].relevance,
       category: scores[i].category,
+      school_name: scores[i].school_name || undefined,
+      year_hints: scores[i].year_hints.length > 0 ? scores[i].year_hints : undefined,
     })).sort((a, b) => b.relevance - a.relevance);
   }
 
@@ -206,6 +229,8 @@ Return a JSON array with one object per sender:
 - "index": the sender index
 - "relevance": float 0.0-1.0 (0.9-1.0 = definitely school/family, 0.5-0.8 = possibly relevant, 0.0-0.4 = unlikely)
 - "category": "school" | "activity" | "other"
+- "school_name": extract the school name if sender appears to be a school (from name or domain), or "" if not a school
+- "year_hints": array of year groups found in subjects (e.g. ["Year 3", "Reception"]), or [] if none found
 
 Senders:
 ${JSON.stringify(batch, null, 2)}
@@ -231,6 +256,8 @@ Return ONLY the JSON array, no other text.`;
           scores[globalIndex] = {
             relevance: Math.max(0, Math.min(1, result.relevance ?? 0.5)),
             category: ['school', 'activity', 'other'].includes(result.category) ? result.category : 'other',
+            school_name: typeof result.school_name === 'string' ? result.school_name : '',
+            year_hints: Array.isArray(result.year_hints) ? result.year_hints.filter((h: unknown) => typeof h === 'string') : [],
           };
         }
       }
@@ -245,5 +272,95 @@ Return ONLY the JSON array, no other text.`;
     ...s,
     relevance: scores[i].relevance,
     category: scores[i].category,
+    school_name: scores[i].school_name || undefined,
+    year_hints: scores[i].year_hints.length > 0 ? scores[i].year_hints : undefined,
+  })).sort((a, b) => b.relevance - a.relevance);
+}
+
+/**
+ * Re-rank candidate senders using approved senders as context.
+ * Uses GPT-4o-mini to re-score candidates based on patterns in what the user approved.
+ * Falls back to original ordering if API key is missing or call fails.
+ */
+export async function rerankSendersWithContext(
+  approvedSenders: RankedSender[],
+  candidateSenders: RankedSender[]
+): Promise<RankedSender[]> {
+  if (candidateSenders.length === 0) return [];
+
+  const apiKey = process.env.AI_API_KEY;
+  if (!apiKey || approvedSenders.length === 0) {
+    console.log('[senderRelevanceRanker] Skipping rerank — no API key or no approved senders');
+    return candidateSenders.sort((a, b) => b.relevance - a.relevance);
+  }
+
+  const openai = new OpenAI({ apiKey });
+
+  // Build privacy-safe context from approved senders
+  const approvedContext = approvedSenders.map(s => ({
+    domain: s.email.split('@')[1] || 'unknown',
+    name: s.name,
+    subjects: s.subjects.slice(0, 3),
+  }));
+
+  // Build privacy-safe candidate summaries
+  const candidateSummaries = candidateSenders.map((s, index) => ({
+    index,
+    domain: s.email.split('@')[1] || 'unknown',
+    name: s.name,
+    subjects: s.subjects.slice(0, 3),
+  }));
+
+  const BATCH_SIZE = 50;
+  const rerankedScores = candidateSenders.map(s => s.relevance);
+
+  for (let batchStart = 0; batchStart < candidateSummaries.length; batchStart += BATCH_SIZE) {
+    const batch = candidateSummaries.slice(batchStart, batchStart + BATCH_SIZE);
+
+    const prompt = `You are re-ranking email senders for a family/school inbox assistant.
+
+The user has already approved these senders as relevant to their family:
+${JSON.stringify(approvedContext, null, 2)}
+
+Based on those approved senders, re-score how likely each candidate sender below is to also be relevant (school, clubs, childcare, family activities, etc).
+
+Return a JSON array with one object per candidate:
+- "index": the candidate index
+- "relevance": float 0.0-1.0 (higher = more likely relevant given the approved senders)
+
+Candidates:
+${JSON.stringify(batch, null, 2)}
+
+Return ONLY the JSON array, no other text.`;
+
+    try {
+      const response = await openai.chat.completions.create({
+        model: 'gpt-4o-mini',
+        messages: [{ role: 'user', content: prompt }],
+        temperature: 0.1,
+        response_format: { type: 'json_object' },
+      });
+
+      const content = response.choices[0]?.message?.content?.trim() || '';
+      const parsed = JSON.parse(content);
+      const results = Array.isArray(parsed) ? parsed : parsed.senders || parsed.results || parsed.candidates || [];
+
+      for (const result of results) {
+        const idx = result.index ?? -1;
+        if (idx >= 0 && idx < candidateSenders.length) {
+          rerankedScores[idx] = Math.max(0, Math.min(1, result.relevance ?? rerankedScores[idx]));
+        }
+      }
+    } catch (err: any) {
+      console.error('[senderRelevanceRanker] Rerank failed for batch:', err.message);
+      // Keep original scores for this batch
+    }
+  }
+
+  console.log(`[senderRelevanceRanker] Re-ranked ${candidateSenders.length} candidates with ${approvedSenders.length} approved senders as context`);
+
+  return candidateSenders.map((s, i) => ({
+    ...s,
+    relevance: rerankedScores[i],
   })).sort((a, b) => b.relevance - a.relevance);
 }

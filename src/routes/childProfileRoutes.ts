@@ -19,7 +19,8 @@ import {
 import type { ChildProfile } from '../types/childProfile.js';
 import { upsertSenderFiltersBatch, upsertSenderFilter, getSenderFilters, getIncludedSenders, hasSenderFilters, deleteSenderFilter } from '../db/senderFilterDb.js';
 import { updateOnboardingStep, getUser } from '../db/userDb.js';
-import { rankSenderRelevance } from '../utils/senderRelevanceRanker.js';
+import { rankSenderRelevance, rerankSendersWithContext } from '../utils/senderRelevanceRanker.js';
+import type { RankedSender } from '../utils/senderRelevanceRanker.js';
 import {
   insertFeedbackItemsBatch,
   getFeedbackItems,
@@ -36,6 +37,10 @@ import { updateSenderFilterScores, getLowRelevanceSenders } from '../utils/sende
  */
 const OnboardingAnalysisSchema = z.object({
   aiProvider: z.enum(['openai', 'anthropic']).optional(),
+  schoolContext: z.array(z.object({
+    name: z.string(),
+    year_groups: z.array(z.string()),
+  })).optional(),
 });
 
 /**
@@ -132,7 +137,7 @@ export async function childProfileRoutes(fastify: FastifyInstance): Promise<void
       }
 
       // Extract child profiles using AI
-      const result = await extractChildProfiles(emails, provider);
+      const result = await extractChildProfiles(emails, provider, bodyResult.data.schoolContext);
 
       fastify.log.info(
         {
@@ -254,6 +259,41 @@ export async function childProfileRoutes(fastify: FastifyInstance): Promise<void
       fastify.log.error({ err: error }, 'Error scanning inbox');
       return reply.code(500).send({
         error: 'Failed to scan inbox',
+        message: error.message,
+      });
+    }
+  });
+
+  /**
+   * POST /onboarding/rerank-senders
+   * Re-rank candidate senders using approved senders as context.
+   * Called between sub-step A (high relevance) and sub-step B (mid-tier review).
+   */
+  fastify.post<{
+    Body: { approvedSenders: RankedSender[]; candidateSenders: RankedSender[] };
+  }>('/onboarding/rerank-senders', { preHandler: requireAuth }, async (request, reply) => {
+    try {
+      const { approvedSenders, candidateSenders } = request.body;
+
+      if (!Array.isArray(approvedSenders) || !Array.isArray(candidateSenders)) {
+        return reply.code(400).send({ error: 'approvedSenders and candidateSenders arrays are required' });
+      }
+
+      const reranked = await rerankSendersWithContext(approvedSenders, candidateSenders);
+
+      fastify.log.info(
+        { approvedCount: approvedSenders.length, candidateCount: candidateSenders.length, rerankedCount: reranked.length },
+        'Senders re-ranked with context'
+      );
+
+      return reply.code(200).send({
+        success: true,
+        senders: reranked,
+      });
+    } catch (error: any) {
+      fastify.log.error({ err: error }, 'Error re-ranking senders');
+      return reply.code(500).send({
+        error: 'Failed to re-rank senders',
         message: error.message,
       });
     }

@@ -3,7 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import { google } from 'googleapis';
 import { randomBytes } from 'crypto';
 import { storeAuth } from '../db/authDb.js';
-import { upsertUser, getUser, ensureSuperAdminRoles, updateOnboardingStep, setGmailConnected } from '../db/userDb.js';
+import { upsertUser, getUser, ensureSuperAdminRoles, updateOnboardingStep, setGmailConnected, setCalendarConnected } from '../db/userDb.js';
 import { createSession, deleteSession } from '../db/sessionDb.js';
 import { encrypt } from '../lib/crypto.js';
 import { requireAuth } from '../middleware/session.js';
@@ -36,6 +36,16 @@ const GMAIL_READ_SCOPES = [
  */
 const GMAIL_SEND_SCOPES = [
   'https://www.googleapis.com/auth/gmail.send',
+  'openid',
+  'email',
+  'profile',
+];
+
+/**
+ * Calendar scopes for Google Calendar integration (optional feature)
+ */
+const CALENDAR_SCOPES = [
+  'https://www.googleapis.com/auth/calendar.events',
   'openid',
   'email',
   'profile',
@@ -266,6 +276,48 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
   });
 
   /**
+   * GET /auth/google/connect-calendar
+   * OAuth flow to grant Google Calendar permissions (optional feature from settings)
+   */
+  fastify.get('/auth/google/connect-calendar', { preHandler: requireAuth }, async (request, reply) => {
+    try {
+      const state = randomBytes(32).toString('hex');
+
+      (reply as any).setCookie('oauth_state', state, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+        maxAge: 600,
+        signed: true,
+        path: '/',
+      });
+
+      (reply as any).setCookie('oauth_flow', 'connect-calendar', {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+        maxAge: 600,
+        path: '/',
+      });
+
+      const oauth2Client = createOAuth2Client();
+      const authUrl = oauth2Client.generateAuthUrl({
+        access_type: 'offline',
+        prompt: 'consent',
+        scope: CALENDAR_SCOPES,
+        include_granted_scopes: true,
+        state: state,
+      });
+
+      fastify.log.info('Redirecting to Google OAuth (connect-calendar)');
+      return reply.redirect(authUrl);
+    } catch (error) {
+      fastify.log.error({ err: error }, 'Error initiating calendar connection flow');
+      return reply.redirect('/settings?error=calendar-connect-failed');
+    }
+  });
+
+  /**
    * GET /auth/google/callback
    * Handle OAuth callback from Google
    */
@@ -312,6 +364,7 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
       const oauthFlow = (request as any).cookies?.oauth_flow;
       const isGmailConnect = oauthFlow === 'connect-gmail';
       const isGrantSend = oauthFlow === 'grant-send';
+      const isCalendarConnect = oauthFlow === 'connect-calendar';
 
       // Clear flow cookie
       (reply as any).clearCookie('oauth_flow', { path: '/' });
@@ -382,6 +435,13 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
       if (isGrantSend) {
         fastify.log.info({ userId }, 'Gmail send permission granted during onboarding');
         return reply.redirect('/onboarding?send_granted=1');
+      }
+
+      // Handle calendar connection flow — from settings page
+      if (isCalendarConnect) {
+        setCalendarConnected(userId, true);
+        fastify.log.info({ userId }, 'Google Calendar connected from settings');
+        return reply.redirect('/settings?calendar_connected=1');
       }
 
       // Fresh login flow — create session
@@ -773,6 +833,77 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
             color: #666;
           }
 
+          /* Enhanced Loading States */
+          .loading-container {
+            text-align: center;
+            padding: 40px 20px;
+          }
+          .loading-dots {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 20px;
+          }
+          .loading-dots .dot {
+            width: 12px;
+            height: 12px;
+            background: #667eea;
+            border-radius: 50%;
+            animation: bounce 1.4s ease-in-out infinite both;
+          }
+          .loading-dots .dot:nth-child(1) { animation-delay: -0.32s; }
+          .loading-dots .dot:nth-child(2) { animation-delay: -0.16s; }
+          .loading-dots .dot:nth-child(3) { animation-delay: 0s; }
+          @keyframes bounce {
+            0%, 80%, 100% { transform: scale(0.6); opacity: 0.5; }
+            40% { transform: scale(1); opacity: 1; }
+          }
+          .loading-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 8px;
+          }
+          .loading-subtitle {
+            font-size: 14px;
+            color: #666;
+            margin-bottom: 20px;
+          }
+          .loading-time-estimate {
+            font-size: 13px;
+            color: #888;
+            background: #f8f9fa;
+            padding: 8px 16px;
+            border-radius: 20px;
+            display: inline-block;
+            margin-top: 8px;
+          }
+          .progress-container {
+            width: 100%;
+            max-width: 400px;
+            margin: 0 auto 16px;
+          }
+          .progress-bar-bg {
+            height: 8px;
+            background: #e0e0e0;
+            border-radius: 4px;
+            overflow: hidden;
+          }
+          .progress-bar-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+            border-radius: 4px;
+            width: 0%;
+            transition: width 0.5s ease-out;
+          }
+          .progress-percent {
+            font-size: 13px;
+            color: #667eea;
+            font-weight: 600;
+            margin-top: 8px;
+          }
+
           /* Review screen */
           .review-header {
             margin-bottom: 30px;
@@ -1059,17 +1190,18 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
               <p>Now let's scan your inbox to find school and family-related senders.</p>
               <p>You'll choose which senders to include or exclude.</p>
 
-              <div class="button-group">
+              <div id="scan-initial" class="button-group">
                 <button class="btn btn-primary" onclick="scanInbox()" id="scan-btn">Scan Inbox</button>
               </div>
+              <div id="scan-loading" style="display:none;"></div>
             </div>
           </div>
 
           <!-- Step 3: Sender selection -->
           <div class="step-content" id="step-senders">
             <div class="review-header">
-              <h2>Select senders to monitor</h2>
-              <p>Tap "Include" on senders that contain school or family information. Unselected senders won't be monitored.</p>
+              <h2 id="sender-step-title">Select senders to monitor</h2>
+              <p id="sender-step-subtitle">These look like school and family contacts.</p>
             </div>
 
             <!-- Progress bar -->
@@ -1088,7 +1220,21 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
             </div>
 
             <div class="button-group">
-              <button class="btn btn-primary" onclick="saveSenders()" id="save-senders-btn">Confirm sender selection</button>
+              <button class="btn btn-primary" onclick="continueToSubStepB()" id="substep-continue-btn">Continue</button>
+              <button class="btn btn-primary" onclick="saveSenders()" id="save-senders-btn" style="display:none;">Confirm sender selection</button>
+            </div>
+          </div>
+
+          <!-- Step 3b: School confirmation -->
+          <div class="step-content" id="step-schools">
+            <div class="review-header">
+              <h2>Confirm your schools</h2>
+              <p>We detected these from your selected senders. Edit if needed.</p>
+            </div>
+            <div id="school-list"></div>
+            <button class="btn btn-add" onclick="addSchoolManually()">+ Add school</button>
+            <div class="button-group">
+              <button class="btn btn-primary" onclick="confirmSchools()" id="confirm-schools-btn">Continue</button>
             </div>
           </div>
 
@@ -1099,10 +1245,7 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
               <p>Help us understand what's relevant to you. Grade these extracted items from your emails.</p>
             </div>
 
-            <div id="train-loading" style="text-align:center;padding:40px;">
-              <div class="spinner"></div>
-              <p style="color:#666;margin-top:16px;">Extracting items from your emails...</p>
-            </div>
+            <div id="train-loading" style="display:none;"></div>
 
             <div id="train-items" style="display:none;">
               <div style="background:#f8f9fa;border-radius:8px;padding:16px;margin-bottom:20px;">
@@ -1129,11 +1272,7 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
 
           <!-- Step 5: Extracting children / analyzing -->
           <div class="step-content" id="step-analyzing">
-            <div class="analysis-content">
-              <div class="spinner"></div>
-              <div class="analysis-status" id="analysis-status">Searching emails from selected senders...</div>
-              <div class="analysis-detail" id="analysis-detail">This may take 10-30 seconds</div>
-            </div>
+            <div id="analyze-loading"></div>
           </div>
 
           <!-- Step 6: Review child profiles -->
@@ -1164,9 +1303,10 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
               </div>
 
               <div class="button-group" id="send-email-group" style="display:none;">
-                <button class="btn btn-primary" onclick="generateFirstEmail(this)" id="first-email-btn">Generate your first email</button>
+                <button class="btn btn-primary" onclick="generateFirstEmail()" id="first-email-btn">Generate your first email</button>
               </div>
 
+              <div id="first-email-loading" style="display:none;"></div>
               <div id="first-email-result" style="display:none;margin-top:20px;"></div>
 
               <div class="feature-list" style="margin-top:30px;">
@@ -1190,6 +1330,9 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
           let senderPage = 0;
           const SENDERS_PER_PAGE = 5;
           let senderSelections = {}; // email -> 'include' | 'exclude'
+          let senderSubStep = 'A';
+          let rerankedMidSenders = [];
+          let detectedSchools = []; // { name: string, year_groups: string[] }
           let analysisResult = null;
           let childrenData = [];
 
@@ -1205,11 +1348,91 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
             setTimeout(() => { msg.className = 'message'; }, 5000);
           }
 
+          // --- Enhanced Loading State ---
+          let progressIntervals = {};
+
+          function createLoadingHTML(id, title, subtitle, timeEstimate) {
+            return \`
+              <div class="loading-container" id="\${id}">
+                <div class="loading-dots">
+                  <div class="dot"></div>
+                  <div class="dot"></div>
+                  <div class="dot"></div>
+                </div>
+                <div class="loading-title" id="\${id}-title">\${title}</div>
+                <div class="loading-subtitle" id="\${id}-subtitle">\${subtitle}</div>
+                <div class="progress-container">
+                  <div class="progress-bar-bg">
+                    <div class="progress-bar-fill" id="\${id}-progress"></div>
+                  </div>
+                  <div class="progress-percent" id="\${id}-percent">0%</div>
+                </div>
+                <div class="loading-time-estimate">\${timeEstimate}</div>
+              </div>
+            \`;
+          }
+
+          function startFakeProgress(id, durationMs, onComplete) {
+            const progressEl = document.getElementById(id + '-progress');
+            const percentEl = document.getElementById(id + '-percent');
+            if (!progressEl || !percentEl) return;
+
+            let progress = 0;
+            const startTime = Date.now();
+
+            // Clear any existing interval
+            if (progressIntervals[id]) clearInterval(progressIntervals[id]);
+
+            progressIntervals[id] = setInterval(() => {
+              const elapsed = Date.now() - startTime;
+              const expectedDuration = durationMs;
+
+              // Fake progress: fast at first, then slow down
+              // Never reaches 100% until explicitly completed
+              const targetProgress = Math.min(95, (elapsed / expectedDuration) * 100);
+
+              // Ease the progress - faster at start, slower near end
+              if (progress < targetProgress) {
+                const increment = Math.max(0.5, (targetProgress - progress) * 0.1);
+                progress = Math.min(targetProgress, progress + increment);
+              }
+
+              progressEl.style.width = progress + '%';
+              percentEl.textContent = Math.round(progress) + '%';
+            }, 100);
+          }
+
+          function completeProgress(id) {
+            if (progressIntervals[id]) {
+              clearInterval(progressIntervals[id]);
+              delete progressIntervals[id];
+            }
+            const progressEl = document.getElementById(id + '-progress');
+            const percentEl = document.getElementById(id + '-percent');
+            if (progressEl) progressEl.style.width = '100%';
+            if (percentEl) percentEl.textContent = '100%';
+          }
+
+          function updateLoadingText(id, title, subtitle) {
+            const titleEl = document.getElementById(id + '-title');
+            const subtitleEl = document.getElementById(id + '-subtitle');
+            if (titleEl && title) titleEl.textContent = title;
+            if (subtitleEl && subtitle) subtitleEl.textContent = subtitle;
+          }
+
           // --- Inbox scan ---
           async function scanInbox() {
-            const btn = document.getElementById('scan-btn');
-            btn.disabled = true;
-            btn.textContent = 'Scanning...';
+            // Hide button, show loading
+            document.getElementById('scan-initial').style.display = 'none';
+            const loadingContainer = document.getElementById('scan-loading');
+            loadingContainer.innerHTML = createLoadingHTML(
+              'scan',
+              'Scanning your inbox...',
+              'Looking for school and family contacts',
+              'This typically takes 10-20 seconds'
+            );
+            loadingContainer.style.display = 'block';
+            startFakeProgress('scan', 15000); // 15 second estimate
 
             try {
               const res = await fetch('/onboarding/scan-inbox', {
@@ -1220,18 +1443,28 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
               const data = await res.json();
               if (!res.ok) throw new Error(data.message || 'Scan failed');
 
+              completeProgress('scan');
+              updateLoadingText('scan', 'Scan complete!', 'Found ' + data.senders.length + ' senders');
+
               allSenders = data.senders;
               senderPage = 0;
+              senderSubStep = 'A';
+              rerankedMidSenders = [];
 
               // Update step indicators
               document.getElementById('step-indicator-2').classList.add('active');
 
-              renderSenderPage();
-              showStep('step-senders');
+              // Brief pause to show completion, then proceed
+              setTimeout(() => {
+                renderSenderPage();
+                showStep('step-senders');
+              }, 800);
             } catch (err) {
+              completeProgress('scan');
               showMessage('error', 'Scan failed: ' + err.message);
-              btn.disabled = false;
-              btn.textContent = 'Scan Inbox';
+              // Show button again
+              loadingContainer.style.display = 'none';
+              document.getElementById('scan-initial').style.display = '';
             }
           }
 
@@ -1268,29 +1501,66 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
             const low = allSenders.filter(s => (s.relevance ?? 0) < 0.4);
 
             const container = document.getElementById('sender-list');
+            const titleEl = document.getElementById('sender-step-title');
+            const subtitleEl = document.getElementById('sender-step-subtitle');
+            const continueBtn = document.getElementById('substep-continue-btn');
+            const confirmBtn = document.getElementById('save-senders-btn');
             let html = '';
 
-            if (high.length > 0) {
-              html += \`<div style="margin-bottom:20px;">
-                <h3 style="font-size:15px;color:#155724;margin-bottom:10px;padding-left:4px;border-left:3px solid #28a745;padding-left:10px;">Likely school & family (\${high.length})</h3>
-                \${high.map(s => renderSenderCard(s)).join('')}
-              </div>\`;
-            }
+            if (senderSubStep === 'A') {
+              // Sub-step A: show only high-relevance senders
+              titleEl.textContent = 'Select senders to monitor';
+              subtitleEl.textContent = 'These look like school and family contacts.';
+              continueBtn.style.display = '';
+              confirmBtn.style.display = 'none';
 
-            if (mid.length > 0) {
-              html += \`<div style="margin-bottom:20px;">
-                <h3 style="font-size:15px;color:#856404;margin-bottom:10px;padding-left:4px;border-left:3px solid #ffc107;padding-left:10px;">Possibly relevant (\${mid.length})</h3>
-                \${mid.map(s => renderSenderCard(s)).join('')}
-              </div>\`;
-            }
+              if (high.length > 0) {
+                html += \`<div style="margin-bottom:20px;">
+                  <h3 style="font-size:15px;color:#155724;margin-bottom:10px;padding-left:4px;border-left:3px solid #28a745;padding-left:10px;">Likely school & family (\${high.length})</h3>
+                  \${high.map(s => renderSenderCard(s)).join('')}
+                </div>\`;
+              } else {
+                html += \`<div style="text-align:center;padding:40px;background:#f8f9fa;border-radius:12px;border:2px dashed #ddd;">
+                  <div style="font-size:48px;margin-bottom:16px;">📬</div>
+                  <h3 style="font-size:18px;color:#333;margin-bottom:8px;">No high-confidence senders found</h3>
+                  <p style="color:#666;font-size:14px;">Click Continue to review all senders.</p>
+                </div>\`;
+              }
+            } else {
+              // Sub-step B: show re-ranked mid-tier (top 15) + collapsed rest
+              titleEl.textContent = 'Review more senders';
+              subtitleEl.textContent = 'Based on your selections, here are more senders that might be relevant.';
+              continueBtn.style.display = 'none';
+              confirmBtn.style.display = '';
 
-            if (low.length > 0) {
-              html += \`<details style="margin-bottom:20px;">
-                <summary style="font-size:15px;color:#666;margin-bottom:10px;cursor:pointer;padding-left:4px;border-left:3px solid #e0e0e0;padding-left:10px;">Other senders (\${low.length})</summary>
-                <div style="margin-top:10px;">
-                  \${low.map(s => renderSenderCard(s)).join('')}
-                </div>
-              </details>\`;
+              const displayMid = rerankedMidSenders.length > 0 ? rerankedMidSenders : mid;
+              const topSenders = displayMid.slice(0, 15);
+              const restSenders = displayMid.slice(15);
+
+              if (topSenders.length > 0) {
+                html += \`<div style="margin-bottom:20px;">
+                  <h3 style="font-size:15px;color:#856404;margin-bottom:10px;padding-left:4px;border-left:3px solid #ffc107;padding-left:10px;">Possibly relevant (\${topSenders.length})</h3>
+                  \${topSenders.map(s => renderSenderCard(s)).join('')}
+                </div>\`;
+              }
+
+              const otherSenders = [...restSenders, ...low];
+              if (otherSenders.length > 0) {
+                html += \`<details style="margin-bottom:20px;">
+                  <summary style="font-size:15px;color:#666;margin-bottom:10px;cursor:pointer;padding-left:4px;border-left:3px solid #e0e0e0;padding-left:10px;">Other senders (\${otherSenders.length})</summary>
+                  <div style="margin-top:10px;">
+                    \${otherSenders.map(s => renderSenderCard(s)).join('')}
+                  </div>
+                </details>\`;
+              }
+
+              if (topSenders.length === 0 && otherSenders.length === 0) {
+                html += \`<div style="text-align:center;padding:40px;background:#f8f9fa;border-radius:12px;border:2px dashed #ddd;">
+                  <div style="font-size:48px;margin-bottom:16px;">✅</div>
+                  <h3 style="font-size:18px;color:#333;margin-bottom:8px;">No additional senders</h3>
+                  <p style="color:#666;font-size:14px;">All senders were shown in the previous step. Click Confirm to continue.</p>
+                </div>\`;
+              }
             }
 
             container.innerHTML = html;
@@ -1304,6 +1574,43 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
               senderSelections[email] = 'include';
             }
             renderSenderPage();
+          }
+
+          async function continueToSubStepB() {
+            const btn = document.getElementById('substep-continue-btn');
+            btn.disabled = true;
+            btn.textContent = 'Loading...';
+
+            try {
+              // Gather approved senders from sub-step A selections
+              const approved = allSenders.filter(s => senderSelections[s.email] === 'include');
+              const mid = allSenders.filter(s => (s.relevance ?? 0) >= 0.4 && (s.relevance ?? 0) < 0.7);
+
+              if (mid.length > 0 && approved.length > 0) {
+                const res = await fetch('/onboarding/rerank-senders', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ approvedSenders: approved, candidateSenders: mid }),
+                });
+                const data = await res.json();
+                if (res.ok && data.senders) {
+                  rerankedMidSenders = data.senders;
+                } else {
+                  // Fallback to original ordering
+                  rerankedMidSenders = mid;
+                }
+              } else {
+                rerankedMidSenders = mid;
+              }
+
+              senderSubStep = 'B';
+              renderSenderPage();
+            } catch (err) {
+              // Fallback to original ordering on error
+              rerankedMidSenders = allSenders.filter(s => (s.relevance ?? 0) >= 0.4 && (s.relevance ?? 0) < 0.7);
+              senderSubStep = 'B';
+              renderSenderPage();
+            }
           }
 
           function updateProgress() {
@@ -1347,10 +1654,10 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
               const data = await res.json();
               if (!res.ok) throw new Error(data.message || 'Save failed');
 
-              // Go to training step
-              document.getElementById('step-indicator-3').classList.add('active');
-              showStep('step-train');
-              startTrainingExtraction();
+              // Go to school confirmation step
+              buildSchoolList();
+              renderSchoolCards();
+              showStep('step-schools');
             } catch (err) {
               showMessage('error', 'Save failed: ' + err.message);
               btn.disabled = false;
@@ -1358,34 +1665,130 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
             }
           }
 
+          // --- School confirmation ---
+          function buildSchoolList() {
+            const schoolMap = {};
+            // Aggregate school_name and year_hints from included senders
+            for (const sender of allSenders) {
+              if (senderSelections[sender.email] !== 'include') continue;
+              const name = (sender.school_name || '').trim();
+              if (!name) continue;
+              if (!schoolMap[name]) {
+                schoolMap[name] = { name, year_groups: [] };
+              }
+              if (sender.year_hints && Array.isArray(sender.year_hints)) {
+                for (const hint of sender.year_hints) {
+                  const h = hint.trim();
+                  if (h && !schoolMap[name].year_groups.includes(h)) {
+                    schoolMap[name].year_groups.push(h);
+                  }
+                }
+              }
+            }
+            detectedSchools = Object.values(schoolMap);
+          }
+
+          function renderSchoolCards() {
+            const container = document.getElementById('school-list');
+            if (detectedSchools.length === 0) {
+              container.innerHTML = \`
+                <div style="text-align:center;padding:40px;background:#f8f9fa;border-radius:12px;border:2px dashed #ddd;margin-bottom:20px;">
+                  <div style="font-size:48px;margin-bottom:16px;">🏫</div>
+                  <h3 style="font-size:18px;color:#333;margin-bottom:8px;">No schools detected</h3>
+                  <p style="color:#666;font-size:14px;">We couldn't detect any schools. You can add them manually or skip this step.</p>
+                </div>
+              \`;
+              return;
+            }
+            container.innerHTML = detectedSchools.map((school, i) => \`
+              <div style="background:#f8f9fa;border:2px solid #e0e0e0;border-radius:8px;padding:16px;margin-bottom:10px;">
+                <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;">
+                  <div style="flex:1;">
+                    <div class="form-group" style="margin-bottom:10px;">
+                      <label>School name</label>
+                      <input type="text" value="\${school.name}" onchange="updateSchool(\${i}, 'name', this.value)" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:6px;font-size:14px;">
+                    </div>
+                    <div class="form-group" style="margin-bottom:0;">
+                      <label>Year groups (comma-separated)</label>
+                      <input type="text" value="\${school.year_groups.join(', ')}" onchange="updateSchoolYears(\${i}, this.value)" placeholder="e.g. Year 3, Reception" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:6px;font-size:14px;">
+                    </div>
+                  </div>
+                  <button onclick="removeSchool(\${i})" style="flex-shrink:0;background:#dc3545;color:white;border:none;padding:6px 12px;border-radius:6px;cursor:pointer;font-size:12px;margin-top:22px;">Remove</button>
+                </div>
+              </div>
+            \`).join('');
+          }
+
+          function updateSchool(i, field, val) {
+            detectedSchools[i][field] = val;
+          }
+
+          function updateSchoolYears(i, val) {
+            detectedSchools[i].year_groups = val.split(',').map(s => s.trim()).filter(Boolean);
+          }
+
+          function removeSchool(i) {
+            detectedSchools.splice(i, 1);
+            renderSchoolCards();
+          }
+
+          function addSchoolManually() {
+            detectedSchools.push({ name: '', year_groups: [] });
+            renderSchoolCards();
+          }
+
+          function confirmSchools() {
+            // Filter out empty names
+            detectedSchools = detectedSchools.filter(s => s.name.trim());
+            // Continue to training step
+            document.getElementById('step-indicator-3').classList.add('active');
+            showStep('step-train');
+            startTrainingExtraction();
+          }
+
           // --- Training step ---
           let trainingItems = [];
           let trainingGrades = {}; // id -> true/false
 
           async function startTrainingExtraction() {
-            document.getElementById('train-loading').style.display = 'block';
+            const loadingContainer = document.getElementById('train-loading');
+            loadingContainer.innerHTML = createLoadingHTML(
+              'train-extract',
+              'Extracting items from your emails...',
+              'Finding todos and events to review',
+              'This typically takes 1-2 minutes'
+            );
+            loadingContainer.style.display = 'block';
             document.getElementById('train-items').style.display = 'none';
+            startFakeProgress('train-extract', 60000); // 60 second estimate
 
             try {
               const res = await fetch('/onboarding/extract-for-training', { method: 'POST' });
               const data = await res.json();
               if (!res.ok) throw new Error(data.message || 'Extraction failed');
 
+              completeProgress('train-extract');
               trainingItems = data.items || [];
-              document.getElementById('train-loading').style.display = 'none';
-              document.getElementById('train-items').style.display = 'block';
 
-              if (trainingItems.length === 0) {
-                document.getElementById('train-items-list').style.display = 'none';
-                document.getElementById('train-empty').style.display = 'block';
-                document.getElementById('save-train-btn').disabled = false;
-                document.getElementById('save-train-btn').textContent = 'Continue';
-              } else {
-                document.getElementById('train-items-list').style.display = 'block';
-                document.getElementById('train-empty').style.display = 'none';
-                renderTrainingItems();
-              }
+              updateLoadingText('train-extract', 'Extraction complete!', 'Found ' + trainingItems.length + ' items');
+
+              setTimeout(() => {
+                document.getElementById('train-loading').style.display = 'none';
+                document.getElementById('train-items').style.display = 'block';
+
+                if (trainingItems.length === 0) {
+                  document.getElementById('train-items-list').style.display = 'none';
+                  document.getElementById('train-empty').style.display = 'block';
+                  document.getElementById('save-train-btn').disabled = false;
+                  document.getElementById('save-train-btn').textContent = 'Continue';
+                } else {
+                  document.getElementById('train-items-list').style.display = 'block';
+                  document.getElementById('train-empty').style.display = 'none';
+                  renderTrainingItems();
+                }
+              }, 800);
             } catch (err) {
+              completeProgress('train-extract');
               showMessage('error', 'Extraction failed: ' + err.message);
               document.getElementById('train-loading').style.display = 'none';
               document.getElementById('train-items').style.display = 'block';
@@ -1479,15 +1882,28 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
             document.getElementById('step-indicator-4').classList.add('active');
             showStep('step-analyzing');
 
+            const loadingContainer = document.getElementById('analyze-loading');
+            loadingContainer.innerHTML = createLoadingHTML(
+              'analyze',
+              'Detecting your children...',
+              'Analyzing emails to find child names and schools',
+              'This typically takes 1-2 minutes'
+            );
+            startFakeProgress('analyze', 90000); // 90 second estimate
+
             try {
               const res = await fetch('/onboarding/analyze', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ aiProvider: 'openai' }),
+                body: JSON.stringify({
+                  aiProvider: 'openai',
+                  schoolContext: detectedSchools.filter(s => s.name.trim()),
+                }),
               });
               const data = await res.json();
               if (!res.ok) throw new Error(data.message || 'Analysis failed');
 
+              completeProgress('analyze');
               analysisResult = data.result;
               childrenData = analysisResult.children.map(child => ({
                 real_name: child.name,
@@ -1499,18 +1915,19 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
                 notes: '',
               }));
 
-              document.getElementById('analysis-status').textContent =
-                \`Found \${childrenData.length} child\${childrenData.length !== 1 ? 'ren' : ''}\`;
-              document.getElementById('analysis-detail').textContent =
-                \`Analyzed \${analysisResult.email_count_analyzed} emails\`;
+              updateLoadingText('analyze',
+                'Found ' + childrenData.length + ' child' + (childrenData.length !== 1 ? 'ren' : '') + '!',
+                'Analyzed ' + analysisResult.email_count_analyzed + ' emails'
+              );
 
               setTimeout(() => {
                 renderChildCards();
                 showStep('step-children');
-              }, 1500);
+              }, 1000);
             } catch (err) {
+              completeProgress('analyze');
               showMessage('error', 'Analysis failed: ' + err.message);
-              showStep('step-review-senders');
+              showStep('step-schools');
             }
           }
 
@@ -1616,24 +2033,41 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
           }
 
           // --- First email ---
-          async function generateFirstEmail(btn) {
-            btn.disabled = true;
-            btn.textContent = 'Generating & sending...';
+          async function generateFirstEmail() {
+            const btn = document.getElementById('first-email-btn');
+            const sendGroup = document.getElementById('send-email-group');
+            const loadingContainer = document.getElementById('first-email-loading');
             const result = document.getElementById('first-email-result');
+
+            sendGroup.style.display = 'none';
+            loadingContainer.innerHTML = createLoadingHTML(
+              'first-email',
+              'Generating your first summary...',
+              'Fetching emails and creating your briefing',
+              'This typically takes 1-2 minutes'
+            );
+            loadingContainer.style.display = 'block';
+            startFakeProgress('first-email', 90000); // 90 second estimate
 
             try {
               const res = await fetch('/onboarding/generate-first-email', { method: 'POST' });
               const data = await res.json();
               if (!res.ok) throw new Error(data.message || 'Failed to send');
 
-              result.style.display = 'block';
-              result.innerHTML = '<div class="message success">' + data.message + '</div>';
-              btn.textContent = 'Email sent!';
+              completeProgress('first-email');
+              updateLoadingText('first-email', 'Email sent!', 'Check your inbox');
+
+              setTimeout(() => {
+                loadingContainer.style.display = 'none';
+                result.style.display = 'block';
+                result.innerHTML = '<div class="message success">' + data.message + '</div>';
+              }, 1000);
             } catch (err) {
+              completeProgress('first-email');
+              loadingContainer.style.display = 'none';
+              sendGroup.style.display = '';
               result.style.display = 'block';
               result.innerHTML = '<div class="message error">Failed: ' + err.message + '</div>';
-              btn.disabled = false;
-              btn.textContent = 'Try again';
             }
           }
 

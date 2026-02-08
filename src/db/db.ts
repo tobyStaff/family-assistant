@@ -815,6 +815,79 @@ function runMigrations() {
 
     console.log('Migration 15 completed');
   }
+
+  // Migration 16: Update todos type CHECK constraint to include DECIDE
+  if (version < 16) {
+    console.log('Running migration 16: Updating todos type CHECK constraint to include DECIDE');
+
+    db.transaction(() => {
+      // SQLite doesn't allow modifying CHECK constraints directly.
+      // The constraint from migration 1 was added via ALTER TABLE, which SQLite
+      // often doesn't enforce. We'll recreate the table to ensure the constraint is correct.
+
+      // 1. Create new table with updated CHECK constraint
+      db.exec(`
+        CREATE TABLE todos_new (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          user_id TEXT NOT NULL,
+          description TEXT NOT NULL,
+          due_date DATETIME,
+          status TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'done')),
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          type TEXT DEFAULT 'REMIND' CHECK(type IN ('PAY', 'BUY', 'PACK', 'SIGN', 'FILL', 'READ', 'DECIDE', 'REMIND')),
+          child_name TEXT,
+          source_email_id TEXT,
+          url TEXT,
+          amount TEXT,
+          confidence REAL,
+          completed_at DATETIME,
+          auto_completed BOOLEAN DEFAULT 0,
+          recurring BOOLEAN DEFAULT 0,
+          recurrence_pattern TEXT,
+          responsible_party TEXT,
+          inferred BOOLEAN DEFAULT 0
+        );
+      `);
+
+      // 2. Copy all data from old table
+      db.exec(`
+        INSERT INTO todos_new (
+          id, user_id, description, due_date, status, created_at,
+          type, child_name, source_email_id, url, amount, confidence,
+          completed_at, auto_completed, recurring, recurrence_pattern,
+          responsible_party, inferred
+        )
+        SELECT
+          id, user_id, description, due_date, status, created_at,
+          type, child_name, source_email_id, url, amount, confidence,
+          completed_at, auto_completed, recurring, recurrence_pattern,
+          responsible_party, inferred
+        FROM todos;
+      `);
+
+      // 3. Drop old table
+      db.exec(`DROP TABLE todos;`);
+
+      // 4. Rename new table
+      db.exec(`ALTER TABLE todos_new RENAME TO todos;`);
+
+      // 5. Recreate indexes
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_todos_user_id ON todos(user_id);`);
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_todos_type ON todos(type);`);
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_todos_child ON todos(child_name);`);
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_todos_due_date ON todos(due_date);`);
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_todos_status ON todos(user_id, status);`);
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_todos_source ON todos(source_email_id);`);
+
+      // Record migration
+      db.prepare('INSERT INTO schema_version (version, description) VALUES (?, ?)').run(
+        16,
+        'Update todos type CHECK constraint to include DECIDE type'
+      );
+    })();
+
+    console.log('Migration 16 completed');
+  }
 }
 
 // Run migrations after initial table creation

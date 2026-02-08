@@ -540,6 +540,7 @@ async function dailySummaryPlugin(fastify: FastifyInstance) {
             // Import required functions
             const { getAllUserIds } = await import('../db/authDb.js');
             const { syncPendingEventsForUser } = await import('../utils/eventSyncService.js');
+            const { isCalendarConnected } = await import('../db/userDb.js');
 
             // Get all users with stored auth
             const userIds = getAllUserIds();
@@ -550,6 +551,11 @@ async function dailySummaryPlugin(fastify: FastifyInstance) {
             // Process each user
             for (const userId of userIds) {
               try {
+                // Skip users who haven't connected Google Calendar
+                if (!isCalendarConnected(userId)) {
+                  continue;
+                }
+
                 // Get user's OAuth2 client
                 const auth = await getUserAuth(userId);
 

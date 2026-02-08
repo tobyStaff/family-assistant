@@ -107,8 +107,8 @@ export const extractionSchema = {
           },
           type: {
             type: 'string',
-            enum: ['PAY', 'BUY', 'PACK', 'SIGN', 'FILL', 'READ', 'REMIND'],
-            description: 'Category: PAY=payment, BUY=purchase, PACK=pack item, SIGN=sign form, FILL=fill form, READ=read document, REMIND=general reminder',
+            enum: ['PAY', 'BUY', 'PACK', 'SIGN', 'FILL', 'READ', 'DECIDE', 'REMIND'],
+            description: 'Category: PAY=payment, BUY=purchase, PACK=pack item, SIGN=sign form, FILL=fill form, READ=read document, DECIDE=review optional opportunity, REMIND=general reminder',
           },
           due_date: {
             type: 'string',
@@ -192,7 +192,7 @@ export function isValidExtractionResult(data: any): boolean {
     if (!todo.description || !todo.type || typeof todo.confidence !== 'number') {
       return false;
     }
-    const validTypes = ['PAY', 'BUY', 'PACK', 'SIGN', 'FILL', 'READ', 'REMIND'];
+    const validTypes = ['PAY', 'BUY', 'PACK', 'SIGN', 'FILL', 'READ', 'DECIDE', 'REMIND'];
     if (!validTypes.includes(todo.type)) {
       return false;
     }
@@ -228,7 +228,7 @@ export interface ExtractedEvent {
 
 export interface ExtractedTodo {
   description: string;
-  type: 'PAY' | 'BUY' | 'PACK' | 'SIGN' | 'FILL' | 'READ' | 'REMIND';
+  type: 'PAY' | 'BUY' | 'PACK' | 'SIGN' | 'FILL' | 'READ' | 'DECIDE' | 'REMIND';
   due_date?: string;
   child_name: string;
   source_email_id?: string;

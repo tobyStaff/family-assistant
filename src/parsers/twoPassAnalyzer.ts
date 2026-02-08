@@ -500,7 +500,7 @@ export async function analyzeUnanalyzedEmails(
 }
 
 /**
- * Re-analyze a specific email (deletes existing analysis and creates new one)
+ * Re-analyze a specific email (deletes existing analysis, todos, events, and creates new ones)
  */
 export async function reanalyzeEmail(
   userId: string,
@@ -509,11 +509,41 @@ export async function reanalyzeEmail(
 ): Promise<TwoPassAnalysisResult> {
   const { default: db } = await import('../db/db.js');
 
+  // Get the email to find its gmail_message_id (used as source_email_id in todos/events)
+  const email = getEmailById(userId, emailId);
+  if (!email) {
+    return {
+      emailId,
+      analysisId: 0,
+      eventsCreated: 0,
+      todosCreated: 0,
+      qualityScore: 0,
+      status: 'error',
+      error: 'Email not found',
+    };
+  }
+
+  console.log(`[TwoPass] Re-analyzing email ${emailId}, cleaning up old data...`);
+
   // Delete existing analysis for this email
   db.prepare(`
     DELETE FROM email_analyses
     WHERE user_id = ? AND email_id = ?
   `).run(userId, emailId);
+
+  // Delete existing todos created from this email
+  const todosDeleted = db.prepare(`
+    DELETE FROM todos
+    WHERE user_id = ? AND source_email_id = ?
+  `).run(userId, email.gmail_message_id);
+  console.log(`[TwoPass] Deleted ${todosDeleted.changes} old todos`);
+
+  // Delete existing events created from this email
+  const eventsDeleted = db.prepare(`
+    DELETE FROM events
+    WHERE user_id = ? AND source_email_id = ?
+  `).run(userId, email.gmail_message_id);
+  console.log(`[TwoPass] Deleted ${eventsDeleted.changes} old events`);
 
   // Reset the email's analyzed flag
   db.prepare(`

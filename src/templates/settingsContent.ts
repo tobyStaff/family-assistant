@@ -9,6 +9,7 @@ export interface SettingsContentOptions {
   hostedAlias?: string | null;
   hostedEmail?: string | null;
   hostedDomain?: string;
+  calendarConnected?: boolean;
 }
 
 /**
@@ -24,6 +25,7 @@ export function renderSettingsContent(options: SettingsContentOptions): string {
     hostedAlias,
     hostedEmail,
     hostedDomain = 'inbox.getfamilyassistant.com',
+    calendarConnected = false,
   } = options;
 
   const recipientsHtml = summaryEmailRecipients.length > 0
@@ -373,6 +375,32 @@ export function renderSettingsContent(options: SettingsContentOptions): string {
                 <br><small>Forward emails to this address to have them processed.</small>
               </div>
             ` : ''}
+          </div>
+        </div>
+
+        <!-- Google Calendar Integration -->
+        <div class="card">
+          <div class="section-title">📅 Google Calendar Integration</div>
+          <p class="help-text" style="margin-bottom: 15px;">Sync extracted events to your Google Calendar automatically.</p>
+
+          <div id="calendarStatus" style="padding: 15px; border-radius: 8px; ${calendarConnected ? 'background: #d4edda; border: 1px solid #c3e6cb;' : 'background: #f8f9fa; border: 1px solid #e0e0e0;'}">
+            ${calendarConnected ? `
+              <div style="display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                  <div style="font-weight: 600; color: #155724; margin-bottom: 4px;">✅ Connected</div>
+                  <div style="font-size: 13px; color: #666;">Events will automatically sync to your Google Calendar.</div>
+                </div>
+                <button type="button" class="btn btn-danger" onclick="disconnectCalendar()" id="disconnectCalendarBtn">Disconnect</button>
+              </div>
+            ` : `
+              <div style="display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                  <div style="font-weight: 600; color: #333; margin-bottom: 4px;">Not connected</div>
+                  <div style="font-size: 13px; color: #666;">Connect to sync school events to your calendar.</div>
+                </div>
+                <a href="/auth/google/connect-calendar" class="btn btn-primary" style="text-decoration: none;">Connect Calendar</a>
+              </div>
+            `}
           </div>
         </div>
 
@@ -787,6 +815,56 @@ export function renderSettingsScripts(initialRecipients: string[], initialEmailS
         }
       }
       loadTrainingSummary();
+
+      // ============================================
+      // CALENDAR INTEGRATION
+      // ============================================
+      async function disconnectCalendar() {
+        const btn = document.getElementById('disconnectCalendarBtn');
+        if (!confirm('Are you sure you want to disconnect Google Calendar? Events will no longer sync.')) {
+          return;
+        }
+
+        btn.disabled = true;
+        btn.textContent = 'Disconnecting...';
+
+        try {
+          const response = await fetch('/api/settings/disconnect-calendar', { method: 'POST' });
+          const data = await response.json();
+
+          if (response.ok) {
+            // Update UI to show disconnected state
+            const statusEl = document.getElementById('calendarStatus');
+            statusEl.style.background = '#f8f9fa';
+            statusEl.style.border = '1px solid #e0e0e0';
+            statusEl.innerHTML = \`
+              <div style="display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                  <div style="font-weight: 600; color: #333; margin-bottom: 4px;">Not connected</div>
+                  <div style="font-size: 13px; color: #666;">Connect to sync school events to your calendar.</div>
+                </div>
+                <a href="/auth/google/connect-calendar" class="btn btn-primary" style="text-decoration: none;">Connect Calendar</a>
+              </div>
+            \`;
+            showMessage('Google Calendar disconnected', 'success');
+          } else {
+            showMessage('Error: ' + (data.error || 'Failed to disconnect'), 'error');
+            btn.disabled = false;
+            btn.textContent = 'Disconnect';
+          }
+        } catch (error) {
+          showMessage('Error: Failed to disconnect calendar', 'error');
+          btn.disabled = false;
+          btn.textContent = 'Disconnect';
+        }
+      }
+
+      // Check if calendar was just connected (from OAuth callback)
+      if (new URLSearchParams(window.location.search).get('calendar_connected') === '1') {
+        showMessage('Google Calendar connected successfully!', 'success');
+        // Clean up URL
+        window.history.replaceState({}, document.title, '/settings');
+      }
     </script>
   `;
 }

@@ -19,6 +19,8 @@ import {
   getHostedEmailAlias,
   getHostedEmailAddress,
   getHostedEmailDomain,
+  isCalendarConnected,
+  setCalendarConnected,
 } from '../db/userDb.js';
 import type { Role } from '../types/roles.js';
 import { renderLayout } from '../templates/layout.js';
@@ -69,6 +71,9 @@ export async function settingsRoutes(fastify: FastifyInstance): Promise<void> {
         const hostedAlias = getHostedEmailAlias(userId);
         const hostedEmail = hostedAlias ? getHostedEmailAddress(userId) : null;
 
+        // Get calendar connection status
+        const calendarConnected = isCalendarConnected(userId);
+
         // Generate settings content
         const content = renderSettingsContent({
           summaryEmailRecipients: settings.summary_email_recipients,
@@ -79,6 +84,7 @@ export async function settingsRoutes(fastify: FastifyInstance): Promise<void> {
           hostedAlias,
           hostedEmail,
           hostedDomain: getHostedEmailDomain(),
+          calendarConnected,
         });
 
         const scripts = renderSettingsScripts(settings.summary_email_recipients, emailSource);
@@ -348,6 +354,31 @@ export async function settingsRoutes(fastify: FastifyInstance): Promise<void> {
       });
     } catch (error) {
       fastify.log.error({ err: error }, 'Error clearing alias');
+      return reply.code(500).send({ error: 'Internal server error' });
+    }
+  });
+
+  // ============================================
+  // CALENDAR INTEGRATION ENDPOINTS
+  // ============================================
+
+  /**
+   * POST /api/settings/disconnect-calendar
+   * Disconnect Google Calendar integration
+   */
+  fastify.post('/api/settings/disconnect-calendar', { preHandler: requireAuth }, async (request, reply) => {
+    try {
+      const userId = getUserId(request);
+
+      setCalendarConnected(userId, false);
+      fastify.log.info({ userId }, 'User disconnected Google Calendar');
+
+      return reply.code(200).send({
+        success: true,
+        message: 'Google Calendar disconnected',
+      });
+    } catch (error) {
+      fastify.log.error({ err: error }, 'Error disconnecting calendar');
       return reply.code(500).send({ error: 'Internal server error' });
     }
   });

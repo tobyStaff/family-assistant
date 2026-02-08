@@ -10,6 +10,7 @@ export type TodoType =
   | 'SIGN' // Sign document/form
   | 'FILL' // Fill out form/questionnaire
   | 'READ' // Read attachment/document
+  | 'DECIDE' // Review optional opportunity (e.g., club sign-up, optional trip)
   | 'REMIND'; // General reminder (default)
 
 /**
@@ -81,7 +82,7 @@ export interface ExtractionResult {
  * Type guard for TodoType
  */
 export function isTodoType(value: string): value is TodoType {
-  return ['PAY', 'BUY', 'PACK', 'SIGN', 'FILL', 'READ', 'REMIND'].includes(value);
+  return ['PAY', 'BUY', 'PACK', 'SIGN', 'FILL', 'READ', 'DECIDE', 'REMIND'].includes(value);
 }
 
 /**
@@ -95,6 +96,7 @@ export function getTodoTypeEmoji(type: TodoType): string {
     SIGN: '✍️',
     FILL: '📝',
     READ: '📖',
+    DECIDE: '🤔',
     REMIND: '⏰',
   };
   return emojiMap[type];
@@ -111,6 +113,7 @@ export function getTodoTypeLabel(type: TodoType): string {
     SIGN: 'Sign Form',
     FILL: 'Fill Form',
     READ: 'Read Document',
+    DECIDE: 'Consider',
     REMIND: 'Reminder',
   };
   return labelMap[type];

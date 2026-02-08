@@ -3,7 +3,7 @@
 import type { FastifyInstance } from 'fastify';
 import { listEvents, getEvent, getEvents, deleteEvent, getEventStats } from '../db/eventDb.js';
 import { getEmailByGmailId } from '../db/emailDb.js';
-import { getUser } from '../db/userDb.js';
+import { getUser, isCalendarConnected } from '../db/userDb.js';
 import { syncEventsToCalendar } from '../utils/calendarIntegration.js';
 import { getUserAuth } from '../db/authDb.js';
 import { getUserId } from '../lib/userContext.js';
@@ -139,6 +139,11 @@ export async function eventRoutes(fastify: FastifyInstance): Promise<void> {
     }
 
     try {
+      // Check if calendar is connected
+      if (!isCalendarConnected(userId)) {
+        return reply.code(400).send({ error: 'Google Calendar is not connected. Enable it in Settings.' });
+      }
+
       // Get user's OAuth client
       const auth = await getUserAuth(userId);
 

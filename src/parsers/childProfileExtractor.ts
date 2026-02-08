@@ -85,7 +85,10 @@ const childProfileExtractionSchema = {
 /**
  * Generate AI prompt for child profile extraction
  */
-function generateExtractionPrompt(emails: EmailMetadata[]): string {
+function generateExtractionPrompt(
+  emails: EmailMetadata[],
+  schoolContext?: { name: string; year_groups: string[] }[]
+): string {
   const emailSummaries = emails
     .map(
       (email, index) => {
@@ -148,7 +151,15 @@ Your task is to identify:
    - Include up to 3 email subjects where the child was mentioned
    - Use actual email subjects from the input
 
-**Emails to analyze:**
+${schoolContext && schoolContext.length > 0 ? `**Known school context (confirmed by user):**
+${schoolContext.map(s => `- ${s.name}${s.year_groups.length > 0 ? ': ' + s.year_groups.join(', ') : ''}`).join('\n')}
+
+Use this context to:
+- Associate children with the correct school
+- Fill in year_group and school_name when a child is mentioned by a sender from a known school
+- These schools are confirmed — prefer them over uncertain extractions
+
+` : ''}**Emails to analyze:**
 
 ${emailSummaries}
 
@@ -173,9 +184,10 @@ ${emailSummaries}
  */
 export async function extractChildProfiles(
   emails: EmailMetadata[],
-  provider: 'openai' | 'anthropic' = 'openai'
+  provider: 'openai' | 'anthropic' = 'openai',
+  schoolContext?: { name: string; year_groups: string[] }[]
 ): Promise<OnboardingAnalysisResult> {
-  const prompt = generateExtractionPrompt(emails);
+  const prompt = generateExtractionPrompt(emails, schoolContext);
 
   if (provider === 'openai') {
     console.log('🔍 Analyzing emails with OpenAI for child profile extraction...');
