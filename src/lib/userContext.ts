@@ -4,6 +4,7 @@ import { google } from 'googleapis';
 import type { OAuth2Client } from 'google-auth-library';
 import { getAuth, updateAccessToken } from '../db/authDb.js';
 import { decrypt, encrypt } from './crypto.js';
+import type { SubscriptionTier } from '../types/subscription.js';
 
 /**
  * Extract user ID from authenticated request
@@ -58,6 +59,27 @@ export function getRealUserId(request: FastifyRequest): string {
  */
 export function isImpersonating(request: FastifyRequest): boolean {
   return !!(request as any).impersonatingUserId;
+}
+
+/**
+ * Get subscription tier from authenticated request
+ *
+ * @param request - Fastify request
+ * @returns Subscription tier (defaults to FREE)
+ */
+export function getUserTierFromRequest(request: FastifyRequest): SubscriptionTier {
+  return (request as any).userTier || 'FREE';
+}
+
+/**
+ * Check if subscription is active from request
+ *
+ * @param request - Fastify request
+ * @returns true if subscription is active (defaults to true for FREE tier)
+ */
+export function isSubscriptionActiveFromRequest(request: FastifyRequest): boolean {
+  const active = (request as any).subscriptionActive;
+  return active !== false;
 }
 
 /**

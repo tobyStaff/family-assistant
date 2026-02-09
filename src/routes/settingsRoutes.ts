@@ -25,6 +25,8 @@ import {
 import type { Role } from '../types/roles.js';
 import { renderLayout } from '../templates/layout.js';
 import { renderSettingsContent, renderSettingsScripts } from '../templates/settingsContent.js';
+import { getSubscription, ensureSubscription } from '../db/subscriptionDb.js';
+import { TIER_CONFIGS } from '../config/tiers.js';
 import { renderSendersContent, renderSendersScripts } from '../templates/sendersContent.js';
 import { renderRelevanceTrainingContent, renderRelevanceTrainingScripts } from '../templates/relevanceTrainingContent.js';
 
@@ -74,6 +76,10 @@ export async function settingsRoutes(fastify: FastifyInstance): Promise<void> {
         // Get calendar connection status
         const calendarConnected = isCalendarConnected(userId);
 
+        // Get subscription info
+        const subscription = getSubscription(userId) || ensureSubscription(userId);
+        const tierConfig = TIER_CONFIGS[subscription.tier];
+
         // Generate settings content
         const content = renderSettingsContent({
           summaryEmailRecipients: settings.summary_email_recipients,
@@ -85,6 +91,17 @@ export async function settingsRoutes(fastify: FastifyInstance): Promise<void> {
           hostedEmail,
           hostedDomain: getHostedEmailDomain(),
           calendarConnected,
+          subscription: {
+            tier: subscription.tier,
+            tierDisplayName: tierConfig.displayName,
+            priceFormatted: tierConfig.priceFormatted,
+            status: subscription.status,
+            features: tierConfig.features,
+            currentPeriodEnd: subscription.currentPeriodEnd?.toISOString() || null,
+            cancelAtPeriodEnd: subscription.cancelAtPeriodEnd,
+            trialEnd: subscription.trialEnd?.toISOString() || null,
+            hasStripeSubscription: Boolean(subscription.stripeSubscriptionId),
+          },
         });
 
         const scripts = renderSettingsScripts(settings.summary_email_recipients, emailSource);

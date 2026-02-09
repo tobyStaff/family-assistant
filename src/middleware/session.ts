@@ -2,6 +2,7 @@
 import type { FastifyRequest, FastifyReply } from 'fastify';
 import { getSession } from '../db/sessionDb.js';
 import { getUserRoles, getUser } from '../db/userDb.js';
+import { getUserTier, isSubscriptionActive } from '../db/subscriptionDb.js';
 import type { Role } from '../types/roles.js';
 
 /**
@@ -35,6 +36,10 @@ export async function sessionMiddleware(
         const roles = getUserRoles(session.user_id);
         (request as any).userRoles = roles;
 
+        // Fetch and attach subscription tier and status
+        // For impersonation, we use the impersonated user's tier
+        let effectiveUserId = session.user_id;
+
         // Check for impersonation cookie (SUPER_ADMIN only)
         const impersonateCookie = (request as any).cookies?.impersonate_user_id;
         if (impersonateCookie && roles.includes('SUPER_ADMIN')) {
@@ -45,9 +50,14 @@ export async function sessionMiddleware(
             const impersonatedUser = getUser(impersonatedUserId);
             if (impersonatedUser) {
               (request as any).impersonatingUserId = impersonatedUserId;
+              effectiveUserId = impersonatedUserId;
             }
           }
         }
+
+        // Attach tier context (using effective user for impersonation)
+        (request as any).userTier = getUserTier(effectiveUserId);
+        (request as any).subscriptionActive = isSubscriptionActive(effectiveUserId);
       }
     }
   }

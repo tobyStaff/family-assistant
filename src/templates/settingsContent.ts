@@ -1,5 +1,7 @@
 // src/templates/settingsContent.ts
 
+import type { SubscriptionTier, TierFeature } from '../types/subscription.js';
+
 export interface SettingsContentOptions {
   summaryEmailRecipients: string[];
   summaryEnabled: boolean;
@@ -10,6 +12,18 @@ export interface SettingsContentOptions {
   hostedEmail?: string | null;
   hostedDomain?: string;
   calendarConnected?: boolean;
+  // Subscription options
+  subscription?: {
+    tier: SubscriptionTier;
+    tierDisplayName: string;
+    priceFormatted: string;
+    status: string;
+    features: TierFeature[];
+    currentPeriodEnd?: string | null;
+    cancelAtPeriodEnd?: boolean;
+    trialEnd?: string | null;
+    hasStripeSubscription?: boolean;
+  };
 }
 
 /**
@@ -26,7 +40,11 @@ export function renderSettingsContent(options: SettingsContentOptions): string {
     hostedEmail,
     hostedDomain = 'inbox.getfamilyassistant.com',
     calendarConnected = false,
+    subscription,
   } = options;
+
+  // Generate subscription section HTML
+  const subscriptionHtml = subscription ? generateSubscriptionSection(subscription) : '';
 
   const recipientsHtml = summaryEmailRecipients.length > 0
     ? summaryEmailRecipients.map((email, index) => `
@@ -317,6 +335,8 @@ export function renderSettingsContent(options: SettingsContentOptions): string {
     </style>
 
     <div id="message" class="message"></div>
+
+    ${subscriptionHtml}
 
     <form id="settingsForm">
       <div class="settings-grid">
@@ -794,6 +814,227 @@ export function renderSettingsScripts(initialRecipients: string[], initialEmailS
         // Clean up URL
         window.history.replaceState({}, document.title, '/settings');
       }
+
+      // Check for checkout success
+      const checkoutStatus = new URLSearchParams(window.location.search).get('checkout');
+      if (checkoutStatus === 'success') {
+        showMessage('Your subscription has been updated successfully!', 'success');
+        window.history.replaceState({}, document.title, '/settings');
+      } else if (checkoutStatus === 'canceled') {
+        showMessage('Checkout was canceled.', 'error');
+        window.history.replaceState({}, document.title, '/settings');
+      }
     </script>
   `;
+}
+
+/**
+ * Generate subscription section HTML
+ */
+function generateSubscriptionSection(subscription: NonNullable<SettingsContentOptions['subscription']>): string {
+  const {
+    tier,
+    tierDisplayName,
+    priceFormatted,
+    status,
+    features,
+    currentPeriodEnd,
+    cancelAtPeriodEnd,
+    trialEnd,
+    hasStripeSubscription,
+  } = subscription;
+
+  // Status badge
+  const statusBadge = getStatusBadge(status, cancelAtPeriodEnd);
+
+  // Trial or cancellation notice
+  let noticeHtml = '';
+  if (trialEnd) {
+    const trialEndDate = new Date(trialEnd).toLocaleDateString('en-GB', {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+    });
+    noticeHtml = `
+      <div style="background: #FEF3C7; border: 1px solid #F59E0B; border-radius: 8px; padding: 12px; margin-bottom: 15px;">
+        <strong>Trial ends ${trialEndDate}</strong><br>
+        <small>Your card will be charged when the trial ends.</small>
+      </div>
+    `;
+  } else if (cancelAtPeriodEnd && currentPeriodEnd) {
+    const endDate = new Date(currentPeriodEnd).toLocaleDateString('en-GB', {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+    });
+    noticeHtml = `
+      <div style="background: #FEE2E2; border: 1px solid #EF4444; border-radius: 8px; padding: 12px; margin-bottom: 15px;">
+        <strong>Subscription ends ${endDate}</strong><br>
+        <small>Your subscription will not renew. You'll be downgraded to the Free plan.</small>
+      </div>
+    `;
+  }
+
+  // Feature list with availability indicators
+  const allFeatures: { feature: TierFeature; label: string; tier: 'ORGANIZED' | 'PROFESSIONAL' | 'CONCIERGE' }[] = [
+    { feature: 'daily_brief', label: 'Daily Brief', tier: 'ORGANIZED' },
+    { feature: 'attachment_analysis', label: 'Attachment Analysis', tier: 'ORGANIZED' },
+    { feature: 'custom_training', label: 'Custom Training', tier: 'ORGANIZED' },
+    { feature: 'hosted_email', label: 'Hosted Email', tier: 'PROFESSIONAL' },
+    { feature: 'calendar_sync', label: 'Calendar Sync', tier: 'PROFESSIONAL' },
+    { feature: 'ai_vision', label: 'AI Vision', tier: 'PROFESSIONAL' },
+    { feature: 'unlimited_senders', label: 'Unlimited Senders', tier: 'PROFESSIONAL' },
+    { feature: 'whatsapp_integration', label: 'WhatsApp Integration', tier: 'CONCIERGE' },
+    { feature: 'human_verification', label: 'Human Verification', tier: 'CONCIERGE' },
+    { feature: 'autopilot_tasks', label: 'Autopilot Tasks', tier: 'CONCIERGE' },
+  ];
+
+  const featuresHtml = allFeatures.map(f => {
+    const available = features.includes(f.feature);
+    return `
+      <div style="display: flex; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--border-light);">
+        <span style="font-size: 16px;">${available ? '✅' : '🔒'}</span>
+        <span style="flex: 1; color: ${available ? 'var(--text-primary)' : 'var(--text-muted)'}; ${!available ? 'opacity: 0.7;' : ''}">${f.label}</span>
+        ${!available ? `<span style="font-size: 11px; background: var(--bg-muted); padding: 2px 6px; border-radius: 4px; color: var(--text-muted);">Requires ${f.tier}</span>` : ''}
+      </div>
+    `;
+  }).join('');
+
+  // Upgrade/manage buttons
+  let actionButtonsHtml = '';
+  if (tier === 'FREE') {
+    actionButtonsHtml = `
+      <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+        <button type="button" class="btn btn-primary" onclick="upgradePlan('ORGANIZED')">Upgrade to Organized — £9/mo</button>
+        <button type="button" class="btn btn-secondary" onclick="upgradePlan('PROFESSIONAL')">Go Professional — £18/mo</button>
+      </div>
+    `;
+  } else if (hasStripeSubscription) {
+    actionButtonsHtml = `
+      <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+        <a href="/api/checkout/billing-portal" class="btn btn-secondary" style="text-decoration: none;">Manage Billing</a>
+        ${tier !== 'CONCIERGE' ? `<button type="button" class="btn btn-primary" onclick="upgradePlan('${tier === 'ORGANIZED' ? 'PROFESSIONAL' : 'CONCIERGE'}')">Upgrade Plan</button>` : ''}
+      </div>
+    `;
+  }
+
+  return `
+    <div id="subscription" class="card" style="margin-bottom: 20px;">
+      <style>
+        .subscription-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: flex-start;
+          margin-bottom: 15px;
+        }
+        .subscription-plan {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+        }
+        .plan-name {
+          font-family: var(--font-display);
+          font-size: 24px;
+          font-weight: 600;
+          color: var(--text-primary);
+        }
+        .plan-price {
+          font-size: 14px;
+          color: var(--text-secondary);
+        }
+        .status-badge {
+          padding: 4px 10px;
+          border-radius: 20px;
+          font-size: 12px;
+          font-weight: 600;
+          text-transform: uppercase;
+        }
+        .status-active {
+          background: #D1FAE5;
+          color: #065F46;
+        }
+        .status-trialing {
+          background: #DBEAFE;
+          color: #1E40AF;
+        }
+        .status-past_due {
+          background: #FEE2E2;
+          color: #991B1B;
+        }
+        .status-canceled {
+          background: #F3F4F6;
+          color: #6B7280;
+        }
+        .features-grid {
+          margin: 20px 0;
+          max-height: 300px;
+          overflow-y: auto;
+        }
+      </style>
+
+      <div class="section-title">💳 Your Subscription</div>
+
+      ${noticeHtml}
+
+      <div class="subscription-header">
+        <div class="subscription-plan">
+          <div>
+            <div class="plan-name">${tierDisplayName}</div>
+            <div class="plan-price">${tier === 'FREE' ? 'Free forever' : `${priceFormatted}/month`}</div>
+          </div>
+        </div>
+        ${statusBadge}
+      </div>
+
+      <div class="features-grid">
+        ${featuresHtml}
+      </div>
+
+      ${actionButtonsHtml}
+    </div>
+
+    <script>
+      async function upgradePlan(tier) {
+        try {
+          const response = await fetch('/api/checkout/create-session', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ tier }),
+          });
+
+          const data = await response.json();
+
+          if (response.ok && data.url) {
+            window.location.href = data.url;
+          } else {
+            alert('Error: ' + (data.message || 'Failed to start checkout'));
+          }
+        } catch (error) {
+          alert('Error: Failed to start checkout');
+        }
+      }
+    </script>
+  `;
+}
+
+/**
+ * Get status badge HTML
+ */
+function getStatusBadge(status: string, cancelAtPeriodEnd?: boolean): string {
+  if (cancelAtPeriodEnd) {
+    return '<span class="status-badge status-canceled">Canceling</span>';
+  }
+
+  switch (status) {
+    case 'active':
+      return '<span class="status-badge status-active">Active</span>';
+    case 'trialing':
+      return '<span class="status-badge status-trialing">Trial</span>';
+    case 'past_due':
+      return '<span class="status-badge status-past_due">Past Due</span>';
+    case 'canceled':
+      return '<span class="status-badge status-canceled">Canceled</span>';
+    default:
+      return `<span class="status-badge">${status}</span>`;
+  }
 }

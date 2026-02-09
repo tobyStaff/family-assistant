@@ -413,11 +413,11 @@ export function generateLandingPage(data: LandingPageData): string {
               .join('')}
           </ul>
 
-          <a href="${stripeUrls[index]}" class="block w-full ${tier.highlighted ? 'bg-trust-blue text-white hover:bg-trust-blue-dark' : 'bg-trust-blue/10 text-trust-blue hover:bg-trust-blue/20'} text-center py-3 rounded-xl font-semibold transition-colors btn-press">
+          <a href="/api/checkout?plan=${tier.tier || ['earlyBird', 'professional', 'concierge'][index]}" class="block w-full ${tier.highlighted ? 'bg-trust-blue text-white hover:bg-trust-blue-dark' : 'bg-trust-blue/10 text-trust-blue hover:bg-trust-blue/20'} text-center py-3 rounded-xl font-semibold transition-colors btn-press">
             ${tier.cta}
           </a>
 
-          <p class="text-center text-xs text-trust-blue/50 mt-4">${tier.slotsRemaining}</p>
+          ${tier.slotsRemaining ? `<p class="text-center text-xs text-trust-blue/50 mt-4">${tier.slotsRemaining}</p>` : ''}
         </div>
         `
           )

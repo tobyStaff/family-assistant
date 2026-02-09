@@ -888,6 +888,53 @@ function runMigrations() {
 
     console.log('Migration 16 completed');
   }
+
+  // Migration 17: Create subscriptions table for tier-based pricing
+  if (version < 17) {
+    console.log('Running migration 17: Creating subscriptions table for tier-based pricing');
+
+    db.transaction(() => {
+      // Create subscriptions table
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS subscriptions (
+          user_id TEXT PRIMARY KEY,
+          tier TEXT NOT NULL DEFAULT 'FREE'
+            CHECK(tier IN ('FREE', 'ORGANIZED', 'PROFESSIONAL', 'CONCIERGE')),
+          status TEXT NOT NULL DEFAULT 'active'
+            CHECK(status IN ('active', 'trialing', 'past_due', 'canceled', 'unpaid', 'incomplete', 'incomplete_expired', 'paused')),
+          stripe_customer_id TEXT,
+          stripe_subscription_id TEXT,
+          current_period_start DATETIME,
+          current_period_end DATETIME,
+          cancel_at_period_end BOOLEAN DEFAULT 0,
+          trial_end DATETIME,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
+        );
+
+        -- Indexes for Stripe lookups
+        CREATE INDEX IF NOT EXISTS idx_subscriptions_stripe_customer ON subscriptions(stripe_customer_id);
+        CREATE INDEX IF NOT EXISTS idx_subscriptions_stripe_sub ON subscriptions(stripe_subscription_id);
+        CREATE INDEX IF NOT EXISTS idx_subscriptions_tier ON subscriptions(tier);
+        CREATE INDEX IF NOT EXISTS idx_subscriptions_status ON subscriptions(status);
+      `);
+
+      // Backfill existing users with FREE tier
+      db.exec(`
+        INSERT OR IGNORE INTO subscriptions (user_id, tier, status)
+        SELECT user_id, 'FREE', 'active' FROM users;
+      `);
+
+      // Record migration
+      db.prepare('INSERT INTO schema_version (version, description) VALUES (?, ?)').run(
+        17,
+        'Create subscriptions table for tier-based pricing with Stripe integration'
+      );
+    })();
+
+    console.log('Migration 17 completed');
+  }
 }
 
 // Run migrations after initial table creation

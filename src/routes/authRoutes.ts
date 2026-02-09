@@ -4,6 +4,7 @@ import { google } from 'googleapis';
 import { randomBytes } from 'crypto';
 import { storeAuth } from '../db/authDb.js';
 import { upsertUser, getUser, ensureSuperAdminRoles, updateOnboardingStep, setGmailConnected, setCalendarConnected } from '../db/userDb.js';
+import { ensureSubscription } from '../db/subscriptionDb.js';
 import { createSession, deleteSession } from '../db/sessionDb.js';
 import { encrypt } from '../lib/crypto.js';
 import { requireAuth } from '../middleware/session.js';
@@ -448,6 +449,9 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
 
       // Ensure super admin gets all roles
       ensureSuperAdminRoles(email);
+
+      // Ensure subscription record exists (creates FREE tier for new users)
+      ensureSubscription(userId);
 
       // Handle Gmail connection flow — user already has a session
       if (isGmailConnect) {
