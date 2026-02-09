@@ -86,6 +86,12 @@ export function renderLayout(options: LayoutOptions): string {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>${title} - Inbox Manager</title>
+
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+
   <style>
     * {
       margin: 0;
@@ -94,24 +100,67 @@ export function renderLayout(options: LayoutOptions): string {
     }
 
     :root {
-      --sidebar-width: 240px;
-      --header-height: 64px;
-      --primary-color: #667eea;
-      --primary-dark: #5a67d8;
-      --danger-color: #dc3545;
-      --success-color: #28a745;
-      --bg-dark: #1a1a2e;
-      --bg-darker: #16213e;
-      --bg-light: #f5f7fa;
+      /* Layout */
+      --sidebar-width: 260px;
+      --header-height: 72px;
+
+      /* Brand Colors */
+      --primary-color: #2A5C82;
+      --primary-dark: #1E4562;
+      --primary-light: rgba(42, 92, 130, 0.1);
+      --success-color: #4CAF50;
+      --success-light: #E8F5E9;
+      --warning-color: #F59E0B;
+      --warning-light: #FFF8E1;
+      --danger-color: #E53935;
+      --danger-dark: #B71C1C;
+      --danger-light: #FFEBEE;
+
+      /* Backgrounds */
+      --bg-dark: #1E4562;
+      --bg-darker: #163348;
+      --bg-light: #FAF9F6;
+      --bg-card: #ffffff;
+      --bg-muted: #F8F9FA;
+      --sky: #E3F2FD;
+      --warm-sand: #FFF8E1;
+      --soft-mint: #E8F5E9;
+
+      /* Text Colors */
+      --text-primary: #1E4562;
+      --text-secondary: #4A6B8A;
+      --text-muted: #7A8FA3;
       --text-light: #94a3b8;
       --text-white: #ffffff;
+
+      /* Borders */
+      --border-light: #E0E7ED;
       --border-color: rgba(255, 255, 255, 0.1);
+
+      /* Shadows */
+      --shadow-sm: 0 2px 8px rgba(42, 92, 130, 0.06);
+      --shadow-md: 0 4px 20px rgba(42, 92, 130, 0.08);
+      --shadow-lg: 0 8px 30px rgba(42, 92, 130, 0.12);
+
+      /* Border Radius */
+      --radius-sm: 8px;
+      --radius-md: 12px;
+      --radius-lg: 20px;
+      --radius-full: 9999px;
+
+      /* Fonts */
+      --font-display: 'Fraunces', Georgia, serif;
+      --font-body: 'Plus Jakarta Sans', system-ui, sans-serif;
     }
 
     body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-family: var(--font-body);
       background: var(--bg-light);
       min-height: 100vh;
+    }
+
+    .font-display {
+      font-family: var(--font-display);
     }
 
     /* Sidebar */
@@ -129,60 +178,73 @@ export function renderLayout(options: LayoutOptions): string {
     }
 
     .sidebar-header {
-      padding: 20px;
+      padding: 24px;
       border-bottom: 1px solid var(--border-color);
     }
 
     .sidebar-logo {
-      font-size: 20px;
-      font-weight: 700;
+      font-family: var(--font-display);
+      font-size: 22px;
+      font-weight: 600;
       color: var(--text-white);
       text-decoration: none;
       display: flex;
       align-items: center;
-      gap: 10px;
+      gap: 12px;
+    }
+
+    .sidebar-logo-icon {
+      width: 40px;
+      height: 40px;
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 20px;
     }
 
     .sidebar-nav {
       flex: 1;
-      padding: 20px 0;
+      padding: 24px 0;
       overflow-y: auto;
     }
 
     .nav-section {
-      margin-bottom: 20px;
+      margin-bottom: 24px;
     }
 
     .nav-section-title {
       font-size: 11px;
       font-weight: 600;
       text-transform: uppercase;
-      letter-spacing: 1px;
-      color: var(--text-light);
-      padding: 0 20px;
-      margin-bottom: 10px;
+      letter-spacing: 1.2px;
+      color: rgba(255, 255, 255, 0.4);
+      padding: 0 24px;
+      margin-bottom: 12px;
     }
 
     .nav-item {
       display: flex;
       align-items: center;
-      gap: 12px;
-      padding: 12px 20px;
-      color: var(--text-light);
+      gap: 14px;
+      padding: 14px 24px;
+      color: rgba(255, 255, 255, 0.7);
       text-decoration: none;
-      transition: all 0.2s;
+      transition: all 0.2s ease;
       border-left: 3px solid transparent;
+      margin: 2px 0;
     }
 
     .nav-item:hover {
-      background: rgba(255, 255, 255, 0.05);
+      background: rgba(255, 255, 255, 0.08);
       color: var(--text-white);
     }
 
     .nav-item.active {
-      background: rgba(102, 126, 234, 0.15);
-      color: var(--primary-color);
-      border-left-color: var(--primary-color);
+      background: rgba(255, 255, 255, 0.12);
+      color: var(--text-white);
+      border-left-color: var(--text-white);
     }
 
     .nav-icon {
@@ -197,7 +259,7 @@ export function renderLayout(options: LayoutOptions): string {
     }
 
     .sidebar-footer {
-      padding: 20px;
+      padding: 20px 24px;
       border-top: 1px solid var(--border-color);
     }
 
@@ -209,11 +271,11 @@ export function renderLayout(options: LayoutOptions): string {
       right: 0;
       height: var(--header-height);
       background: white;
-      border-bottom: 1px solid #e0e0e0;
+      border-bottom: 1px solid rgba(42, 92, 130, 0.1);
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 0 24px;
+      padding: 0 32px;
       z-index: 50;
     }
 
@@ -224,9 +286,10 @@ export function renderLayout(options: LayoutOptions): string {
     }
 
     .page-title {
-      font-size: 20px;
+      font-family: var(--font-display);
+      font-size: 24px;
       font-weight: 600;
-      color: #333;
+      color: var(--primary-dark);
     }
 
     .header-right {
@@ -238,14 +301,18 @@ export function renderLayout(options: LayoutOptions): string {
     .user-menu {
       display: flex;
       align-items: center;
-      gap: 12px;
+      gap: 14px;
+      padding: 8px 16px;
+      background: var(--sky);
+      border-radius: 16px;
     }
 
     .user-avatar {
-      width: 36px;
-      height: 36px;
-      border-radius: 50%;
+      width: 40px;
+      height: 40px;
+      border-radius: 12px;
       object-fit: cover;
+      border: 2px solid white;
     }
 
     .user-info {
@@ -256,21 +323,24 @@ export function renderLayout(options: LayoutOptions): string {
     .user-name {
       font-size: 14px;
       font-weight: 600;
-      color: #333;
+      color: var(--primary-dark);
     }
 
     .user-email {
       font-size: 12px;
-      color: #666;
+      color: var(--primary-color);
+      opacity: 0.7;
     }
 
     .role-badge {
       display: inline-block;
-      padding: 2px 8px;
-      border-radius: 10px;
+      padding: 3px 10px;
+      border-radius: 12px;
       font-size: 10px;
       font-weight: 600;
       margin-left: 8px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
     }
 
     .role-badge.super-admin {
@@ -279,22 +349,26 @@ export function renderLayout(options: LayoutOptions): string {
     }
 
     .role-badge.admin {
-      background: #f59e0b;
-      color: white;
+      background: var(--warm-sand);
+      color: #8B6914;
     }
 
     .btn {
-      padding: 8px 16px;
+      padding: 10px 18px;
       border: none;
-      border-radius: 6px;
+      border-radius: 12px;
       font-size: 14px;
-      font-weight: 500;
+      font-weight: 600;
       cursor: pointer;
       text-decoration: none;
       display: inline-flex;
       align-items: center;
-      gap: 6px;
-      transition: all 0.2s;
+      gap: 8px;
+      transition: all 0.2s ease;
+    }
+
+    .btn:active {
+      transform: scale(0.98);
     }
 
     .btn-primary {
@@ -304,6 +378,7 @@ export function renderLayout(options: LayoutOptions): string {
 
     .btn-primary:hover {
       background: var(--primary-dark);
+      box-shadow: 0 4px 12px rgba(42, 92, 130, 0.3);
     }
 
     .btn-danger {
@@ -312,18 +387,19 @@ export function renderLayout(options: LayoutOptions): string {
     }
 
     .btn-danger:hover {
-      background: #c82333;
+      background: var(--danger-dark);
+      box-shadow: 0 4px 12px rgba(229, 115, 115, 0.3);
     }
 
     .btn-outline {
-      background: transparent;
-      border: 1px solid #ddd;
-      color: #666;
+      background: white;
+      border: 2px solid rgba(42, 92, 130, 0.2);
+      color: var(--primary-color);
     }
 
     .btn-outline:hover {
-      background: #f5f5f5;
-      border-color: #ccc;
+      background: var(--sky);
+      border-color: rgba(42, 92, 130, 0.3);
     }
 
     /* Main Content */
@@ -331,19 +407,20 @@ export function renderLayout(options: LayoutOptions): string {
       margin-left: var(--sidebar-width);
       margin-top: var(--header-height);
       min-height: calc(100vh - var(--header-height));
-      padding: 24px;
+      padding: 32px;
     }
 
     /* Impersonation Banner */
     .impersonation-banner {
-      background: var(--danger-color);
+      background: linear-gradient(135deg, var(--danger-color) 0%, var(--danger-dark) 100%);
       color: white;
-      padding: 12px 20px;
-      border-radius: 8px;
-      margin-bottom: 20px;
+      padding: 14px 24px;
+      border-radius: var(--radius-lg);
+      margin-bottom: 24px;
       display: flex;
       justify-content: space-between;
       align-items: center;
+      box-shadow: 0 4px 12px rgba(229, 115, 115, 0.3);
     }
 
     .impersonation-banner .btn {
@@ -353,24 +430,25 @@ export function renderLayout(options: LayoutOptions): string {
 
     /* Cards */
     .card {
-      background: white;
-      border-radius: 12px;
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
-      padding: 24px;
-      margin-bottom: 20px;
+      background: var(--bg-card);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-md);
+      padding: 28px;
+      margin-bottom: 24px;
     }
 
     .card-header {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      margin-bottom: 16px;
+      margin-bottom: 20px;
     }
 
     .card-title {
-      font-size: 18px;
+      font-family: var(--font-display);
+      font-size: 20px;
       font-weight: 600;
-      color: #333;
+      color: var(--primary-dark);
     }
 
     /* Grid */
@@ -389,22 +467,27 @@ export function renderLayout(options: LayoutOptions): string {
 
     /* Stats */
     .stat-card {
-      background: white;
-      border-radius: 12px;
-      padding: 20px;
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+      background: var(--bg-card);
+      border-radius: var(--radius-lg);
+      padding: 24px;
+      box-shadow: var(--shadow-md);
     }
 
     .stat-label {
       font-size: 13px;
-      color: #666;
+      color: var(--primary-color);
+      opacity: 0.7;
       margin-bottom: 8px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      font-weight: 500;
     }
 
     .stat-value {
-      font-size: 28px;
+      font-family: var(--font-display);
+      font-size: 32px;
       font-weight: 700;
-      color: #333;
+      color: var(--primary-dark);
     }
 
     /* Responsive */
@@ -428,7 +511,8 @@ export function renderLayout(options: LayoutOptions): string {
   <aside class="sidebar">
     <div class="sidebar-header">
       <a href="/dashboard" class="sidebar-logo">
-        📬 Inbox Manager
+        <span class="sidebar-logo-icon">📬</span>
+        <span>Family Assistant</span>
       </a>
     </div>
 

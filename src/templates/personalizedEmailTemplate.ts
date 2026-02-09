@@ -342,6 +342,34 @@ function renderInsights(insights: string[]): string {
 }
 
 /**
+ * Calculate estimated read time in minutes based on content
+ */
+function calculateReadTime(summary: PersonalizedSummaryWithActions): number {
+  // Count all items
+  const todayTodos = summary.by_child.reduce((sum, c) => sum + c.today_todos.length, 0) + summary.family_wide.today_todos.length;
+  const todayEvents = summary.by_child.reduce((sum, c) => sum + c.today_events.length, 0) + summary.family_wide.today_events.length;
+  const upcomingTodos = summary.by_child.reduce((sum, c) => sum + c.upcoming_todos.length, 0) + summary.family_wide.upcoming_todos.length;
+  const upcomingEvents = summary.by_child.reduce((sum, c) => sum + c.upcoming_events.length, 0) + summary.family_wide.upcoming_events.length;
+
+  const totalItems = todayTodos + todayEvents + upcomingTodos + upcomingEvents;
+
+  // Estimate ~15 seconds per item, plus 30 seconds base time
+  const seconds = 30 + (totalItems * 15);
+  return Math.max(1, Math.ceil(seconds / 60));
+}
+
+/**
+ * Calculate time saved by summarizing emails (in minutes)
+ * Assumes ~2.5 minutes to read and process each original email
+ */
+function calculateTimeSaved(emailsAnalyzed?: number): number {
+  if (!emailsAnalyzed || emailsAnalyzed === 0) {
+    return 0;
+  }
+  return Math.round(emailsAnalyzed * 2.5);
+}
+
+/**
  * Render the "work done" text showing how many emails were analyzed
  */
 function renderWorkDone(emailsAnalyzed?: number): string {
@@ -349,9 +377,11 @@ function renderWorkDone(emailsAnalyzed?: number): string {
     return '';
   }
 
+  const timeSaved = calculateTimeSaved(emailsAnalyzed);
+
   return `
     <div class="work-done-text">
-      The Family Assistant AI has summarised ${emailsAnalyzed} of your emails into this single email.
+      The Family Assistant AI has summarised <strong>${emailsAnalyzed} emails</strong> into this single briefing, saving you approximately <strong>${timeSaved} minutes</strong>.
     </div>
   `;
 }
@@ -768,18 +798,26 @@ export function renderPersonalizedEmail(summary: PersonalizedSummaryWithActions)
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Family Briefing</title>
+  <!--[if !mso]><!-->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <!--<![endif]-->
   <style>
     /* Email-safe CSS - avoid flexbox, grid, gradients for Outlook compatibility */
     * {
       box-sizing: border-box;
     }
     body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
       line-height: 1.6;
-      color: #333;
-      background-color: #f0f2f5;
+      color: #1E4562;
+      background-color: #FAF9F6;
       margin: 0;
       padding: 8px;
+    }
+    .font-display {
+      font-family: 'Fraunces', Georgia, 'Times New Roman', serif;
     }
     .container {
       max-width: 700px;
@@ -802,27 +840,55 @@ export function renderPersonalizedEmail(summary: PersonalizedSummaryWithActions)
 
     /* Header */
     .header {
+      background-color: #2A5C82;
+      margin: -24px -16px 24px -16px;
+      padding: 24px 16px;
+      border-radius: 12px 12px 0 0;
+      position: relative;
+    }
+    @media screen and (min-width: 480px) {
+      .header {
+        margin: -32px -40px 24px -40px;
+        padding: 28px 40px;
+      }
+    }
+    .header-content {
       text-align: center;
-      margin-bottom: 16px;
-      padding-bottom: 16px;
-      border-bottom: 2px solid #e8e8e8;
     }
     .header h1 {
+      font-family: 'Fraunces', Georgia, 'Times New Roman', serif;
       margin: 0 0 4px 0;
-      color: #1a1a1a;
+      color: #ffffff;
       font-size: 28px;
       font-weight: 700;
     }
     .header .date {
-      color: #666;
+      color: rgba(255, 255, 255, 0.85);
       font-size: 16px;
       margin: 0;
+    }
+    .header .read-time {
+      position: absolute;
+      top: 16px;
+      right: 16px;
+      background: rgba(255, 255, 255, 0.15);
+      color: rgba(255, 255, 255, 0.9);
+      padding: 6px 12px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 500;
+    }
+    @media screen and (min-width: 480px) {
+      .header .read-time {
+        top: 24px;
+        right: 40px;
+      }
     }
 
     /* Work Done text */
     .work-done-text {
       text-align: center;
-      color: #888;
+      color: #7A8FA3;
       font-size: 13px;
       margin-bottom: 24px;
       font-style: italic;
@@ -830,8 +896,8 @@ export function renderPersonalizedEmail(summary: PersonalizedSummaryWithActions)
 
     /* Highlight Banner - using solid color for email compatibility */
     .highlight-banner {
-      background-color: #fff9c4;
-      border: 2px solid #ffd54f;
+      background-color: #FFF8E1;
+      border: 2px solid #D4A574;
       border-radius: 12px;
       padding: 16px;
       margin-bottom: 28px;
@@ -853,15 +919,16 @@ export function renderPersonalizedEmail(summary: PersonalizedSummaryWithActions)
       display: inline-block;
       font-size: 14px;
       font-weight: 700;
-      color: #f57f17;
+      color: #8B6914;
       text-transform: uppercase;
       letter-spacing: 0.5px;
       vertical-align: middle;
     }
     .highlight-content {
+      font-family: 'Fraunces', Georgia, 'Times New Roman', serif;
       font-size: 18px;
       font-weight: 600;
-      color: #333;
+      color: #1E4562;
       line-height: 1.4;
     }
 
@@ -875,13 +942,13 @@ export function renderPersonalizedEmail(summary: PersonalizedSummaryWithActions)
       border-bottom: 2px solid #e8e8e8;
     }
     .section-header.today-reminders {
-      border-bottom-color: #667eea;
+      border-bottom-color: #2A5C82;
     }
     .section-header.evening-reminders {
-      border-bottom-color: #9575cd;
+      border-bottom-color: #5D8AA8;
     }
     .section-header.diary {
-      border-bottom-color: #4fc3f7;
+      border-bottom-color: #2A5C82;
     }
     .section-icon {
       font-size: 20px;
@@ -889,9 +956,10 @@ export function renderPersonalizedEmail(summary: PersonalizedSummaryWithActions)
       margin-right: 8px;
     }
     .section-title {
+      font-family: 'Fraunces', Georgia, 'Times New Roman', serif;
       font-size: 16px;
       font-weight: 700;
-      color: #1a1a1a;
+      color: #1E4562;
       vertical-align: middle;
       text-transform: uppercase;
       letter-spacing: 0.3px;
@@ -899,7 +967,7 @@ export function renderPersonalizedEmail(summary: PersonalizedSummaryWithActions)
     .section-count {
       display: inline-block;
       font-size: 12px;
-      color: #888;
+      color: #7A8FA3;
       margin-left: 10px;
     }
     .items-list {
@@ -912,7 +980,7 @@ export function renderPersonalizedEmail(summary: PersonalizedSummaryWithActions)
       padding: 16px;
       background: #fafafa;
       border-radius: 10px;
-      border-left: 4px solid #667eea;
+      border-left: 4px solid #2A5C82;
       margin-bottom: 12px;
     }
     @media screen and (min-width: 480px) {
@@ -925,7 +993,7 @@ export function renderPersonalizedEmail(summary: PersonalizedSummaryWithActions)
     .todo-type {
       display: inline-block;
       font-weight: 600;
-      color: #667eea;
+      color: #2A5C82;
       font-size: 12px;
       text-transform: uppercase;
       letter-spacing: 0.3px;
@@ -943,13 +1011,13 @@ export function renderPersonalizedEmail(summary: PersonalizedSummaryWithActions)
     .todo-description {
       font-size: 16px;
       line-height: 1.5;
-      color: #333;
+      color: #1E4562;
       margin-bottom: 8px;
       font-weight: 500;
     }
     .todo-meta {
       font-size: 13px;
-      color: #666;
+      color: #4A6B8A;
       margin-bottom: 8px;
     }
     .todo-meta span {
@@ -986,9 +1054,9 @@ export function renderPersonalizedEmail(summary: PersonalizedSummaryWithActions)
     .event-item {
       display: block;
       padding: 16px;
-      background: #f0f7ff;
+      background: #E3F2FD;
       border-radius: 10px;
-      border-left: 4px solid #2196f3;
+      border-left: 4px solid #2A5C82;
       margin-bottom: 12px;
     }
     @media screen and (min-width: 480px) {
@@ -998,10 +1066,11 @@ export function renderPersonalizedEmail(summary: PersonalizedSummaryWithActions)
       margin-bottom: 6px;
     }
     .event-title {
+      font-family: 'Fraunces', Georgia, 'Times New Roman', serif;
       display: inline-block;
       font-weight: 600;
       font-size: 16px;
-      color: #1565c0;
+      color: #1E4562;
     }
     .event-meta {
       margin-bottom: 6px;
@@ -1012,11 +1081,11 @@ export function renderPersonalizedEmail(summary: PersonalizedSummaryWithActions)
     }
     .event-date, .event-location {
       font-size: 13px;
-      color: #555;
+      color: #4A6B8A;
     }
     .event-description {
       font-size: 14px;
-      color: #555;
+      color: #4A6B8A;
       line-height: 1.4;
     }
 
@@ -1038,8 +1107,8 @@ export function renderPersonalizedEmail(summary: PersonalizedSummaryWithActions)
 
     .child-badge {
       display: inline-block;
-      background: #e8f4fd;
-      color: #1976d2;
+      background: #E3F2FD;
+      color: #2A5C82;
       padding: 2px 8px;
       border-radius: 4px;
       font-weight: 500;
@@ -1049,7 +1118,7 @@ export function renderPersonalizedEmail(summary: PersonalizedSummaryWithActions)
     /* Buttons - email-safe styles (no :hover for email compatibility) */
     .action-button {
       display: inline-block;
-      background-color: #43a047;
+      background-color: #4CAF50;
       color: #ffffff !important;
       padding: 8px 16px;
       border-radius: 6px;
@@ -1060,7 +1129,7 @@ export function renderPersonalizedEmail(summary: PersonalizedSummaryWithActions)
 
     .complete-button {
       display: inline-block;
-      background-color: #667eea;
+      background-color: #2A5C82;
       color: #ffffff !important;
       padding: 8px 16px;
       border-radius: 6px;
@@ -1124,21 +1193,22 @@ export function renderPersonalizedEmail(summary: PersonalizedSummaryWithActions)
       border-bottom: 1px solid #e8e8e8;
     }
     .diary-date {
+      font-family: 'Fraunces', Georgia, 'Times New Roman', serif;
       display: block;
       font-weight: 600;
-      color: #333;
+      color: #1E4562;
       font-size: 14px;
       margin-bottom: 4px;
     }
     .diary-event {
       display: block;
-      color: #555;
+      color: #4A6B8A;
       font-size: 14px;
       line-height: 1.4;
       padding-left: 12px;
     }
     .diary-child {
-      color: #1976d2;
+      color: #2A5C82;
       font-weight: 500;
       font-size: 12px;
       margin-right: 4px;
@@ -1146,11 +1216,11 @@ export function renderPersonalizedEmail(summary: PersonalizedSummaryWithActions)
 
     /* Empty state */
     .empty-state {
-      color: #888;
+      color: #7A8FA3;
       font-size: 14px;
       padding: 24px;
       text-align: center;
-      background: #f8f9fa;
+      background: #F8F9FA;
       border-radius: 8px;
     }
 
@@ -1158,9 +1228,9 @@ export function renderPersonalizedEmail(summary: PersonalizedSummaryWithActions)
     .footer {
       margin-top: 32px;
       padding-top: 16px;
-      border-top: 1px solid #e8e8e8;
+      border-top: 1px solid #E0E7ED;
       text-align: center;
-      color: #888;
+      color: #7A8FA3;
       font-size: 12px;
     }
   </style>
@@ -1168,8 +1238,11 @@ export function renderPersonalizedEmail(summary: PersonalizedSummaryWithActions)
 <body>
   <div class="container">
     <div class="header">
-      <h1>Family Briefing</h1>
-      <p class="date">${dateStr}</p>
+      <span class="read-time">📖 ${calculateReadTime(summary)} min read</span>
+      <div class="header-content">
+        <h1>Family Briefing</h1>
+        <p class="date">${dateStr}</p>
+      </div>
     </div>
 
     ${renderWorkDone(summary.emailsAnalyzed)}

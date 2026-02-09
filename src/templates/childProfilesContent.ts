@@ -7,15 +7,15 @@ export function renderChildProfilesContent(): string {
   return `
     <style>
       .toolbar {
-        background: white;
+        background: var(--bg-card);
         padding: 20px;
-        border-radius: 12px;
+        border-radius: var(--radius-lg);
         margin-bottom: 20px;
         display: flex;
         gap: 15px;
         flex-wrap: wrap;
         align-items: center;
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+        box-shadow: var(--shadow-md);
       }
 
       .filter-group {
@@ -27,21 +27,24 @@ export function renderChildProfilesContent(): string {
 
       .filter-btn {
         padding: 8px 16px;
-        border: 2px solid var(--primary-color);
-        background: white;
-        color: var(--primary-color);
-        border-radius: 6px;
+        border: 2px solid var(--border-light);
+        background: var(--bg-card);
+        color: var(--text-secondary);
+        border-radius: var(--radius-full);
         cursor: pointer;
         font-size: 14px;
+        font-weight: 500;
         transition: all 0.2s;
       }
 
       .filter-btn:hover {
-        background: #f5f7ff;
+        border-color: var(--primary-color);
+        color: var(--primary-color);
       }
 
       .filter-btn.active {
         background: var(--primary-color);
+        border-color: var(--primary-color);
         color: white;
       }
 
@@ -52,16 +55,16 @@ export function renderChildProfilesContent(): string {
       }
 
       .profile-card {
-        background: white;
+        background: var(--bg-card);
         padding: 24px;
-        border-radius: 12px;
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+        border-radius: var(--radius-lg);
+        box-shadow: var(--shadow-md);
         transition: transform 0.2s, box-shadow 0.2s;
       }
 
       .profile-card:hover {
         transform: translateY(-4px);
-        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+        box-shadow: var(--shadow-lg);
       }
 
       .profile-card.inactive {
@@ -76,33 +79,34 @@ export function renderChildProfilesContent(): string {
       }
 
       .profile-name {
+        font-family: var(--font-display);
         font-size: 20px;
         font-weight: 600;
-        color: #333;
+        color: var(--text-primary);
         margin-bottom: 4px;
       }
 
       .profile-alias {
         font-size: 14px;
-        color: #666;
+        color: var(--text-muted);
         font-style: italic;
       }
 
       .status-badge {
         padding: 4px 12px;
-        border-radius: 20px;
+        border-radius: var(--radius-full);
         font-size: 12px;
         font-weight: 600;
       }
 
       .status-active {
-        background: #d4edda;
-        color: #155724;
+        background: var(--success-light);
+        color: #2E7D32;
       }
 
       .status-inactive {
-        background: #f8d7da;
-        color: #721c24;
+        background: var(--danger-light);
+        color: var(--danger-dark);
       }
 
       .profile-details {
@@ -115,7 +119,7 @@ export function renderChildProfilesContent(): string {
         gap: 8px;
         margin-bottom: 8px;
         font-size: 14px;
-        color: #555;
+        color: var(--text-secondary);
       }
 
       .profile-detail-icon {
@@ -123,11 +127,11 @@ export function renderChildProfilesContent(): string {
       }
 
       .profile-notes {
-        background: #f8f9fa;
+        background: var(--bg-muted);
         padding: 12px;
-        border-radius: 8px;
+        border-radius: var(--radius-sm);
         font-size: 13px;
-        color: #666;
+        color: var(--text-muted);
         margin-top: 16px;
         font-style: italic;
       }
@@ -137,17 +141,17 @@ export function renderChildProfilesContent(): string {
         gap: 8px;
         margin-top: 16px;
         padding-top: 16px;
-        border-top: 1px solid #e0e0e0;
+        border-top: 1px solid var(--border-light);
       }
 
       .btn-small {
         flex: 1;
         padding: 10px 16px;
-        border-radius: 6px;
+        border-radius: var(--radius-md);
         border: none;
         cursor: pointer;
         font-size: 14px;
-        font-weight: 500;
+        font-weight: 600;
         transition: all 0.2s;
       }
 
@@ -166,15 +170,15 @@ export function renderChildProfilesContent(): string {
       }
 
       .btn-delete:hover {
-        background: #c82333;
+        background: var(--danger-dark);
       }
 
       .empty-state {
-        background: white;
+        background: var(--bg-card);
         padding: 60px 20px;
-        border-radius: 12px;
+        border-radius: var(--radius-lg);
         text-align: center;
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+        box-shadow: var(--shadow-md);
       }
 
       .empty-state-icon {
@@ -183,13 +187,14 @@ export function renderChildProfilesContent(): string {
       }
 
       .empty-state h2 {
+        font-family: var(--font-display);
         font-size: 24px;
-        color: #333;
+        color: var(--text-primary);
         margin-bottom: 8px;
       }
 
       .empty-state p {
-        color: #666;
+        color: var(--text-secondary);
         margin-bottom: 20px;
       }
 
@@ -201,7 +206,8 @@ export function renderChildProfilesContent(): string {
         left: 0;
         right: 0;
         bottom: 0;
-        background: rgba(0, 0, 0, 0.6);
+        background: rgba(30, 69, 98, 0.4);
+        backdrop-filter: blur(4px);
         z-index: 1000;
         align-items: center;
         justify-content: center;
@@ -212,13 +218,14 @@ export function renderChildProfilesContent(): string {
       }
 
       .modal-content {
-        background: white;
+        background: var(--bg-card);
         padding: 32px;
-        border-radius: 12px;
+        border-radius: var(--radius-lg);
         max-width: 500px;
         width: 90%;
         max-height: 90vh;
         overflow-y: auto;
+        box-shadow: var(--shadow-lg);
       }
 
       .modal-header {
@@ -229,8 +236,9 @@ export function renderChildProfilesContent(): string {
       }
 
       .modal-header h2 {
-        font-size: 20px;
-        color: #333;
+        font-family: var(--font-display);
+        font-size: 22px;
+        color: var(--text-primary);
       }
 
       .close-btn {
@@ -238,11 +246,12 @@ export function renderChildProfilesContent(): string {
         border: none;
         font-size: 24px;
         cursor: pointer;
-        color: #999;
+        color: var(--text-muted);
+        transition: color 0.2s;
       }
 
       .close-btn:hover {
-        color: #333;
+        color: var(--text-primary);
       }
 
       .form-group {
@@ -253,24 +262,25 @@ export function renderChildProfilesContent(): string {
         display: block;
         font-weight: 600;
         margin-bottom: 8px;
-        color: #333;
+        color: var(--text-primary);
       }
 
       .form-group input,
       .form-group textarea {
         width: 100%;
-        padding: 12px;
-        border: 2px solid #e0e0e0;
-        border-radius: 8px;
+        padding: 12px 14px;
+        border: 2px solid var(--border-light);
+        border-radius: var(--radius-md);
         font-size: 14px;
-        font-family: inherit;
-        transition: border-color 0.2s;
+        font-family: var(--font-body);
+        transition: border-color 0.2s, box-shadow 0.2s;
       }
 
       .form-group input:focus,
       .form-group textarea:focus {
         outline: none;
         border-color: var(--primary-color);
+        box-shadow: 0 0 0 3px var(--primary-light);
       }
 
       .form-group textarea {
@@ -281,7 +291,7 @@ export function renderChildProfilesContent(): string {
       .form-group small {
         display: block;
         margin-top: 4px;
-        color: #888;
+        color: var(--text-muted);
         font-size: 12px;
       }
 
@@ -294,6 +304,7 @@ export function renderChildProfilesContent(): string {
       .checkbox-group input[type="checkbox"] {
         width: 18px;
         height: 18px;
+        accent-color: var(--primary-color);
       }
 
       .modal-actions {
@@ -304,30 +315,31 @@ export function renderChildProfilesContent(): string {
 
       .message {
         padding: 16px;
-        border-radius: 8px;
+        border-radius: var(--radius-md);
         margin-bottom: 20px;
         font-size: 14px;
+        font-weight: 500;
         display: none;
       }
 
       .message.success {
-        background: #d4edda;
-        border: 1px solid #c3e6cb;
-        color: #155724;
+        background: var(--success-light);
+        border: 1px solid #A5D6A7;
+        color: #2E7D32;
         display: block;
       }
 
       .message.error {
-        background: #f8d7da;
-        border: 1px solid #f5c6cb;
-        color: #721c24;
+        background: var(--danger-light);
+        border: 1px solid #FFCDD2;
+        color: var(--danger-dark);
         display: block;
       }
 
       .loading {
         text-align: center;
         padding: 40px;
-        color: #666;
+        color: var(--text-muted);
         font-size: 16px;
       }
     </style>

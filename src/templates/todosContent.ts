@@ -132,11 +132,11 @@ export function renderTodosContent(options: TodosContentOptions): string {
   return `
     <style>
       .filters {
-        background: white;
-        border-radius: 12px;
+        background: var(--bg-card);
+        border-radius: var(--radius-lg);
         padding: 20px;
         margin-bottom: 24px;
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+        box-shadow: var(--shadow-md);
       }
 
       .filter-group {
@@ -153,24 +153,25 @@ export function renderTodosContent(options: TodosContentOptions): string {
 
       .filter-label {
         font-weight: 600;
-        color: #333;
+        color: var(--text-primary);
         margin-right: 8px;
         min-width: 100px;
       }
 
       .filter-btn {
         padding: 8px 16px;
-        border: 2px solid #e0e0e0;
-        background: white;
-        border-radius: 20px;
+        border: 2px solid var(--border-light);
+        background: var(--bg-card);
+        border-radius: var(--radius-full);
         cursor: pointer;
         font-size: 14px;
+        font-weight: 500;
         transition: all 0.2s;
       }
 
       .filter-btn:hover {
         border-color: var(--primary-color);
-        background: #f5f7ff;
+        color: var(--primary-color);
       }
 
       .filter-btn.active {
@@ -184,19 +185,19 @@ export function renderTodosContent(options: TodosContentOptions): string {
         gap: 16px;
         margin-top: 16px;
         padding-top: 16px;
-        border-top: 1px solid #e0e0e0;
+        border-top: 1px solid var(--border-light);
       }
 
       .stat {
         padding: 8px 16px;
-        background: #f8f9fa;
-        border-radius: 8px;
+        background: var(--bg-muted);
+        border-radius: var(--radius-sm);
         font-size: 13px;
-        color: #666;
+        color: var(--text-secondary);
       }
 
       .stat strong {
-        color: #333;
+        color: var(--text-primary);
         font-weight: 600;
       }
 
@@ -206,17 +207,17 @@ export function renderTodosContent(options: TodosContentOptions): string {
       }
 
       .todo-card {
-        background: white;
-        border-radius: 12px;
+        background: var(--bg-card);
+        border-radius: var(--radius-lg);
         padding: 20px;
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+        box-shadow: var(--shadow-md);
         border-left: 4px solid var(--primary-color);
         transition: transform 0.2s, box-shadow 0.2s;
       }
 
       .todo-card:hover {
         transform: translateY(-2px);
-        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+        box-shadow: var(--shadow-lg);
       }
 
       .todo-card.done {
@@ -236,35 +237,36 @@ export function renderTodosContent(options: TodosContentOptions): string {
         align-items: center;
         gap: 6px;
         padding: 6px 12px;
-        border-radius: 16px;
+        border-radius: var(--radius-full);
         font-size: 12px;
         font-weight: 600;
         text-transform: uppercase;
       }
 
-      .type-PAY { background: #ffebee; color: #c62828; }
-      .type-BUY { background: #e3f2fd; color: #1565c0; }
-      .type-PACK { background: #f3e5f5; color: #6a1b9a; }
-      .type-SIGN { background: #fff3e0; color: #e65100; }
-      .type-FILL { background: #e8f5e9; color: #2e7d32; }
-      .type-READ { background: #fce4ec; color: #ad1457; }
-      .type-REMIND { background: #f5f5f5; color: #616161; }
+      .type-PAY { background: var(--danger-light); color: var(--danger-dark); }
+      .type-BUY { background: var(--sky); color: var(--primary-color); }
+      .type-PACK { background: #F3E5F5; color: #6A1B9A; }
+      .type-SIGN { background: #FFF3E0; color: #E65100; }
+      .type-FILL { background: var(--success-light); color: #2E7D32; }
+      .type-READ { background: #FCE4EC; color: #AD1457; }
+      .type-DECIDE { background: var(--warning-light); color: #92400E; }
+      .type-REMIND { background: var(--bg-muted); color: var(--text-secondary); }
 
       .amount-badge {
         background: var(--danger-color);
         color: white;
         padding: 4px 10px;
-        border-radius: 12px;
+        border-radius: var(--radius-full);
         font-size: 13px;
         font-weight: 600;
         margin-left: 8px;
       }
 
       .auto-completed-badge {
-        background: #6c757d;
+        background: var(--text-muted);
         color: white;
         padding: 4px 10px;
-        border-radius: 12px;
+        border-radius: var(--radius-full);
         font-size: 11px;
         font-weight: 500;
         margin-left: 8px;
@@ -272,7 +274,7 @@ export function renderTodosContent(options: TodosContentOptions): string {
 
       .todo-description {
         font-size: 16px;
-        color: #333;
+        color: var(--text-primary);
         margin-bottom: 12px;
         line-height: 1.5;
       }
@@ -282,7 +284,7 @@ export function renderTodosContent(options: TodosContentOptions): string {
         gap: 16px;
         flex-wrap: wrap;
         font-size: 13px;
-        color: #666;
+        color: var(--text-secondary);
         margin-bottom: 12px;
       }
 
@@ -307,9 +309,9 @@ export function renderTodosContent(options: TodosContentOptions): string {
         display: none;
         margin-top: 12px;
         padding: 12px;
-        background: #f8f9fa;
-        border: 1px solid #e0e0e0;
-        border-radius: 8px;
+        background: var(--bg-muted);
+        border: 1px solid var(--border-light);
+        border-radius: var(--radius-md);
         font-size: 13px;
       }
 
@@ -319,14 +321,14 @@ export function renderTodosContent(options: TodosContentOptions): string {
 
       .source-email-header {
         font-weight: 600;
-        color: #333;
+        color: var(--text-primary);
         margin-bottom: 8px;
         padding-bottom: 8px;
-        border-bottom: 1px solid #e0e0e0;
+        border-bottom: 1px solid var(--border-light);
       }
 
       .source-email-meta {
-        color: #666;
+        color: var(--text-secondary);
         margin-bottom: 8px;
       }
 
@@ -336,18 +338,18 @@ export function renderTodosContent(options: TodosContentOptions): string {
         font-size: 12px;
         max-height: 300px;
         overflow-y: auto;
-        background: white;
+        background: var(--bg-card);
         padding: 8px;
-        border-radius: 4px;
-        border: 1px solid #e0e0e0;
+        border-radius: var(--radius-sm);
+        border: 1px solid var(--border-light);
       }
 
       .empty-state {
-        background: white;
-        border-radius: 12px;
+        background: var(--bg-card);
+        border-radius: var(--radius-lg);
         padding: 60px 20px;
         text-align: center;
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+        box-shadow: var(--shadow-md);
       }
 
       .empty-state-icon {
@@ -356,7 +358,7 @@ export function renderTodosContent(options: TodosContentOptions): string {
       }
 
       .empty-state-text {
-        color: #666;
+        color: var(--text-secondary);
         font-size: 18px;
       }
     </style>

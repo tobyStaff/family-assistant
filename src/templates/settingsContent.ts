@@ -46,9 +46,10 @@ export function renderSettingsContent(options: SettingsContentOptions): string {
       }
 
       .section-title {
-        font-size: 16px;
+        font-family: var(--font-display);
+        font-size: 18px;
         font-weight: 600;
-        color: #333;
+        color: var(--text-primary);
         margin-bottom: 15px;
         display: flex;
         align-items: center;
@@ -61,15 +62,15 @@ export function renderSettingsContent(options: SettingsContentOptions): string {
 
       .form-group label {
         display: block;
-        font-weight: 500;
-        color: #555;
+        font-weight: 600;
+        color: var(--text-secondary);
         margin-bottom: 8px;
         font-size: 14px;
       }
 
       .help-text {
         font-size: 13px;
-        color: #888;
+        color: var(--text-muted);
         margin-top: 5px;
       }
 
@@ -78,17 +79,19 @@ export function renderSettingsContent(options: SettingsContentOptions): string {
       input[type="text"],
       select {
         width: 100%;
-        padding: 12px;
-        border: 1px solid #ddd;
-        border-radius: 8px;
+        padding: 12px 14px;
+        border: 2px solid var(--border-light);
+        border-radius: var(--radius-md);
         font-size: 14px;
-        transition: border-color 0.3s;
+        font-family: var(--font-body);
+        transition: border-color 0.2s, box-shadow 0.2s;
       }
 
       input:focus,
       select:focus {
         outline: none;
         border-color: var(--primary-color);
+        box-shadow: 0 0 0 3px var(--primary-light);
       }
 
       .checkbox-group {
@@ -109,23 +112,23 @@ export function renderSettingsContent(options: SettingsContentOptions): string {
       }
 
       .recipients-list {
-        border: 1px solid #ddd;
-        border-radius: 8px;
+        border: 2px solid var(--border-light);
+        border-radius: var(--radius-md);
         padding: 15px;
         min-height: 100px;
         margin-bottom: 15px;
-        background: #fafafa;
+        background: var(--bg-muted);
       }
 
       .recipient-item {
         display: flex;
         justify-content: space-between;
         align-items: center;
-        padding: 10px 12px;
-        background: white;
-        border-radius: 6px;
+        padding: 12px 14px;
+        background: var(--bg-card);
+        border-radius: var(--radius-sm);
         margin-bottom: 8px;
-        border: 1px solid #e0e0e0;
+        border: 1px solid var(--border-light);
       }
 
       .recipient-item:last-child {
@@ -134,7 +137,7 @@ export function renderSettingsContent(options: SettingsContentOptions): string {
 
       .recipient-email {
         font-size: 14px;
-        color: #333;
+        color: var(--text-primary);
       }
 
       .add-recipient-form {
@@ -160,27 +163,28 @@ export function renderSettingsContent(options: SettingsContentOptions): string {
       }
 
       .message {
-        padding: 12px;
-        border-radius: 8px;
+        padding: 14px 16px;
+        border-radius: var(--radius-md);
         margin-bottom: 20px;
         display: none;
+        font-weight: 500;
       }
 
       .message.success {
-        background: #d4edda;
-        color: #155724;
-        border: 1px solid #c3e6cb;
+        background: var(--success-light);
+        color: #2E7D32;
+        border: 1px solid #A5D6A7;
       }
 
       .message.error {
-        background: #f8d7da;
-        color: #721c24;
-        border: 1px solid #f5c6cb;
+        background: var(--danger-light);
+        color: var(--danger-dark);
+        border: 1px solid #FFCDD2;
       }
 
       .empty-state {
         text-align: center;
-        color: #999;
+        color: var(--text-muted);
         padding: 20px;
         font-size: 14px;
         font-style: italic;
@@ -197,27 +201,28 @@ export function renderSettingsContent(options: SettingsContentOptions): string {
         display: flex;
         align-items: flex-start;
         gap: 12px;
-        padding: 15px;
-        border: 2px solid #e0e0e0;
-        border-radius: 10px;
+        padding: 16px;
+        border: 2px solid var(--border-light);
+        border-radius: var(--radius-md);
         cursor: pointer;
         transition: all 0.2s;
       }
 
       .source-option:hover {
-        border-color: #ccc;
-        background: #fafafa;
+        border-color: var(--primary-color);
+        background: var(--bg-muted);
       }
 
       .source-option.selected {
         border-color: var(--primary-color);
-        background: #f0f7ff;
+        background: var(--sky);
       }
 
       .source-option input[type="radio"] {
         margin-top: 3px;
         width: 18px;
         height: 18px;
+        accent-color: var(--primary-color);
       }
 
       .source-option-content {
@@ -226,21 +231,21 @@ export function renderSettingsContent(options: SettingsContentOptions): string {
 
       .source-option-title {
         font-weight: 600;
-        color: #333;
+        color: var(--text-primary);
         margin-bottom: 4px;
       }
 
       .source-option-desc {
         font-size: 13px;
-        color: #666;
-        line-height: 1.4;
+        color: var(--text-secondary);
+        line-height: 1.5;
       }
 
       .alias-config {
         margin-top: 15px;
-        padding: 15px;
-        background: #f5f5f5;
-        border-radius: 8px;
+        padding: 16px;
+        background: var(--bg-muted);
+        border-radius: var(--radius-md);
         display: none;
       }
 
@@ -261,47 +266,48 @@ export function renderSettingsContent(options: SettingsContentOptions): string {
       }
 
       .alias-domain {
-        color: #666;
+        color: var(--text-secondary);
         font-size: 14px;
       }
 
       .alias-status {
         margin-top: 10px;
-        padding: 10px;
-        border-radius: 6px;
+        padding: 12px;
+        border-radius: var(--radius-sm);
         font-size: 13px;
+        font-weight: 500;
         display: none;
       }
 
       .alias-status.checking {
         display: block;
-        background: #fff3cd;
-        color: #856404;
+        background: var(--warning-light);
+        color: #92400E;
       }
 
       .alias-status.available {
         display: block;
-        background: #d4edda;
-        color: #155724;
+        background: var(--success-light);
+        color: #2E7D32;
       }
 
       .alias-status.taken {
         display: block;
-        background: #f8d7da;
-        color: #721c24;
+        background: var(--danger-light);
+        color: var(--danger-dark);
       }
 
       .alias-status.owned {
         display: block;
-        background: #d1ecf1;
-        color: #0c5460;
+        background: var(--sky);
+        color: var(--primary-dark);
       }
 
       .current-hosted-email {
         margin-top: 12px;
-        padding: 12px;
-        background: #e8f4fd;
-        border-radius: 8px;
+        padding: 14px;
+        background: var(--sky);
+        border-radius: var(--radius-sm);
         font-size: 14px;
       }
 
@@ -473,34 +479,6 @@ export function renderSettingsContent(options: SettingsContentOptions): string {
 
       <button type="submit" class="btn btn-primary btn-save">Save Settings</button>
     </form>
-
-    <!-- Sender Filters Section -->
-    <div class="card" style="margin-top: 20px;">
-      <div class="section-title">📨 Monitored Senders</div>
-      <p class="help-text" style="margin-bottom: 15px;">Manage which email senders we monitor for school and family information.</p>
-
-      <div id="senderSummary" style="background:#f8f9fa;border-radius:8px;padding:16px;margin-bottom:16px;">
-        <div style="display:flex;justify-content:space-between;align-items:center;">
-          <div>
-            <span id="senderSummaryText" style="font-size:14px;color:#666;">Loading...</span>
-          </div>
-          <a href="/settings/senders" class="btn btn-primary" style="text-decoration:none;">Manage Senders</a>
-        </div>
-      </div>
-    </div>
-
-    <!-- Relevance Training Section -->
-    <div class="card" style="margin-top: 20px;">
-      <div class="section-title">🎯 Relevance Training</div>
-      <p class="help-text" style="margin-bottom: 15px;">Grade extracted items to train the AI on what's relevant to you.</p>
-
-      <div id="trainingSummary" style="background:#f8f9fa;border-radius:8px;padding:16px;margin-bottom:16px;">
-        <div style="display:flex;justify-content:space-between;align-items:center;">
-          <div id="trainingSummaryText" style="font-size:14px;color:#666;">Loading...</div>
-          <a href="/settings/training" class="btn btn-primary" style="text-decoration:none;">Manage Training</a>
-        </div>
-      </div>
-    </div>
   `;
 }
 
@@ -766,55 +744,6 @@ export function renderSettingsScripts(initialRecipients: string[], initialEmailS
           submitBtn.textContent = 'Save Settings';
         }
       });
-
-      // ============================================
-      // SENDER FILTERS SUMMARY
-      // ============================================
-      async function loadSenderSummary() {
-        try {
-          const response = await fetch('/api/sender-filters');
-          const data = await response.json();
-
-          const filters = data.filters || [];
-          const included = filters.filter(f => f.status === 'include').length;
-          const excluded = filters.filter(f => f.status === 'exclude').length;
-
-          const summaryEl = document.getElementById('senderSummaryText');
-          if (filters.length === 0) {
-            summaryEl.textContent = 'No senders configured yet';
-          } else {
-            summaryEl.innerHTML = \`<strong>\${included}</strong> included, <strong>\${excluded}</strong> excluded\`;
-          }
-        } catch (error) {
-          document.getElementById('senderSummaryText').textContent = 'Failed to load';
-        }
-      }
-      loadSenderSummary();
-
-      // ============================================
-      // RELEVANCE TRAINING SUMMARY
-      // ============================================
-      async function loadTrainingSummary() {
-        try {
-          const response = await fetch('/api/relevance-feedback');
-          const data = await response.json();
-
-          const summaryEl = document.getElementById('trainingSummaryText');
-          if (!data.stats || data.stats.total === 0) {
-            summaryEl.textContent = 'No training data yet';
-          } else {
-            summaryEl.innerHTML = \`
-              <strong>\${data.stats.total}</strong> items ·
-              <span style="color:#28a745;">\${data.stats.relevant} relevant</span> ·
-              <span style="color:#dc3545;">\${data.stats.notRelevant} not relevant</span> ·
-              <span style="color:#ffc107;">\${data.stats.ungraded} ungraded</span>
-            \`;
-          }
-        } catch (error) {
-          document.getElementById('trainingSummaryText').textContent = 'Failed to load';
-        }
-      }
-      loadTrainingSummary();
 
       // ============================================
       // CALENDAR INTEGRATION

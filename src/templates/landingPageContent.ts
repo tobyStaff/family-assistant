@@ -38,20 +38,27 @@ export const LANDING_PAGE_CONTENT = {
     liveCounter: 'admin hours recovered for busy parents',
   },
 
-  // Email Preview Mockup
+  // Email Preview Mockup - matches actual daily briefing format
   emailPreview: {
-    time: 'Today, 7:00 AM',
-    readTime: '45s read',
-    title: 'Your Daily Family Briefing',
-    urgentItem: {
-      title: 'Action Required: £1 for Ice Cream sale',
-      description: 'Remember to Bring £1 for the After school Ice Cream sale on Friday!',
-    },
-    calendarItem: {
-      title: 'Auto-Synced to Calendar',
-      description: 'Parents Evening - Thu 6pm',
-    },
-    timeSaved: '18 min admin time saved today',
+    readTime: '2 min read',
+    title: 'Family Briefing',
+    date: 'Monday, 10th February',
+    emailsSummarised: 8,
+    timeSaved: 20,
+    highlight: 'Pack PE kit for Emma - swimming starts this week!',
+    todayReminders: [
+      { type: 'event', emoji: '📅', title: 'Year 3 Assembly', time: '9:15 AM', child: 'Emma' },
+      { type: 'todo', emoji: '💷', title: 'Pay for school trip', amount: '£15', child: 'Oliver' },
+    ],
+    eveningReminders: [
+      { emoji: '📖', title: 'Read chapters 3-4 for English' },
+      { emoji: '🎒', title: 'Pack swimming kit for Tuesday' },
+    ],
+    diaryItems: [
+      { day: 'Tue 11', event: 'Swimming - bring kit' },
+      { day: 'Thu 13', event: 'Parents Evening 6pm' },
+      { day: 'Fri 14', event: 'Non-uniform day (£1)' },
+    ],
   },
 
   // Features Section

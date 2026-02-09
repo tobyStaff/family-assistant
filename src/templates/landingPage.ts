@@ -183,51 +183,75 @@ export function generateLandingPage(data: LandingPageData): string {
             <!-- Phone mockup -->
             <div class="relative bg-white rounded-[40px] p-3 shadow-ambient">
               <div class="bg-alabaster rounded-[32px] overflow-hidden">
-                <!-- Phone header -->
-                <div class="bg-trust-blue text-white px-6 py-4">
-                  <div class="flex items-center justify-between mb-2">
-                    <span class="text-sm opacity-80">${content.emailPreview.time}</span>
-                    <span class="text-xs bg-white/20 px-2 py-1 rounded-full">${content.emailPreview.readTime}</span>
-                  </div>
-                  <h3 class="font-display font-semibold text-lg">${content.emailPreview.title}</h3>
+                <!-- Email header - Brand blue -->
+                <div class="bg-trust-blue text-white px-5 py-4 relative">
+                  <span class="absolute top-3 right-4 text-xs bg-white/20 px-2 py-1 rounded-full">📖 ${content.emailPreview.readTime}</span>
+                  <h3 class="font-display font-semibold text-lg text-center">${content.emailPreview.title}</h3>
+                  <p class="text-center text-white/80 text-sm">${content.emailPreview.date}</p>
+                </div>
+
+                <!-- Work done summary -->
+                <div class="text-center py-3 px-4 text-xs text-trust-blue/60 italic border-b border-slate-100">
+                  Summarised <strong>${content.emailPreview.emailsSummarised} emails</strong>, saving ~<strong>${content.emailPreview.timeSaved} min</strong>
                 </div>
 
                 <!-- Email content preview -->
-                <div class="p-5 space-y-4">
-                  <!-- Urgent Item -->
-                  <div class="frosted-glass rounded-2xl p-4 border border-red-200">
-                    <div class="flex items-start gap-3">
-                      <div class="w-3 h-3 bg-red-500 rounded-full mt-1 animate-pulse"></div>
-                      <div>
-                        <p class="font-semibold text-sm text-trust-blue">${content.emailPreview.urgentItem.title}</p>
-                        <p class="text-xs text-trust-blue/60 mt-1">${content.emailPreview.urgentItem.description}</p>
+                <div class="p-4 space-y-3" style="font-size: 13px;">
+                  <!-- Highlight Banner -->
+                  <div class="bg-warm-sand border border-amber-300 rounded-xl p-3">
+                    <div class="flex items-center gap-2 mb-1">
+                      <span>⭐</span>
+                      <span class="text-xs font-bold text-amber-700 uppercase tracking-wide">#1 Thing Today</span>
+                    </div>
+                    <p class="text-sm font-medium text-trust-blue">${content.emailPreview.highlight}</p>
+                  </div>
+
+                  <!-- Today's Reminders Section -->
+                  <div>
+                    <div class="flex items-center gap-2 mb-2 pb-1 border-b-2 border-trust-blue">
+                      <span>📋</span>
+                      <span class="text-xs font-bold text-trust-blue uppercase tracking-wide">Today's Reminders</span>
+                    </div>
+                    ${content.emailPreview.todayReminders.map(item => `
+                    <div class="bg-white rounded-lg p-2 mb-2 border-l-3 border-trust-blue shadow-sm" style="border-left: 3px solid #2A5C82;">
+                      <div class="flex items-center justify-between">
+                        <span class="font-medium text-trust-blue">${item.emoji} ${item.title}</span>
+                        ${item.amount ? `<span class="bg-red-500 text-white text-xs px-2 py-0.5 rounded-full">${item.amount}</span>` : ''}
                       </div>
+                      <div class="text-xs text-trust-blue/60 mt-0.5">
+                        ${item.time ? `⏰ ${item.time}` : ''} ${item.child ? `👶 ${item.child}` : ''}
+                      </div>
+                    </div>
+                    `).join('')}
+                  </div>
+
+                  <!-- Evening Reminders -->
+                  <div>
+                    <div class="flex items-center gap-2 mb-2 pb-1 border-b-2 border-sky">
+                      <span>🌙</span>
+                      <span class="text-xs font-bold text-trust-blue uppercase tracking-wide">This Evening</span>
+                    </div>
+                    <div class="grid grid-cols-2 gap-2">
+                      ${content.emailPreview.eveningReminders.map(item => `
+                      <div class="bg-slate-50 rounded-lg p-2 text-xs">
+                        <span>${item.emoji}</span> ${item.title}
+                      </div>
+                      `).join('')}
                     </div>
                   </div>
 
-                  <!-- Calendar Item -->
-                  <div class="frosted-glass rounded-2xl p-4 border border-sky">
-                    <div class="flex items-start gap-3">
-                      <div class="w-8 h-8 bg-sky rounded-lg flex items-center justify-center">
-                        <svg class="w-4 h-4 text-trust-blue" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
-                        </svg>
-                      </div>
-                      <div>
-                        <p class="font-semibold text-sm text-trust-blue">${content.emailPreview.calendarItem.title}</p>
-                        <p class="text-xs text-trust-blue/60 mt-1">${content.emailPreview.calendarItem.description}</p>
-                      </div>
+                  <!-- Diary Section -->
+                  <div class="bg-slate-50 rounded-xl p-3">
+                    <div class="flex items-center gap-2 mb-2">
+                      <span>📅</span>
+                      <span class="text-xs font-bold text-trust-blue uppercase tracking-wide">This Week</span>
                     </div>
-                  </div>
-
-                  <!-- Admin Saved Badge -->
-                  <div class="flex items-center justify-center gap-2 py-2">
-                    <div class="bg-soft-mint text-growth-green px-3 py-1 rounded-full text-xs font-semibold flex items-center gap-1">
-                      <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
-                      </svg>
-                      ${content.emailPreview.timeSaved}
+                    ${content.emailPreview.diaryItems.map(item => `
+                    <div class="flex gap-3 py-1 border-b border-slate-200 last:border-0 text-xs">
+                      <span class="font-semibold text-trust-blue w-14">${item.day}</span>
+                      <span class="text-trust-blue/70">${item.event}</span>
                     </div>
+                    `).join('')}
                   </div>
                 </div>
               </div>

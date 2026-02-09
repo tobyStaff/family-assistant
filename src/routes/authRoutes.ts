@@ -77,32 +77,37 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
       <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Inbox Manager - Login</title>
+        <title>Family Assistant - Login</title>
+        <link rel="preconnect" href="https://fonts.googleapis.com">
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
         <style>
+          * { margin: 0; padding: 0; box-sizing: border-box; }
           body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', sans-serif;
+            font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
             display: flex;
             justify-content: center;
             align-items: center;
             min-height: 100vh;
-            margin: 0;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg, #2A5C82 0%, #1E4562 100%);
           }
           .container {
             background: white;
             padding: 3rem;
-            border-radius: 12px;
-            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
             text-align: center;
             max-width: 400px;
           }
           h1 {
-            color: #333;
+            font-family: 'Fraunces', Georgia, serif;
+            color: #1E4562;
             margin-bottom: 0.5rem;
             font-size: 2rem;
+            font-weight: 600;
           }
           p {
-            color: #666;
+            color: #4A6B8A;
             margin-bottom: 2rem;
             font-size: 1rem;
           }
@@ -110,33 +115,54 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
             display: inline-flex;
             align-items: center;
             gap: 12px;
-            background: #4285f4;
+            background: #2A5C82;
             color: white;
-            padding: 12px 24px;
-            border-radius: 6px;
+            padding: 14px 28px;
+            border-radius: 12px;
             text-decoration: none;
-            font-weight: 500;
-            transition: background 0.2s;
+            font-weight: 600;
+            transition: all 0.2s;
             border: none;
             font-size: 16px;
             cursor: pointer;
           }
           .btn:hover {
-            background: #357ae8;
+            background: #1E4562;
+            box-shadow: 0 4px 12px rgba(42, 92, 130, 0.3);
           }
           .google-icon {
             width: 20px;
             height: 20px;
             background: white;
-            border-radius: 2px;
+            border-radius: 4px;
             padding: 4px;
+          }
+          @media (max-width: 480px) {
+            body {
+              padding: 16px;
+            }
+            .container {
+              padding: 2rem 1.5rem;
+            }
+            h1 {
+              font-size: 1.75rem;
+            }
+            p {
+              font-size: 0.9rem;
+            }
+            .btn {
+              padding: 12px 20px;
+              font-size: 15px;
+              width: 100%;
+              justify-content: center;
+            }
           }
         </style>
       </head>
       <body>
         <div class="container">
-          <h1>Inbox Manager</h1>
-          <p>Manage your emails, todos, and calendar in one place</p>
+          <h1>Family Assistant</h1>
+          <p>Manage your family's emails, todos, and calendar in one place</p>
           <a href="/auth/google" class="btn">
             <svg class="google-icon" viewBox="0 0 24 24">
               <path fill="#4285f4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
@@ -390,7 +416,7 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
       const name = payload.name;
       const pictureUrl = payload.picture;
 
-      fastify.log.info({ userId, email, isGmailConnect }, 'User authenticated successfully');
+      fastify.log.info({ userId, email, isGmailConnect, isGrantSend, isCalendarConnect, hasRefreshToken: !!tokens.refresh_token }, 'User authenticated successfully');
 
       // Store OAuth tokens if we received a refresh token (Gmail connect flow)
       if (tokens.refresh_token) {
@@ -590,21 +616,24 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>Authentication Error</title>
+        <link rel="preconnect" href="https://fonts.googleapis.com">
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
         <style>
+          * { margin: 0; padding: 0; box-sizing: border-box; }
           body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+            font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
             display: flex;
             justify-content: center;
             align-items: center;
             min-height: 100vh;
-            margin: 0;
-            background: #f5f5f5;
+            background: #FAF9F6;
           }
           .container {
             background: white;
             padding: 3rem;
-            border-radius: 12px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            border-radius: 20px;
+            box-shadow: 0 8px 30px rgba(42, 92, 130, 0.12);
             text-align: center;
             max-width: 400px;
           }
@@ -613,26 +642,47 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
             margin-bottom: 1rem;
           }
           h1 {
-            color: #dc3545;
+            font-family: 'Fraunces', Georgia, serif;
+            color: #E53935;
             margin-bottom: 1rem;
             font-size: 1.5rem;
+            font-weight: 600;
           }
           p {
-            color: #666;
+            color: #4A6B8A;
             margin-bottom: 2rem;
           }
           a {
             display: inline-block;
-            background: #007bff;
+            background: #2A5C82;
             color: white;
-            padding: 12px 24px;
-            border-radius: 6px;
+            padding: 14px 28px;
+            border-radius: 12px;
             text-decoration: none;
-            font-weight: 500;
-            transition: background 0.2s;
+            font-weight: 600;
+            transition: all 0.2s;
           }
           a:hover {
-            background: #0056b3;
+            background: #1E4562;
+            box-shadow: 0 4px 12px rgba(42, 92, 130, 0.3);
+          }
+          @media (max-width: 480px) {
+            body {
+              padding: 16px;
+            }
+            .container {
+              padding: 2rem 1.5rem;
+            }
+            .error-icon {
+              font-size: 48px;
+            }
+            h1 {
+              font-size: 1.25rem;
+            }
+            a {
+              width: 100%;
+              text-align: center;
+            }
           }
         </style>
       </head>
@@ -657,7 +707,27 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
   fastify.get('/onboarding', { preHandler: requireAuth }, async (request, reply) => {
     const userId = (request as any).userId;
     const user = getUser(userId);
-    const currentStep = user?.onboarding_step ?? 0;
+    let currentStep = user?.onboarding_step ?? 0;
+
+    fastify.log.info({ userId, currentStep, gmailConnected: user?.gmail_connected }, 'Loading onboarding page');
+
+    // Verify OAuth tokens exist for steps that require Gmail access
+    const { getAuth } = await import('../db/authDb.js');
+    const authEntry = getAuth(userId);
+    const hasValidAuth = authEntry && authEntry.refresh_token;
+
+    if (currentStep >= 2 && !hasValidAuth) {
+      // User is past Gmail connect but tokens are missing - reset to step 1
+      fastify.log.warn({ userId, currentStep }, 'User past step 2 but missing OAuth tokens, resetting to step 1');
+      updateOnboardingStep(userId, 1);
+      currentStep = 1;
+    } else if (currentStep === 3 || currentStep === 4) {
+      // Steps 3-4 are intermediate steps that require in-memory data from scanning
+      // If user reloads here, send them back to step 2 to re-scan
+      // (The sender filters are saved, but we need fresh scan data to display the UI)
+      fastify.log.info({ userId, currentStep }, 'Intermediate step on reload, showing step 2');
+      currentStep = 2;
+    }
 
     const html = `
       <!DOCTYPE html>
@@ -666,6 +736,9 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>Setup - Family Assistant</title>
+        <link rel="preconnect" href="https://fonts.googleapis.com">
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
         <style>
           * {
             margin: 0;
@@ -673,8 +746,8 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
             box-sizing: border-box;
           }
           body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+            background: linear-gradient(135deg, #2A5C82 0%, #1E4562 100%);
             min-height: 100vh;
             display: flex;
             align-items: center;
@@ -683,7 +756,7 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
           }
           .container {
             background: white;
-            border-radius: 16px;
+            border-radius: 20px;
             box-shadow: 0 20px 60px rgba(0,0,0,0.3);
             max-width: 900px;
             width: 100%;
@@ -695,14 +768,16 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
             align-items: center;
             margin-bottom: 30px;
             padding-bottom: 20px;
-            border-bottom: 2px solid #f0f0f0;
+            border-bottom: 2px solid #E0E7ED;
           }
           h1 {
+            font-family: 'Fraunces', Georgia, serif;
             font-size: 28px;
-            color: #333;
+            color: #1E4562;
+            font-weight: 600;
           }
           .back-link {
-            color: #667eea;
+            color: #2A5C82;
             text-decoration: none;
             font-size: 14px;
           }
@@ -724,7 +799,7 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
             left: 0;
             right: 0;
             height: 2px;
-            background: #e0e0e0;
+            background: #E0E7ED;
             z-index: 0;
           }
           .step {
@@ -739,8 +814,8 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
             width: 40px;
             height: 40px;
             border-radius: 50%;
-            background: #e0e0e0;
-            color: #999;
+            background: #E0E7ED;
+            color: #7A8FA3;
             display: flex;
             align-items: center;
             justify-content: center;
@@ -748,16 +823,16 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
             margin-bottom: 8px;
           }
           .step.active .step-number {
-            background: #667eea;
+            background: #2A5C82;
             color: white;
           }
           .step.completed .step-number {
-            background: #28a745;
+            background: #4CAF50;
             color: white;
           }
           .step-label {
             font-size: 12px;
-            color: #666;
+            color: #4A6B8A;
             text-align: center;
           }
 
@@ -779,13 +854,15 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
             margin-bottom: 20px;
           }
           .welcome-content h2 {
+            font-family: 'Fraunces', Georgia, serif;
             font-size: 24px;
-            color: #333;
+            color: #1E4562;
             margin-bottom: 16px;
+            font-weight: 600;
           }
           .welcome-content p {
             font-size: 16px;
-            color: #666;
+            color: #4A6B8A;
             line-height: 1.6;
             margin-bottom: 12px;
             max-width: 600px;
@@ -796,13 +873,23 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
             text-align: left;
             max-width: 500px;
             margin: 30px auto;
-            background: #f8f9fa;
-            padding: 20px;
-            border-radius: 8px;
+            background: #FAF9F6;
+            padding: 24px 28px;
+            border-radius: 12px;
+            border: 1px solid #E0E7ED;
+          }
+          .feature-list strong {
+            display: block;
+            margin-bottom: 12px;
+            color: #1E4562;
+          }
+          .feature-list ul {
+            padding-left: 24px;
+            margin: 0;
           }
           .feature-list li {
             padding: 8px 0;
-            color: #555;
+            color: #4A6B8A;
           }
 
           /* Analysis screen */
@@ -811,8 +898,8 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
             padding: 60px 0;
           }
           .spinner {
-            border: 4px solid #f3f3f3;
-            border-top: 4px solid #667eea;
+            border: 4px solid #E0E7ED;
+            border-top: 4px solid #2A5C82;
             border-radius: 50%;
             width: 60px;
             height: 60px;
@@ -825,12 +912,12 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
           }
           .analysis-status {
             font-size: 18px;
-            color: #333;
+            color: #1E4562;
             margin-bottom: 12px;
           }
           .analysis-detail {
             font-size: 14px;
-            color: #666;
+            color: #4A6B8A;
           }
 
           /* Enhanced Loading States */
@@ -848,7 +935,7 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
           .loading-dots .dot {
             width: 12px;
             height: 12px;
-            background: #667eea;
+            background: #2A5C82;
             border-radius: 50%;
             animation: bounce 1.4s ease-in-out infinite both;
           }
@@ -862,18 +949,18 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
           .loading-title {
             font-size: 18px;
             font-weight: 600;
-            color: #333;
+            color: #1E4562;
             margin-bottom: 8px;
           }
           .loading-subtitle {
             font-size: 14px;
-            color: #666;
+            color: #4A6B8A;
             margin-bottom: 20px;
           }
           .loading-time-estimate {
             font-size: 13px;
-            color: #888;
-            background: #f8f9fa;
+            color: #7A8FA3;
+            background: #FAF9F6;
             padding: 8px 16px;
             border-radius: 20px;
             display: inline-block;
@@ -886,20 +973,20 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
           }
           .progress-bar-bg {
             height: 8px;
-            background: #e0e0e0;
+            background: #E0E7ED;
             border-radius: 4px;
             overflow: hidden;
           }
           .progress-bar-fill {
             height: 100%;
-            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(90deg, #2A5C82 0%, #1E4562 100%);
             border-radius: 4px;
             width: 0%;
             transition: width 0.5s ease-out;
           }
           .progress-percent {
             font-size: 13px;
-            color: #667eea;
+            color: #2A5C82;
             font-weight: 600;
             margin-top: 8px;
           }
@@ -909,12 +996,14 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
             margin-bottom: 30px;
           }
           .review-header h2 {
+            font-family: 'Fraunces', Georgia, serif;
             font-size: 22px;
-            color: #333;
+            color: #1E4562;
             margin-bottom: 8px;
+            font-weight: 600;
           }
           .review-header p {
-            color: #666;
+            color: #4A6B8A;
             font-size: 14px;
           }
           .child-cards {
@@ -923,15 +1012,15 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
             margin-bottom: 30px;
           }
           .child-card {
-            background: #f8f9fa;
-            border: 2px solid #e0e0e0;
+            background: #FAF9F6;
+            border: 2px solid #E0E7ED;
             border-radius: 12px;
             padding: 20px;
             position: relative;
           }
           .child-card.low-confidence {
-            border-color: #ffc107;
-            background: #fffbf0;
+            border-color: #F59E0B;
+            background: #FFF8E1;
           }
           .confidence-badge {
             position: absolute;
@@ -943,16 +1032,16 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
             font-weight: 600;
           }
           .confidence-high {
-            background: #d4edda;
-            color: #155724;
+            background: #E8F5E9;
+            color: #2E7D32;
           }
           .confidence-medium {
-            background: #fff3cd;
-            color: #856404;
+            background: #FFF8E1;
+            color: #8B6914;
           }
           .confidence-low {
-            background: #f8d7da;
-            color: #721c24;
+            background: #FFEBEE;
+            color: #B71C1C;
           }
           .card-header {
             display: flex;
@@ -964,9 +1053,10 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
             font-size: 32px;
           }
           .card-title {
+            font-family: 'Fraunces', Georgia, serif;
             font-size: 20px;
             font-weight: 600;
-            color: #333;
+            color: #1E4562;
           }
           .form-row {
             display: grid;
@@ -981,36 +1071,38 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
             display: block;
             font-size: 13px;
             font-weight: 500;
-            color: #555;
+            color: #4A6B8A;
             margin-bottom: 6px;
           }
           .form-group input,
           .form-group select {
             width: 100%;
-            padding: 10px;
-            border: 1px solid #ddd;
-            border-radius: 6px;
+            padding: 10px 12px;
+            border: 2px solid #E0E7ED;
+            border-radius: 8px;
             font-size: 14px;
+            font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+            transition: border-color 0.2s;
           }
           .form-group input:focus,
           .form-group select:focus {
             outline: none;
-            border-color: #667eea;
+            border-color: #2A5C82;
           }
           .help-text {
             font-size: 12px;
-            color: #888;
+            color: #7A8FA3;
             margin-top: 4px;
           }
           .example-emails {
             margin-top: 16px;
             padding-top: 16px;
-            border-top: 1px solid #e0e0e0;
+            border-top: 1px solid #E0E7ED;
           }
           .example-emails summary {
             cursor: pointer;
             font-size: 13px;
-            color: #667eea;
+            color: #2A5C82;
             font-weight: 500;
             user-select: none;
           }
@@ -1020,21 +1112,23 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
           }
           .example-emails li {
             font-size: 13px;
-            color: #666;
+            color: #4A6B8A;
             padding: 4px 0;
           }
           .btn-remove-card {
-            background: #dc3545;
+            background: #E53935;
             color: white;
             border: none;
             padding: 8px 16px;
-            border-radius: 6px;
+            border-radius: 8px;
             cursor: pointer;
             font-size: 13px;
             margin-top: 12px;
+            font-weight: 600;
+            transition: all 0.2s;
           }
           .btn-remove-card:hover {
-            background: #c82333;
+            background: #B71C1C;
           }
 
           /* Buttons */
@@ -1047,63 +1141,69 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
           .btn {
             padding: 14px 32px;
             border: none;
-            border-radius: 8px;
+            border-radius: 12px;
             font-size: 16px;
             font-weight: 600;
             cursor: pointer;
-            transition: all 0.3s;
+            transition: all 0.2s;
+            font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
           }
           .btn-primary {
-            background: #667eea;
+            background: #2A5C82;
             color: white;
           }
           .btn-primary:hover {
-            background: #5568d3;
+            background: #1E4562;
+            box-shadow: 0 4px 12px rgba(42, 92, 130, 0.3);
           }
           .btn-primary:disabled {
-            background: #ccc;
+            background: #E0E7ED;
+            color: #7A8FA3;
             cursor: not-allowed;
+            box-shadow: none;
           }
           .btn-secondary {
-            background: #6c757d;
+            background: #4A6B8A;
             color: white;
           }
           .btn-secondary:hover {
-            background: #5a6268;
+            background: #3A5670;
           }
           .btn-add {
-            background: #28a745;
+            background: #4CAF50;
             color: white;
             padding: 10px 20px;
             font-size: 14px;
           }
           .btn-add:hover {
-            background: #218838;
+            background: #388E3C;
+            box-shadow: 0 4px 12px rgba(76, 175, 80, 0.3);
           }
 
           /* Messages */
           .message {
             padding: 12px 16px;
-            border-radius: 8px;
+            border-radius: 12px;
             margin-bottom: 20px;
             display: none;
+            font-weight: 500;
           }
           .message.success {
-            background: #d4edda;
-            color: #155724;
-            border: 1px solid #c3e6cb;
+            background: #E8F5E9;
+            color: #2E7D32;
+            border: 1px solid #C8E6C9;
             display: block;
           }
           .message.error {
-            background: #f8d7da;
-            color: #721c24;
-            border: 1px solid #f5c6cb;
+            background: #FFEBEE;
+            color: #B71C1C;
+            border: 1px solid #FFCDD2;
             display: block;
           }
           .message.warning {
-            background: #fff3cd;
-            color: #856404;
-            border: 1px solid #ffeeba;
+            background: #FFF8E1;
+            color: #8B6914;
+            border: 1px solid #FFE082;
             display: block;
           }
 
@@ -1111,23 +1211,171 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
           .empty-state {
             text-align: center;
             padding: 60px 40px;
-            background: #f8f9fa;
+            background: #FAF9F6;
             border-radius: 12px;
-            border: 2px dashed #ddd;
+            border: 2px dashed #E0E7ED;
           }
           .empty-state-icon {
             font-size: 64px;
             margin-bottom: 16px;
           }
           .empty-state h3 {
+            font-family: 'Fraunces', Georgia, serif;
             font-size: 20px;
-            color: #333;
+            color: #1E4562;
             margin-bottom: 8px;
+            font-weight: 600;
           }
           .empty-state p {
-            color: #666;
+            color: #4A6B8A;
             font-size: 14px;
             margin-bottom: 20px;
+          }
+
+          /* Mobile Responsive */
+          @media (max-width: 768px) {
+            body {
+              padding: 12px;
+              align-items: flex-start;
+            }
+            .container {
+              padding: 24px 20px;
+              border-radius: 16px;
+              margin-top: 12px;
+            }
+            .header {
+              margin-bottom: 20px;
+              padding-bottom: 16px;
+            }
+            h1 {
+              font-size: 24px;
+            }
+            .steps {
+              margin-bottom: 28px;
+            }
+            .steps::before {
+              top: 16px;
+            }
+            .step-number {
+              width: 32px;
+              height: 32px;
+              font-size: 14px;
+            }
+            .step-label {
+              font-size: 11px;
+            }
+            .welcome-content {
+              padding: 24px 0;
+            }
+            .welcome-icon {
+              font-size: 60px;
+              margin-bottom: 16px;
+            }
+            .welcome-content h2 {
+              font-size: 20px;
+              line-height: 1.3;
+            }
+            .welcome-content p {
+              font-size: 15px;
+            }
+            .feature-list {
+              padding: 20px;
+              margin: 24px auto;
+            }
+            .feature-list ul {
+              padding-left: 20px;
+            }
+            .feature-list li {
+              font-size: 14px;
+              padding: 6px 0;
+            }
+            .form-row {
+              grid-template-columns: 1fr;
+              gap: 0;
+            }
+            .form-group input,
+            .form-group select {
+              font-size: 16px; /* Prevents iOS zoom on focus */
+            }
+            .button-group {
+              flex-direction: column;
+              gap: 10px;
+              margin-top: 24px;
+            }
+            .btn {
+              width: 100%;
+              padding: 14px 24px;
+              font-size: 15px;
+            }
+            .btn-add {
+              width: auto;
+              align-self: flex-start;
+            }
+            .child-card {
+              padding: 16px;
+            }
+            .card-header {
+              margin-bottom: 16px;
+            }
+            .card-title {
+              font-size: 18px;
+            }
+            .confidence-badge {
+              position: static;
+              display: inline-block;
+              margin-bottom: 12px;
+            }
+            .review-header h2 {
+              font-size: 20px;
+            }
+            .empty-state {
+              padding: 40px 24px;
+            }
+            .empty-state-icon {
+              font-size: 48px;
+            }
+            .empty-state h3 {
+              font-size: 18px;
+            }
+            .loading-title {
+              font-size: 16px;
+            }
+            .loading-subtitle {
+              font-size: 13px;
+            }
+            .progress-container {
+              max-width: 100%;
+            }
+          }
+
+          @media (max-width: 480px) {
+            body {
+              padding: 8px;
+            }
+            .container {
+              padding: 20px 16px;
+              border-radius: 12px;
+            }
+            h1 {
+              font-size: 22px;
+            }
+            .step-number {
+              width: 28px;
+              height: 28px;
+              font-size: 13px;
+            }
+            .step-label {
+              font-size: 10px;
+            }
+            .welcome-content h2 {
+              font-size: 18px;
+            }
+            .feature-list {
+              padding: 16px;
+            }
+            .feature-list li {
+              font-size: 13px;
+            }
           }
         </style>
       </head>
@@ -1168,10 +1416,11 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
               <p>To build your daily briefing, our AI needs to look for school signals in your inbox.</p>
 
               <div class="feature-list">
-                <strong>What we do:</strong>
+                <strong>You stay in control:</strong>
                 <ul>
                   <li>We only process senders you explicitly approve in the next step</li>
-                  <li>We do not read personal or financial emails</li>
+                  <li>We do not store any messages other than from your approved senders</li>
+                  <li>We do not sell your data to a 3rd party</li>
                   <li>We extract school events, todos, and key info</li>
                 </ul>
               </div>
@@ -1198,20 +1447,20 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
           </div>
 
           <!-- Step 3: Sender selection -->
-          <div class="step-content" id="step-senders">
+          <div class="step-content ${currentStep === 3 ? 'active' : ''}" id="step-senders">
             <div class="review-header">
               <h2 id="sender-step-title">Select senders to monitor</h2>
               <p id="sender-step-subtitle">These look like school and family contacts.</p>
             </div>
 
             <!-- Progress bar -->
-            <div id="sender-progress" style="background:#f8f9fa;border-radius:8px;padding:16px;margin-bottom:24px;">
-              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-                <span id="progress-count" style="font-weight:600;font-size:14px;color:#333;">0 senders included</span>
-                <span id="progress-hint" style="font-size:13px;color:#888;">Select senders to monitor</span>
+            <div id="sender-progress" style="background:#FAF9F6;border-radius:12px;padding:16px;margin-bottom:24px;border:1px solid #E0E7ED;">
+              <div style="display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;margin-bottom:8px;gap:4px;">
+                <span id="progress-count" style="font-weight:600;font-size:14px;color:#1E4562;">0 senders included</span>
+                <span id="progress-hint" style="font-size:12px;color:#7A8FA3;">Select senders to monitor</span>
               </div>
-              <div style="height:6px;background:#e0e0e0;border-radius:3px;overflow:hidden;">
-                <div id="progress-bar" style="height:100%;background:#667eea;border-radius:3px;transition:width 0.3s;width:0%;"></div>
+              <div style="height:6px;background:#E0E7ED;border-radius:3px;overflow:hidden;">
+                <div id="progress-bar" style="height:100%;background:#2A5C82;border-radius:3px;transition:width 0.3s;width:0%;"></div>
               </div>
             </div>
 
@@ -1248,19 +1497,19 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
             <div id="train-loading" style="display:none;"></div>
 
             <div id="train-items" style="display:none;">
-              <div style="background:#f8f9fa;border-radius:8px;padding:16px;margin-bottom:20px;">
-                <div style="display:flex;justify-content:space-between;align-items:center;">
-                  <span id="train-progress" style="font-weight:600;font-size:14px;color:#333;">0 of 0 items graded</span>
-                  <span style="font-size:13px;color:#888;">Tap Relevant or Not Relevant for each item</span>
+              <div style="background:#FAF9F6;border-radius:12px;padding:16px;margin-bottom:20px;border:1px solid #E0E7ED;">
+                <div style="display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:8px;">
+                  <span id="train-progress" style="font-weight:600;font-size:14px;color:#1E4562;">0 of 0 items graded</span>
+                  <span style="font-size:13px;color:#7A8FA3;">Tap Relevant or Not Relevant</span>
                 </div>
               </div>
 
               <div id="train-items-list" class="child-cards"></div>
 
-              <div id="train-empty" style="display:none;text-align:center;padding:40px;background:#f8f9fa;border-radius:12px;border:2px dashed #ddd;">
+              <div id="train-empty" style="display:none;text-align:center;padding:40px;background:#FAF9F6;border-radius:12px;border:2px dashed #E0E7ED;">
                 <div style="font-size:48px;margin-bottom:16px;">📭</div>
-                <h3 style="font-size:18px;color:#333;margin-bottom:8px;">No items found</h3>
-                <p style="color:#666;font-size:14px;">We couldn't extract any todos or events from your emails. You can skip this step.</p>
+                <h3 style="font-size:18px;color:#1E4562;margin-bottom:8px;">No items found</h3>
+                <p style="color:#4A6B8A;font-size:14px;">We couldn't extract any todos or events from your emails. You can skip this step.</p>
               </div>
             </div>
 
@@ -1312,8 +1561,8 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
               <div class="feature-list" style="margin-top:30px;">
                 <strong>Explore:</strong>
                 <ul>
-                  <li><a href="/todos">View your todo list</a></li>
-                  <li><a href="/events">View your events</a></li>
+                  <li><a href="/todos-view">View your todo list</a></li>
+                  <li><a href="/events-view">View your events</a></li>
                   <li><a href="/settings">Manage settings & senders</a></li>
                 </ul>
               </div>
@@ -1429,10 +1678,10 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
               'scan',
               'Scanning your inbox...',
               'Looking for school and family contacts',
-              'This typically takes 10-20 seconds'
+              'This typically takes about a minute'
             );
             loadingContainer.style.display = 'block';
-            startFakeProgress('scan', 15000); // 15 second estimate
+            startFakeProgress('scan', 60000); // 60 second estimate
 
             try {
               const res = await fetch('/onboarding/scan-inbox', {
@@ -1441,7 +1690,19 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
                 body: JSON.stringify({}),
               });
               const data = await res.json();
-              if (!res.ok) throw new Error(data.message || 'Scan failed');
+              if (!res.ok) {
+                // If Gmail not connected, redirect back to step 1
+                if (res.status === 401 || data.error === 'Gmail not connected') {
+                  completeProgress('scan');
+                  showMessage('error', data.message || 'Gmail connection lost. Please reconnect.');
+                  loadingContainer.style.display = 'none';
+                  document.getElementById('scan-initial').style.display = '';
+                  // Optionally redirect to step 1
+                  setTimeout(() => { showStep('step-welcome'); }, 2000);
+                  return;
+                }
+                throw new Error(data.message || 'Scan failed');
+              }
 
               completeProgress('scan');
               updateLoadingText('scan', 'Scan complete!', 'Found ' + data.senders.length + ' senders');
@@ -1451,7 +1712,8 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
               senderSubStep = 'A';
               rerankedMidSenders = [];
 
-              // Update step indicators
+              // Update step indicators - mark Connect as completed, Senders as active
+              document.getElementById('step-indicator-1').classList.add('completed');
               document.getElementById('step-indicator-2').classList.add('active');
 
               // Brief pause to show completion, then proceed
@@ -1469,27 +1731,27 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
           }
 
           function getCategoryBadge(category) {
-            if (category === 'school') return '<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;background:#d4edda;color:#155724;">School</span>';
-            if (category === 'activity') return '<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;background:#cce5ff;color:#004085;">Activity</span>';
-            return '<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;background:#e2e3e5;color:#383d41;">Other</span>';
+            if (category === 'school') return '<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;background:#E8F5E9;color:#2E7D32;">School</span>';
+            if (category === 'activity') return '<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;background:#E3F2FD;color:#1565C0;">Activity</span>';
+            return '<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;background:#F8F9FA;color:#4A6B8A;">Other</span>';
           }
 
           function renderSenderCard(sender) {
             const isIncluded = senderSelections[sender.email] === 'include';
             const domain = sender.email.split('@')[1] || '';
             return \`
-              <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px;background:\${isIncluded ? '#f0f7f0' : '#fff'};border:2px solid \${isIncluded ? '#28a745' : '#e0e0e0'};border-radius:8px;margin-bottom:6px;transition:all 0.2s;">
-                <div style="flex:1;min-width:0;">
-                  <div style="display:flex;align-items:center;gap:8px;">
-                    <span style="font-weight:600;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">\${sender.name}</span>
+              <div style="display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;padding:12px 16px;background:\${isIncluded ? '#E8F5E9' : '#fff'};border:2px solid \${isIncluded ? '#4CAF50' : '#E0E7ED'};border-radius:8px;margin-bottom:6px;transition:all 0.2s;gap:8px;">
+                <div style="flex:1;min-width:200px;">
+                  <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                    <span style="font-weight:600;font-size:14px;color:#1E4562;word-break:break-word;">\${sender.name}</span>
                     \${getCategoryBadge(sender.category || 'other')}
                   </div>
-                  <div style="font-size:12px;color:#888;margin-top:2px;">\${domain} — \${sender.subjects.slice(0,2).join(' | ')}</div>
+                  <div style="font-size:12px;color:#7A8FA3;margin-top:2px;word-break:break-word;">\${domain} — \${sender.subjects.slice(0,2).join(' | ')}</div>
                 </div>
                 <button onclick="toggleSender('\${sender.email}')"
-                  style="flex-shrink:0;margin-left:12px;padding:8px 20px;border-radius:6px;border:none;font-size:13px;font-weight:600;cursor:pointer;transition:all 0.2s;\${isIncluded
-                    ? 'background:#28a745;color:white;'
-                    : 'background:#e0e0e0;color:#666;'}"
+                  style="flex-shrink:0;padding:8px 20px;border-radius:8px;border:none;font-size:13px;font-weight:600;cursor:pointer;transition:all 0.2s;\${isIncluded
+                    ? 'background:#4CAF50;color:white;'
+                    : 'background:#E0E7ED;color:#4A6B8A;'}"
                 >\${isIncluded ? 'Included' : 'Include'}</button>
               </div>
             \`;
@@ -1516,14 +1778,14 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
 
               if (high.length > 0) {
                 html += \`<div style="margin-bottom:20px;">
-                  <h3 style="font-size:15px;color:#155724;margin-bottom:10px;padding-left:4px;border-left:3px solid #28a745;padding-left:10px;">Likely school & family (\${high.length})</h3>
+                  <h3 style="font-size:15px;color:#2E7D32;margin-bottom:10px;padding-left:4px;border-left:3px solid #4CAF50;padding-left:10px;">Likely school & family (\${high.length})</h3>
                   \${high.map(s => renderSenderCard(s)).join('')}
                 </div>\`;
               } else {
-                html += \`<div style="text-align:center;padding:40px;background:#f8f9fa;border-radius:12px;border:2px dashed #ddd;">
+                html += \`<div style="text-align:center;padding:40px;background:#FAF9F6;border-radius:12px;border:2px dashed #E0E7ED;">
                   <div style="font-size:48px;margin-bottom:16px;">📬</div>
-                  <h3 style="font-size:18px;color:#333;margin-bottom:8px;">No high-confidence senders found</h3>
-                  <p style="color:#666;font-size:14px;">Click Continue to review all senders.</p>
+                  <h3 style="font-size:18px;color:#1E4562;margin-bottom:8px;">No high-confidence senders found</h3>
+                  <p style="color:#4A6B8A;font-size:14px;">Click Continue to review all senders.</p>
                 </div>\`;
               }
             } else {
@@ -1539,7 +1801,7 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
 
               if (topSenders.length > 0) {
                 html += \`<div style="margin-bottom:20px;">
-                  <h3 style="font-size:15px;color:#856404;margin-bottom:10px;padding-left:4px;border-left:3px solid #ffc107;padding-left:10px;">Possibly relevant (\${topSenders.length})</h3>
+                  <h3 style="font-size:15px;color:#8B6914;margin-bottom:10px;padding-left:4px;border-left:3px solid #F59E0B;padding-left:10px;">Possibly relevant (\${topSenders.length})</h3>
                   \${topSenders.map(s => renderSenderCard(s)).join('')}
                 </div>\`;
               }
@@ -1547,7 +1809,7 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
               const otherSenders = [...restSenders, ...low];
               if (otherSenders.length > 0) {
                 html += \`<details style="margin-bottom:20px;">
-                  <summary style="font-size:15px;color:#666;margin-bottom:10px;cursor:pointer;padding-left:4px;border-left:3px solid #e0e0e0;padding-left:10px;">Other senders (\${otherSenders.length})</summary>
+                  <summary style="font-size:15px;color:#4A6B8A;margin-bottom:10px;cursor:pointer;padding-left:4px;border-left:3px solid #E0E7ED;padding-left:10px;">Other senders (\${otherSenders.length})</summary>
                   <div style="margin-top:10px;">
                     \${otherSenders.map(s => renderSenderCard(s)).join('')}
                   </div>
@@ -1555,10 +1817,10 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
               }
 
               if (topSenders.length === 0 && otherSenders.length === 0) {
-                html += \`<div style="text-align:center;padding:40px;background:#f8f9fa;border-radius:12px;border:2px dashed #ddd;">
+                html += \`<div style="text-align:center;padding:40px;background:#FAF9F6;border-radius:12px;border:2px dashed #E0E7ED;">
                   <div style="font-size:48px;margin-bottom:16px;">✅</div>
-                  <h3 style="font-size:18px;color:#333;margin-bottom:8px;">No additional senders</h3>
-                  <p style="color:#666;font-size:14px;">All senders were shown in the previous step. Click Confirm to continue.</p>
+                  <h3 style="font-size:18px;color:#1E4562;margin-bottom:8px;">No additional senders</h3>
+                  <p style="color:#4A6B8A;font-size:14px;">All senders were shown in the previous step. Click Confirm to continue.</p>
                 </div>\`;
               }
             }
@@ -1692,28 +1954,28 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
             const container = document.getElementById('school-list');
             if (detectedSchools.length === 0) {
               container.innerHTML = \`
-                <div style="text-align:center;padding:40px;background:#f8f9fa;border-radius:12px;border:2px dashed #ddd;margin-bottom:20px;">
+                <div style="text-align:center;padding:40px 20px;background:#FAF9F6;border-radius:12px;border:2px dashed #E0E7ED;margin-bottom:20px;">
                   <div style="font-size:48px;margin-bottom:16px;">🏫</div>
-                  <h3 style="font-size:18px;color:#333;margin-bottom:8px;">No schools detected</h3>
-                  <p style="color:#666;font-size:14px;">We couldn't detect any schools. You can add them manually or skip this step.</p>
+                  <h3 style="font-size:18px;color:#1E4562;margin-bottom:8px;">No schools detected</h3>
+                  <p style="color:#4A6B8A;font-size:14px;">We couldn't detect any schools. You can add them manually or skip this step.</p>
                 </div>
               \`;
               return;
             }
             container.innerHTML = detectedSchools.map((school, i) => \`
-              <div style="background:#f8f9fa;border:2px solid #e0e0e0;border-radius:8px;padding:16px;margin-bottom:10px;">
-                <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;">
-                  <div style="flex:1;">
+              <div style="background:#FAF9F6;border:2px solid #E0E7ED;border-radius:12px;padding:16px;margin-bottom:10px;">
+                <div style="display:flex;flex-wrap:wrap;justify-content:space-between;align-items:flex-start;gap:12px;">
+                  <div style="flex:1;min-width:200px;">
                     <div class="form-group" style="margin-bottom:10px;">
                       <label>School name</label>
-                      <input type="text" value="\${school.name}" onchange="updateSchool(\${i}, 'name', this.value)" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:6px;font-size:14px;">
+                      <input type="text" value="\${school.name}" onchange="updateSchool(\${i}, 'name', this.value)" style="width:100%;padding:10px 12px;border:2px solid #E0E7ED;border-radius:8px;font-size:16px;">
                     </div>
                     <div class="form-group" style="margin-bottom:0;">
                       <label>Year groups (comma-separated)</label>
-                      <input type="text" value="\${school.year_groups.join(', ')}" onchange="updateSchoolYears(\${i}, this.value)" placeholder="e.g. Year 3, Reception" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:6px;font-size:14px;">
+                      <input type="text" value="\${school.year_groups.join(', ')}" onchange="updateSchoolYears(\${i}, this.value)" placeholder="e.g. Year 3, Reception" style="width:100%;padding:10px 12px;border:2px solid #E0E7ED;border-radius:8px;font-size:16px;">
                     </div>
                   </div>
-                  <button onclick="removeSchool(\${i})" style="flex-shrink:0;background:#dc3545;color:white;border:none;padding:6px 12px;border-radius:6px;cursor:pointer;font-size:12px;margin-top:22px;">Remove</button>
+                  <button onclick="removeSchool(\${i})" style="flex-shrink:0;background:#E53935;color:white;border:none;padding:8px 14px;border-radius:8px;cursor:pointer;font-size:12px;font-weight:600;">Remove</button>
                 </div>
               </div>
             \`).join('');
@@ -1740,7 +2002,8 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
           function confirmSchools() {
             // Filter out empty names
             detectedSchools = detectedSchools.filter(s => s.name.trim());
-            // Continue to training step
+            // Mark Senders step as completed and continue to training step
+            document.getElementById('step-indicator-2').classList.add('completed');
             document.getElementById('step-indicator-3').classList.add('active');
             showStep('step-train');
             startTrainingExtraction();
@@ -1789,12 +2052,28 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
               }, 800);
             } catch (err) {
               completeProgress('train-extract');
-              showMessage('error', 'Extraction failed: ' + err.message);
               document.getElementById('train-loading').style.display = 'none';
               document.getElementById('train-items').style.display = 'block';
+              document.getElementById('train-items-list').style.display = 'none';
               document.getElementById('train-empty').style.display = 'block';
+              document.getElementById('train-empty').innerHTML = \`
+                <div style="font-size:48px;margin-bottom:16px;">⚠️</div>
+                <h3 style="font-size:18px;color:#1E4562;margin-bottom:8px;">Extraction failed</h3>
+                <p style="color:#4A6B8A;font-size:14px;margin-bottom:20px;">\${err.message || 'Something went wrong. Please try again.'}</p>
+                <button class="btn btn-primary" onclick="retryTrainingExtraction()" style="margin-bottom:12px;">Retry</button>
+              \`;
               document.getElementById('save-train-btn').disabled = false;
+              document.getElementById('save-train-btn').textContent = 'Skip this step';
             }
+          }
+
+          function retryTrainingExtraction() {
+            document.getElementById('train-empty').innerHTML = \`
+              <div style="font-size:48px;margin-bottom:16px;">📭</div>
+              <h3 style="font-size:18px;color:#1E4562;margin-bottom:8px;">No items found</h3>
+              <p style="color:#4A6B8A;font-size:14px;">We couldn't extract any todos or events from your emails. You can skip this step.</p>
+            \`;
+            startTrainingExtraction();
           }
 
           function renderTrainingItems() {
@@ -1805,19 +2084,19 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
               const isNotRelevant = trainingGrades[item.id] === false;
               const icon = item.item_type === 'todo' ? '✅' : '📅';
               return \`
-                <div style="background:\${graded ? (isRelevant ? '#f0f7f0' : '#fff5f5') : '#fff'};border:2px solid \${graded ? (isRelevant ? '#28a745' : '#dc3545') : '#e0e0e0'};border-radius:8px;padding:16px;margin-bottom:8px;transition:all 0.2s;">
-                  <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;">
-                    <div style="flex:1;min-width:0;">
-                      <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
-                        <span style="font-size:18px;">\${icon}</span>
-                        <span style="font-weight:600;font-size:14px;">\${item.item_text}</span>
+                <div style="background:\${graded ? (isRelevant ? '#E8F5E9' : '#FFEBEE') : '#fff'};border:2px solid \${graded ? (isRelevant ? '#4CAF50' : '#E53935') : '#E0E7ED'};border-radius:12px;padding:16px;margin-bottom:8px;transition:all 0.2s;">
+                  <div style="display:flex;flex-wrap:wrap;justify-content:space-between;align-items:flex-start;gap:12px;">
+                    <div style="flex:1;min-width:180px;">
+                      <div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:4px;">
+                        <span style="font-size:18px;flex-shrink:0;">\${icon}</span>
+                        <span style="font-weight:600;font-size:14px;color:#1E4562;word-break:break-word;">\${item.item_text}</span>
                       </div>
-                      <div style="font-size:12px;color:#888;">From: \${item.source_sender || 'Unknown'}</div>
-                      <div style="font-size:12px;color:#aaa;margin-top:2px;">\${item.source_subject || ''}</div>
+                      <div style="font-size:12px;color:#7A8FA3;word-break:break-word;">From: \${item.source_sender || 'Unknown'}</div>
+                      <div style="font-size:12px;color:#7A8FA3;margin-top:2px;word-break:break-word;">\${item.source_subject || ''}</div>
                     </div>
                     <div style="display:flex;gap:6px;flex-shrink:0;">
-                      <button onclick="gradeItem(\${item.id}, true)" style="padding:6px 12px;border-radius:6px;border:none;font-size:12px;font-weight:600;cursor:pointer;\${isRelevant ? 'background:#28a745;color:white;' : 'background:#e8f5e9;color:#28a745;'}">Relevant</button>
-                      <button onclick="gradeItem(\${item.id}, false)" style="padding:6px 12px;border-radius:6px;border:none;font-size:12px;font-weight:600;cursor:pointer;\${isNotRelevant ? 'background:#dc3545;color:white;' : 'background:#ffebee;color:#dc3545;'}">Not Relevant</button>
+                      <button onclick="gradeItem(\${item.id}, true)" style="padding:8px 14px;border-radius:8px;border:none;font-size:12px;font-weight:600;cursor:pointer;\${isRelevant ? 'background:#4CAF50;color:white;' : 'background:#E8F5E9;color:#2E7D32;'}">Relevant</button>
+                      <button onclick="gradeItem(\${item.id}, false)" style="padding:8px 14px;border-radius:8px;border:none;font-size:12px;font-weight:600;cursor:pointer;\${isNotRelevant ? 'background:#E53935;color:white;' : 'background:#FFEBEE;color:#B71C1C;'}">Not Relevant</button>
                     </div>
                   </div>
                 </div>
@@ -1879,6 +2158,8 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
 
           // --- Child extraction ---
           async function startChildExtraction() {
+            // Mark Train step as completed and Children step as active
+            document.getElementById('step-indicator-3').classList.add('completed');
             document.getElementById('step-indicator-4').classList.add('active');
             showStep('step-analyzing');
 
@@ -1954,21 +2235,21 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
                   <div class="form-row">
                     <div class="form-group">
                       <label>Real Name *</label>
-                      <input type="text" value="\${child.real_name}" onchange="updateChild(\${i}, 'real_name', this.value)">
+                      <input type="text" value="\${child.real_name}" onchange="updateChild(\${i}, 'real_name', this.value)" style="color:#1E4562;">
                     </div>
                     <div class="form-group">
                       <label>Display Name (optional)</label>
-                      <input type="text" value="\${child.display_name}" onchange="updateChild(\${i}, 'display_name', this.value)" placeholder="e.g., Child A">
+                      <input type="text" value="\${child.display_name}" onchange="updateChild(\${i}, 'display_name', this.value)" placeholder="e.g., Child A" style="color:#1E4562;">
                     </div>
                   </div>
                   <div class="form-row">
                     <div class="form-group">
                       <label>Year Group</label>
-                      <input type="text" value="\${child.year_group}" onchange="updateChild(\${i}, 'year_group', this.value)" placeholder="e.g., Year 3">
+                      <input type="text" value="\${child.year_group}" onchange="updateChild(\${i}, 'year_group', this.value)" placeholder="e.g., Year 3" style="color:#1E4562;">
                     </div>
                     <div class="form-group">
                       <label>School Name</label>
-                      <input type="text" value="\${child.school_name}" onchange="updateChild(\${i}, 'school_name', this.value)">
+                      <input type="text" value="\${child.school_name}" onchange="updateChild(\${i}, 'school_name', this.value)" style="color:#1E4562;">
                     </div>
                   </div>
                   <details class="example-emails">
@@ -2093,8 +2374,8 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
                   const container = document.getElementById('sender-review-list');
                   container.innerHTML = \`
                     <div style="margin-bottom:16px;">
-                      <h3 style="color:#28a745;margin-bottom:8px;">Included (\${included.length})</h3>
-                      \${included.map(s => \`<div style="padding:8px;background:#d4edda;border-radius:6px;margin-bottom:4px;font-size:14px;">\${s.sender_name || s.sender_email} — \${s.sender_email}</div>\`).join('')}
+                      <h3 style="color:#2E7D32;margin-bottom:8px;">Included (\${included.length})</h3>
+                      \${included.map(s => \`<div style="padding:8px;background:#E8F5E9;border-radius:8px;margin-bottom:4px;font-size:14px;color:#1E4562;">\${s.sender_name || s.sender_email} — \${s.sender_email}</div>\`).join('')}
                     </div>
                   \`;
                 }

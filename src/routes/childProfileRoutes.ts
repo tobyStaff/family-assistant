@@ -228,7 +228,20 @@ export async function childProfileRoutes(fastify: FastifyInstance): Promise<void
   }>('/onboarding/scan-inbox', { preHandler: requireAuth }, async (request, reply) => {
     try {
       const userId = getUserId(request);
-      const auth = await getUserAuth(request);
+      fastify.log.info({ userId }, 'Starting inbox scan - getting user auth');
+
+      let auth;
+      try {
+        auth = await getUserAuth(request);
+      } catch (authError: any) {
+        fastify.log.error({ userId, err: authError }, 'Failed to get user auth for inbox scan');
+        return reply.code(401).send({
+          error: 'Gmail not connected',
+          message: authError.message?.includes('No auth found')
+            ? 'Please reconnect your Gmail account. Go back to step 1 and click "Connect your Gmail inbox".'
+            : authError.message,
+        });
+      }
 
       // Fetch both primary and updates in a single pass so AI ranking covers all senders
       const categoryFilter = '{category:primary category:updates}';
@@ -387,42 +400,47 @@ export async function childProfileRoutes(fastify: FastifyInstance): Promise<void
 
       fastify.log.info({ userId, emailCount: rawEmails.length }, 'Fetched emails for training extraction');
 
-      // Extract todos and events using existing extractor
+      // Extract todos and events using existing extractor - process all emails in one batch
       const { extractEventsAndTodos } = await import('../parsers/eventTodoExtractor.js');
 
       const feedbackItems: { user_id: string; item_type: 'todo' | 'event'; item_text: string; source_sender?: string; source_subject?: string }[] = [];
 
-      for (const email of rawEmails) {
-        try {
-          const result = await extractEventsAndTodos(
-            [{ ...email, bodyText: email.body }],
-            'openai'
-          );
+      // Build email metadata for batch extraction
+      const emailsWithMeta = rawEmails.map(email => ({
+        ...email,
+        bodyText: email.body,
+      }));
 
-          // Add extracted todos
-          for (const todo of result.todos) {
-            feedbackItems.push({
-              user_id: userId,
-              item_type: 'todo',
-              item_text: `[${todo.type}] ${todo.description}${todo.due_date ? ` (Due: ${todo.due_date})` : ''}`,
-              source_sender: email.from,
-              source_subject: email.subject,
-            });
-          }
+      try {
+        // Process all emails in a single batch call (much faster than serial)
+        const result = await extractEventsAndTodos(emailsWithMeta, 'openai');
 
-          // Add extracted events
-          for (const event of result.events) {
-            feedbackItems.push({
-              user_id: userId,
-              item_type: 'event',
-              item_text: `${event.title} - ${event.date}${event.location ? ` @ ${event.location}` : ''}`,
-              source_sender: email.from,
-              source_subject: email.subject,
-            });
-          }
-        } catch (err: any) {
-          fastify.log.warn({ err: err.message, emailId: email.id }, 'Failed to extract from email');
+        fastify.log.info({ userId, todos: result.todos.length, events: result.events.length }, 'Batch extraction complete');
+
+        // Add extracted todos
+        for (const todo of result.todos) {
+          feedbackItems.push({
+            user_id: userId,
+            item_type: 'todo',
+            item_text: `[${todo.type}] ${todo.description}${todo.due_date ? ` (Due: ${todo.due_date})` : ''}`,
+            source_sender: 'Selected senders',
+            source_subject: undefined,
+          });
         }
+
+        // Add extracted events
+        for (const event of result.events) {
+          feedbackItems.push({
+            user_id: userId,
+            item_type: 'event',
+            item_text: `${event.title} - ${event.date}${event.location ? ` @ ${event.location}` : ''}`,
+            source_sender: 'Selected senders',
+            source_subject: undefined,
+          });
+        }
+      } catch (err: any) {
+        fastify.log.error({ err: err.message, userId }, 'Failed to extract todos/events from emails');
+        // Continue with empty items rather than failing entirely
       }
 
       // Store feedback items

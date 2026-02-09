@@ -40,40 +40,49 @@ export function renderAdminContent(options: AdminContentOptions): string {
       .tool-link {
         display: block;
         padding: 20px;
-        background: #f8f9fa;
-        border-radius: 8px;
-        color: #333;
+        background: var(--bg-muted);
+        border-radius: var(--radius-md);
+        color: var(--text-primary);
         text-decoration: none;
         transition: all 0.2s;
-        border: 1px solid #e0e0e0;
+        border: 1px solid var(--border-light);
       }
 
       .tool-link:hover {
-        background: #e9ecef;
+        background: var(--sky);
         transform: translateY(-2px);
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        box-shadow: var(--shadow-md);
+        border-color: var(--primary-color);
       }
 
       .tool-link h3 {
+        font-family: var(--font-display);
         font-size: 16px;
         margin-bottom: 8px;
-        color: #333;
+        color: var(--text-primary);
       }
 
       .tool-link p {
         font-size: 13px;
-        color: #666;
+        color: var(--text-secondary);
         margin: 0;
       }
 
       .user-select {
         width: 100%;
-        padding: 12px;
-        border-radius: 8px;
-        border: 1px solid #ddd;
-        background: white;
+        padding: 12px 14px;
+        border-radius: var(--radius-md);
+        border: 2px solid var(--border-light);
+        background: var(--bg-card);
         font-size: 14px;
+        font-family: var(--font-body);
         margin-bottom: 15px;
+        transition: border-color 0.2s;
+      }
+
+      .user-select:focus {
+        outline: none;
+        border-color: var(--primary-color);
       }
 
       .user-list {
@@ -86,9 +95,8 @@ export function renderAdminContent(options: AdminContentOptions): string {
         justify-content: space-between;
         align-items: center;
         padding: 12px;
-        border-bottom: 1px solid #e0e0e0;
-        background: #f8f9fa;
-        border-radius: 6px;
+        background: var(--bg-muted);
+        border-radius: var(--radius-sm);
         margin-bottom: 8px;
       }
 
@@ -98,41 +106,42 @@ export function renderAdminContent(options: AdminContentOptions): string {
 
       .user-email {
         font-size: 14px;
-        font-weight: 500;
-        color: #333;
+        font-weight: 600;
+        color: var(--text-primary);
       }
 
       .user-roles {
         font-size: 12px;
-        color: #666;
+        color: var(--text-muted);
         margin-top: 4px;
       }
 
       .role-badge-small {
         display: inline-block;
         padding: 2px 8px;
-        border-radius: 10px;
+        border-radius: var(--radius-full);
         font-size: 10px;
         font-weight: 600;
         margin-left: 4px;
       }
 
       .role-super { background: var(--danger-color); color: white; }
-      .role-admin { background: #f59e0b; color: white; }
-      .role-standard { background: #6c757d; color: white; }
+      .role-admin { background: var(--warning-light); color: #92400E; }
+      .role-standard { background: var(--text-muted); color: white; }
 
       .impersonate-info {
-        background: #fff3cd;
-        border: 1px solid #ffc107;
-        color: #856404;
-        padding: 12px;
-        border-radius: 8px;
+        background: var(--warning-light);
+        border: 1px solid #FCD34D;
+        color: #92400E;
+        padding: 14px;
+        border-radius: var(--radius-md);
         margin-bottom: 15px;
         font-size: 14px;
+        font-weight: 500;
       }
 
       .section-description {
-        color: #666;
+        color: var(--text-secondary);
         font-size: 14px;
         margin-bottom: 15px;
       }

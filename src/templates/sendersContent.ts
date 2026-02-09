@@ -8,22 +8,22 @@ export function renderSendersContent(): string {
     <style>
       .tabs {
         display: flex;
-        border-bottom: 2px solid #e0e0e0;
+        border-bottom: 2px solid var(--border-light);
         margin-bottom: 20px;
       }
       .tab {
         padding: 12px 24px;
         font-size: 14px;
         font-weight: 600;
-        color: #666;
+        color: var(--text-muted);
         cursor: pointer;
         border-bottom: 2px solid transparent;
         margin-bottom: -2px;
         transition: all 0.2s;
       }
       .tab:hover {
-        color: #333;
-        background: #f8f9fa;
+        color: var(--text-primary);
+        background: var(--bg-muted);
       }
       .tab.active {
         color: var(--primary-color);
@@ -31,11 +31,11 @@ export function renderSendersContent(): string {
       }
       .tab-count {
         display: inline-block;
-        background: #e0e0e0;
-        color: #666;
+        background: var(--border-light);
+        color: var(--text-muted);
         font-size: 11px;
         padding: 2px 8px;
-        border-radius: 10px;
+        border-radius: var(--radius-full);
         margin-left: 8px;
       }
       .tab.active .tab-count {
@@ -53,17 +53,17 @@ export function renderSendersContent(): string {
         justify-content: space-between;
         align-items: center;
         padding: 14px 16px;
-        border-radius: 8px;
+        border-radius: var(--radius-md);
         margin-bottom: 8px;
         transition: all 0.2s;
       }
       .sender-item.included {
-        background: #f0fff0;
-        border: 1px solid #c3e6c3;
+        background: var(--success-light);
+        border: 1px solid #A5D6A7;
       }
       .sender-item.excluded {
-        background: #fff5f5;
-        border: 1px solid #f5c6cb;
+        background: var(--danger-light);
+        border: 1px solid #FFCDD2;
       }
       .sender-info {
         flex: 1;
@@ -72,12 +72,12 @@ export function renderSendersContent(): string {
       .sender-name {
         font-size: 14px;
         font-weight: 600;
-        color: #333;
+        color: var(--text-primary);
         margin-bottom: 2px;
       }
       .sender-email {
         font-size: 12px;
-        color: #888;
+        color: var(--text-muted);
       }
       .sender-actions {
         display: flex;
@@ -85,46 +85,48 @@ export function renderSendersContent(): string {
         flex-shrink: 0;
       }
       .sender-actions button {
-        padding: 6px 14px;
-        border-radius: 6px;
+        padding: 8px 14px;
+        border-radius: var(--radius-sm);
         border: none;
         font-size: 12px;
-        font-weight: 500;
+        font-weight: 600;
         cursor: pointer;
         transition: all 0.2s;
       }
       .btn-include {
-        background: #28a745;
+        background: var(--success-color);
         color: white;
       }
       .btn-include:hover {
-        background: #218838;
+        background: #43A047;
       }
       .btn-exclude {
-        background: #ffc107;
-        color: #333;
+        background: var(--warning-light);
+        color: #92400E;
+        border: 1px solid #FCD34D;
       }
       .btn-exclude:hover {
-        background: #e0a800;
+        background: #FEF3C7;
       }
       .btn-delete {
-        background: #dc3545;
+        background: var(--danger-color);
         color: white;
       }
       .btn-delete:hover {
-        background: #c82333;
+        background: var(--danger-dark);
       }
       .add-sender-form {
-        background: #f8f9fa;
-        border-radius: 12px;
+        background: var(--bg-muted);
+        border-radius: var(--radius-lg);
         padding: 20px;
         margin-bottom: 24px;
       }
       .add-sender-form label {
         display: block;
+        font-family: var(--font-display);
         font-weight: 600;
-        font-size: 14px;
-        color: #333;
+        font-size: 16px;
+        color: var(--text-primary);
         margin-bottom: 12px;
       }
       .form-row {
@@ -136,56 +138,62 @@ export function renderSendersContent(): string {
         flex: 1;
         min-width: 180px;
         padding: 12px 14px;
-        border: 1px solid #ddd;
-        border-radius: 8px;
+        border: 2px solid var(--border-light);
+        border-radius: var(--radius-md);
         font-size: 14px;
+        font-family: var(--font-body);
+        transition: border-color 0.2s, box-shadow 0.2s;
       }
       .form-row input:focus {
         outline: none;
         border-color: var(--primary-color);
+        box-shadow: 0 0 0 3px var(--primary-light);
       }
       .empty-tab {
         text-align: center;
         padding: 40px;
-        color: #888;
+        color: var(--text-muted);
         font-size: 14px;
       }
       .back-link {
         display: inline-flex;
         align-items: center;
         gap: 6px;
-        color: #666;
+        color: var(--text-secondary);
         text-decoration: none;
         font-size: 14px;
+        font-weight: 500;
         margin-bottom: 20px;
+        transition: color 0.2s;
       }
       .back-link:hover {
         color: var(--primary-color);
       }
       .message {
-        padding: 12px 16px;
-        border-radius: 8px;
+        padding: 14px 16px;
+        border-radius: var(--radius-md);
         margin-bottom: 16px;
+        font-weight: 500;
         display: none;
       }
       .message.success {
         display: block;
-        background: #d4edda;
-        color: #155724;
-        border: 1px solid #c3e6cb;
+        background: var(--success-light);
+        color: #2E7D32;
+        border: 1px solid #A5D6A7;
       }
       .message.error {
         display: block;
-        background: #f8d7da;
-        color: #721c24;
-        border: 1px solid #f5c6cb;
+        background: var(--danger-light);
+        color: var(--danger-dark);
+        border: 1px solid #FFCDD2;
       }
     </style>
 
     <a href="/settings" class="back-link">← Back to Settings</a>
 
-    <h2 style="margin-bottom: 8px;">Monitored Senders</h2>
-    <p style="color: #666; font-size: 14px; margin-bottom: 24px;">
+    <h2 style="font-family: var(--font-display); color: var(--text-primary); margin-bottom: 8px;">Monitored Senders</h2>
+    <p style="color: var(--text-secondary); font-size: 14px; margin-bottom: 24px;">
       Manage which email senders we monitor for school and family information.
     </p>
 

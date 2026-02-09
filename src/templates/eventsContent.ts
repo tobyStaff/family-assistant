@@ -135,31 +135,33 @@ export function renderEventsContent(options: EventsContentOptions): string {
       }
 
       .stat-card {
-        background: linear-gradient(135deg, var(--primary-color) 0%, #764ba2 100%);
+        background: linear-gradient(135deg, var(--primary-color) 0%, var(--primary-dark) 100%);
         color: white;
         padding: 20px;
-        border-radius: 12px;
+        border-radius: var(--radius-lg);
         text-align: center;
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        box-shadow: var(--shadow-md);
       }
 
       .stat-number {
+        font-family: var(--font-display);
         font-size: 32px;
         font-weight: bold;
         margin-bottom: 5px;
+        color: white;
       }
 
       .stat-label {
         font-size: 14px;
-        opacity: 0.9;
+        color: rgba(255, 255, 255, 0.9);
       }
 
       .filters {
-        background: white;
+        background: var(--bg-card);
         padding: 20px;
-        border-radius: 12px;
+        border-radius: var(--radius-lg);
         margin-bottom: 20px;
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+        box-shadow: var(--shadow-md);
       }
 
       .filter-group {
@@ -176,18 +178,19 @@ export function renderEventsContent(options: EventsContentOptions): string {
 
       .filter-label {
         font-weight: 600;
-        color: #555;
+        color: var(--text-secondary);
         min-width: 60px;
       }
 
       .filter-btn {
         padding: 8px 16px;
-        border: 2px solid #e0e0e0;
-        background: white;
-        border-radius: 20px;
+        border: 2px solid var(--border-light);
+        background: var(--bg-card);
+        border-radius: var(--radius-full);
         cursor: pointer;
         transition: all 0.2s;
         font-size: 14px;
+        font-weight: 500;
       }
 
       .filter-btn:hover {
@@ -202,17 +205,17 @@ export function renderEventsContent(options: EventsContentOptions): string {
       }
 
       .event-card {
-        background: white;
+        background: var(--bg-card);
         padding: 20px;
-        border-radius: 12px;
+        border-radius: var(--radius-lg);
         margin-bottom: 15px;
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+        box-shadow: var(--shadow-md);
         transition: transform 0.2s, box-shadow 0.2s;
       }
 
       .event-card:hover {
         transform: translateY(-2px);
-        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+        box-shadow: var(--shadow-lg);
       }
 
       .event-header {
@@ -223,37 +226,38 @@ export function renderEventsContent(options: EventsContentOptions): string {
       }
 
       .event-title {
+        font-family: var(--font-display);
         font-size: 18px;
         font-weight: 600;
-        color: #333;
+        color: var(--text-primary);
         flex: 1;
       }
 
       .status-badge {
         padding: 4px 12px;
-        border-radius: 12px;
+        border-radius: var(--radius-full);
         font-size: 12px;
         font-weight: 600;
         margin-left: 10px;
       }
 
       .status-synced {
-        background: #e8f5e9;
-        color: #2e7d32;
+        background: var(--success-light);
+        color: #2E7D32;
       }
 
       .status-pending {
-        background: #fff3e0;
-        color: #e65100;
+        background: var(--warning-light);
+        color: #92400E;
       }
 
       .status-failed {
-        background: #ffebee;
-        color: #c62828;
+        background: var(--danger-light);
+        color: var(--danger-dark);
       }
 
       .event-details {
-        color: #666;
+        color: var(--text-secondary);
         font-size: 14px;
         margin: 8px 0;
       }
@@ -264,16 +268,17 @@ export function renderEventsContent(options: EventsContentOptions): string {
         flex-wrap: wrap;
         margin-top: 10px;
         font-size: 13px;
-        color: #888;
+        color: var(--text-muted);
       }
 
       .event-error {
         margin-top: 10px;
-        padding: 10px;
-        background: #ffebee;
-        color: #c62828;
-        border-radius: 6px;
+        padding: 12px;
+        background: var(--danger-light);
+        color: var(--danger-dark);
+        border-radius: var(--radius-sm);
         font-size: 13px;
+        font-weight: 500;
       }
 
       .event-actions {
@@ -291,9 +296,9 @@ export function renderEventsContent(options: EventsContentOptions): string {
         display: none;
         margin-top: 12px;
         padding: 12px;
-        background: #f8f9fa;
-        border: 1px solid #e0e0e0;
-        border-radius: 8px;
+        background: var(--bg-muted);
+        border: 1px solid var(--border-light);
+        border-radius: var(--radius-md);
         font-size: 13px;
       }
 
@@ -303,14 +308,14 @@ export function renderEventsContent(options: EventsContentOptions): string {
 
       .source-email-header {
         font-weight: 600;
-        color: #333;
+        color: var(--text-primary);
         margin-bottom: 8px;
         padding-bottom: 8px;
-        border-bottom: 1px solid #e0e0e0;
+        border-bottom: 1px solid var(--border-light);
       }
 
       .source-email-meta {
-        color: #666;
+        color: var(--text-secondary);
         margin-bottom: 8px;
       }
 
@@ -320,19 +325,19 @@ export function renderEventsContent(options: EventsContentOptions): string {
         font-size: 12px;
         max-height: 300px;
         overflow-y: auto;
-        background: white;
+        background: var(--bg-card);
         padding: 8px;
-        border-radius: 4px;
-        border: 1px solid #e0e0e0;
+        border-radius: var(--radius-sm);
+        border: 1px solid var(--border-light);
       }
 
       .empty-state {
-        background: white;
+        background: var(--bg-card);
         padding: 60px 20px;
-        border-radius: 12px;
+        border-radius: var(--radius-lg);
         text-align: center;
-        color: #999;
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+        color: var(--text-muted);
+        box-shadow: var(--shadow-md);
       }
 
       .empty-state-icon {

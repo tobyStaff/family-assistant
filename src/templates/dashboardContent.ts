@@ -58,7 +58,7 @@ export function renderDashboardContent(options: DashboardOptions): string {
 
       .welcome-card {
         grid-column: 1 / -1;
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        background: linear-gradient(135deg, #2A5C82 0%, #1E4562 100%);
         color: white;
         padding: 30px;
         border-radius: 12px;
@@ -75,7 +75,7 @@ export function renderDashboardContent(options: DashboardOptions): string {
       }
 
       .onboarding-card {
-        background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+        background: linear-gradient(135deg, #4CAF50 0%, #2E7D32 100%);
         color: white;
         padding: 24px;
         border-radius: 12px;
@@ -93,12 +93,12 @@ export function renderDashboardContent(options: DashboardOptions): string {
 
       .onboarding-card .btn {
         background: white;
-        color: #f5576c;
+        color: #2E7D32;
       }
 
       .event-card {
-        background: #f8f9fa;
-        border-radius: 8px;
+        background: var(--bg-muted);
+        border-radius: var(--radius-md);
         padding: 16px;
         margin-bottom: 12px;
         border-left: 4px solid var(--primary-color);
@@ -113,45 +113,45 @@ export function renderDashboardContent(options: DashboardOptions): string {
 
       .event-title {
         font-weight: 600;
-        color: #333;
+        color: var(--text-primary);
       }
 
       .event-date {
         font-size: 13px;
-        color: #666;
+        color: var(--text-secondary);
         margin-bottom: 4px;
       }
 
       .event-meta {
         font-size: 12px;
-        color: #888;
+        color: var(--text-muted);
       }
 
       .status-badge {
         padding: 4px 10px;
-        border-radius: 20px;
+        border-radius: var(--radius-full);
         font-size: 11px;
         font-weight: 600;
       }
 
       .status-synced {
-        background: #d4edda;
-        color: #155724;
+        background: var(--success-light);
+        color: #2E7D32;
       }
 
       .status-pending {
-        background: #fff3cd;
-        color: #856404;
+        background: var(--warning-light);
+        color: #92400E;
       }
 
       .status-failed {
-        background: #f8d7da;
-        color: #721c24;
+        background: var(--danger-light);
+        color: var(--danger-dark);
       }
 
       .empty-state {
         text-align: center;
-        color: #666;
+        color: var(--text-muted);
         font-style: italic;
         padding: 30px;
       }
@@ -165,30 +165,31 @@ export function renderDashboardContent(options: DashboardOptions): string {
 
       .action-result {
         margin-top: 15px;
-        padding: 12px;
-        border-radius: 8px;
+        padding: 14px;
+        border-radius: var(--radius-md);
+        font-weight: 500;
         display: none;
       }
 
       .action-result.success {
-        background: #d4edda;
-        color: #155724;
+        background: var(--success-light);
+        color: #2E7D32;
       }
 
       .action-result.error {
-        background: #f8d7da;
-        color: #721c24;
+        background: var(--danger-light);
+        color: var(--danger-dark);
       }
 
       .admin-section {
-        border: 2px dashed #e0e0e0;
-        border-radius: 12px;
+        border: 2px dashed var(--border-light);
+        border-radius: var(--radius-lg);
         padding: 20px;
-        background: #fafafa;
+        background: var(--bg-muted);
       }
 
       .admin-section-title {
-        color: #dc3545;
+        color: var(--warning-color);
         font-size: 12px;
         text-transform: uppercase;
         letter-spacing: 1px;
@@ -199,15 +200,19 @@ export function renderDashboardContent(options: DashboardOptions): string {
       }
 
       .danger-zone {
-        border-color: #f8d7da;
-        background: #fff5f5;
+        border-color: #FFCDD2;
+        background: var(--danger-light);
+      }
+
+      .danger-zone .admin-section-title {
+        color: var(--danger-dark);
       }
     </style>
 
     <div class="dashboard-grid">
       <!-- Welcome Card -->
       <div class="welcome-card">
-        <h2>👋 Welcome to Inbox Manager</h2>
+        <h2>👋 Welcome to Family Assistant</h2>
         <p>Your personal productivity hub for managing school emails and family tasks.</p>
       </div>
 
