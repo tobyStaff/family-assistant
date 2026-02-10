@@ -169,7 +169,11 @@ function extractSchoolNameFromSender(name: string): string {
 export async function rankSenderRelevance(
   senders: SenderInput[]
 ): Promise<RankedSender[]> {
-  if (senders.length === 0) return [];
+  console.log(`[rankSenderRelevance] Called with ${senders.length} senders`);
+  if (senders.length === 0) {
+    console.log(`[rankSenderRelevance] No senders, returning empty`);
+    return [];
+  }
 
   // Pre-score known school platforms (no AI needed)
   const scores: { relevance: number; category: 'school' | 'activity' | 'other'; school_name: string; year_hints: string[] }[] = senders.map(s => {
@@ -238,14 +242,24 @@ ${JSON.stringify(batch, null, 2)}
 Return ONLY the JSON array, no other text.`;
 
     try {
-      const response = await openai.chat.completions.create({
+      console.log(`[senderRelevanceRanker] Calling OpenAI for batch ${batchStart}-${batchStart + batch.length}...`);
+
+      // Add timeout to prevent hanging
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('OpenAI API timeout after 30s')), 30000)
+      );
+
+      const apiPromise = openai.chat.completions.create({
         model: 'gpt-4o-mini',
         messages: [{ role: 'user', content: prompt }],
         temperature: 0.1,
         response_format: { type: 'json_object' },
       });
 
+      const response = await Promise.race([apiPromise, timeoutPromise]);
+
       const content = response.choices[0]?.message?.content?.trim() || '';
+      console.log(`[senderRelevanceRanker] OpenAI response received, parsing...`);
       const parsed = JSON.parse(content);
       const results = Array.isArray(parsed) ? parsed : parsed.senders || parsed.results || [];
 
@@ -261,6 +275,7 @@ Return ONLY the JSON array, no other text.`;
           };
         }
       }
+      console.log(`[senderRelevanceRanker] Batch complete, scored ${results.length} senders`);
     } catch (err: any) {
       console.error('[senderRelevanceRanker] AI ranking failed for batch:', err.message);
       // Keep default scores for this batch

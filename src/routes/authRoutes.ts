@@ -1674,6 +1674,8 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
           }
 
           // --- Inbox scan ---
+          let scanPollInterval = null;
+
           async function scanInbox() {
             // Hide button, show loading
             document.getElementById('scan-initial').style.display = 'none';
@@ -1685,15 +1687,17 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
               'This typically takes about a minute'
             );
             loadingContainer.style.display = 'block';
-            startFakeProgress('scan', 60000); // 60 second estimate
+            startFakeProgress('scan', 90000); // 90 second estimate for background scan
 
             try {
+              // Start the background scan
               const res = await fetch('/onboarding/scan-inbox', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({}),
               });
               const data = await res.json();
+
               if (!res.ok) {
                 // If Gmail not connected, redirect back to step 1
                 if (res.status === 401 || data.error === 'Gmail not connected') {
@@ -1701,37 +1705,74 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
                   showMessage('error', data.message || 'Gmail connection lost. Please reconnect.');
                   loadingContainer.style.display = 'none';
                   document.getElementById('scan-initial').style.display = '';
-                  // Optionally redirect to step 1
                   setTimeout(() => { showStep('step-welcome'); }, 2000);
                   return;
                 }
                 throw new Error(data.message || 'Scan failed');
               }
 
-              completeProgress('scan');
-              updateLoadingText('scan', 'Scan complete!', 'Found ' + data.senders.length + ' senders');
-
-              allSenders = data.senders;
-              senderPage = 0;
-              senderSubStep = 'A';
-              rerankedMidSenders = [];
-
-              // Update step indicators - mark Connect as completed, Senders as active
-              document.getElementById('step-indicator-1').classList.add('completed');
-              document.getElementById('step-indicator-2').classList.add('active');
-
-              // Brief pause to show completion, then proceed
-              setTimeout(() => {
-                renderSenderPage();
-                showStep('step-senders');
-              }, 800);
+              // Start polling for status
+              pollScanStatus();
             } catch (err) {
               completeProgress('scan');
               showMessage('error', 'Scan failed: ' + err.message);
-              // Show button again
               loadingContainer.style.display = 'none';
               document.getElementById('scan-initial').style.display = '';
             }
+          }
+
+          async function pollScanStatus() {
+            const loadingContainer = document.getElementById('scan-loading');
+
+            scanPollInterval = setInterval(async () => {
+              try {
+                const res = await fetch('/onboarding/scan-inbox/status');
+                const data = await res.json();
+                console.log('Scan status poll:', data.status, data);
+
+                if (data.status === 'pending') {
+                  updateLoadingText('scan', 'Starting scan...', 'Preparing to scan your inbox');
+                } else if (data.status === 'scanning') {
+                  updateLoadingText('scan', 'Scanning your inbox...', 'Fetching emails from Gmail');
+                } else if (data.status === 'ranking') {
+                  updateLoadingText('scan', 'Analyzing senders...', 'Using AI to identify relevant contacts');
+                } else if (data.status === 'complete') {
+                  clearInterval(scanPollInterval);
+                  scanPollInterval = null;
+
+                  const senders = data.senders || [];
+                  completeProgress('scan');
+                  updateLoadingText('scan', 'Scan complete!', 'Found ' + senders.length + ' senders');
+
+                  allSenders = senders;
+                  senderPage = 0;
+                  senderSubStep = 'A';
+                  rerankedMidSenders = [];
+
+                  // Update step indicators
+                  document.getElementById('step-indicator-1').classList.add('completed');
+                  document.getElementById('step-indicator-2').classList.add('active');
+
+                  setTimeout(() => {
+                    renderSenderPage();
+                    showStep('step-senders');
+                  }, 800);
+                } else if (data.status === 'failed') {
+                  clearInterval(scanPollInterval);
+                  scanPollInterval = null;
+
+                  completeProgress('scan');
+                  showMessage('error', 'Scan failed: ' + (data.error || 'Unknown error'));
+                  loadingContainer.style.display = 'none';
+                  document.getElementById('scan-initial').style.display = '';
+                } else {
+                  console.log('Unknown scan status:', data.status);
+                }
+              } catch (err) {
+                // Network error - keep polling
+                console.error('Poll error:', err);
+              }
+            }, 2000); // Poll every 2 seconds
           }
 
           function getCategoryBadge(category) {
@@ -2016,6 +2057,7 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
           // --- Training step ---
           let trainingItems = [];
           let trainingGrades = {}; // id -> true/false
+          let extractPollInterval = null;
 
           async function startTrainingExtraction() {
             const loadingContainer = document.getElementById('train-loading');
@@ -2027,33 +2069,15 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
             );
             loadingContainer.style.display = 'block';
             document.getElementById('train-items').style.display = 'none';
-            startFakeProgress('train-extract', 60000); // 60 second estimate
+            startFakeProgress('train-extract', 90000); // 90 second estimate for background job
 
             try {
               const res = await fetch('/onboarding/extract-for-training', { method: 'POST' });
               const data = await res.json();
               if (!res.ok) throw new Error(data.message || 'Extraction failed');
 
-              completeProgress('train-extract');
-              trainingItems = data.items || [];
-
-              updateLoadingText('train-extract', 'Extraction complete!', 'Found ' + trainingItems.length + ' items');
-
-              setTimeout(() => {
-                document.getElementById('train-loading').style.display = 'none';
-                document.getElementById('train-items').style.display = 'block';
-
-                if (trainingItems.length === 0) {
-                  document.getElementById('train-items-list').style.display = 'none';
-                  document.getElementById('train-empty').style.display = 'block';
-                  document.getElementById('save-train-btn').disabled = false;
-                  document.getElementById('save-train-btn').textContent = 'Continue';
-                } else {
-                  document.getElementById('train-items-list').style.display = 'block';
-                  document.getElementById('train-empty').style.display = 'none';
-                  renderTrainingItems();
-                }
-              }, 800);
+              // Start polling for status
+              pollExtractionStatus();
             } catch (err) {
               completeProgress('train-extract');
               document.getElementById('train-loading').style.display = 'none';
@@ -2069,6 +2093,67 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
               document.getElementById('save-train-btn').disabled = false;
               document.getElementById('save-train-btn').textContent = 'Skip this step';
             }
+          }
+
+          async function pollExtractionStatus() {
+            extractPollInterval = setInterval(async () => {
+              try {
+                const res = await fetch('/onboarding/extract-for-training/status');
+                const data = await res.json();
+
+                if (data.status === 'pending') {
+                  updateLoadingText('train-extract', 'Starting extraction...', 'Preparing to analyze your emails');
+                } else if (data.status === 'scanning') {
+                  updateLoadingText('train-extract', 'Extracting items...', 'Analyzing emails for todos and events');
+                } else if (data.status === 'ranking') {
+                  updateLoadingText('train-extract', 'Processing items...', 'Almost done');
+                } else if (data.status === 'complete') {
+                  clearInterval(extractPollInterval);
+                  extractPollInterval = null;
+
+                  completeProgress('train-extract');
+                  trainingItems = data.items || [];
+
+                  updateLoadingText('train-extract', 'Extraction complete!', 'Found ' + trainingItems.length + ' items');
+
+                  setTimeout(() => {
+                    document.getElementById('train-loading').style.display = 'none';
+                    document.getElementById('train-items').style.display = 'block';
+
+                    if (trainingItems.length === 0) {
+                      document.getElementById('train-items-list').style.display = 'none';
+                      document.getElementById('train-empty').style.display = 'block';
+                      document.getElementById('save-train-btn').disabled = false;
+                      document.getElementById('save-train-btn').textContent = 'Continue';
+                    } else {
+                      document.getElementById('train-items-list').style.display = 'block';
+                      document.getElementById('train-empty').style.display = 'none';
+                      renderTrainingItems();
+                    }
+                  }, 800);
+                } else if (data.status === 'failed') {
+                  clearInterval(extractPollInterval);
+                  extractPollInterval = null;
+
+                  completeProgress('train-extract');
+                  document.getElementById('train-loading').style.display = 'none';
+                  document.getElementById('train-items').style.display = 'block';
+                  document.getElementById('train-items-list').style.display = 'none';
+                  document.getElementById('train-empty').style.display = 'block';
+                  document.getElementById('train-empty').innerHTML = \`
+                    <div style="font-size:48px;margin-bottom:16px;">⚠️</div>
+                    <h3 style="font-size:18px;color:#1E4562;margin-bottom:8px;">Extraction failed</h3>
+                    <p style="color:#4A6B8A;font-size:14px;margin-bottom:20px;">\${data.error || 'Something went wrong. Please try again.'}</p>
+                    <button class="btn btn-primary" onclick="retryTrainingExtraction()" style="margin-bottom:12px;">Retry</button>
+                  \`;
+                  document.getElementById('save-train-btn').disabled = false;
+                  document.getElementById('save-train-btn').textContent = 'Skip this step';
+                }
+              } catch (err) {
+                // Network error - keep polling
+                console.error('Poll error:', err);
+              }
+            }, 2000); // Poll every 2 seconds
           }
 
           function retryTrainingExtraction() {
@@ -2318,6 +2403,8 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
           }
 
           // --- First email ---
+          let emailGenPollInterval = null;
+
           async function generateFirstEmail() {
             const btn = document.getElementById('first-email-btn');
             const sendGroup = document.getElementById('send-email-group');
@@ -2332,21 +2419,15 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
               'This typically takes 1-2 minutes'
             );
             loadingContainer.style.display = 'block';
-            startFakeProgress('first-email', 90000); // 90 second estimate
+            startFakeProgress('first-email', 120000); // 120 second estimate for background job
 
             try {
               const res = await fetch('/onboarding/generate-first-email', { method: 'POST' });
               const data = await res.json();
-              if (!res.ok) throw new Error(data.message || 'Failed to send');
+              if (!res.ok) throw new Error(data.message || 'Failed to start');
 
-              completeProgress('first-email');
-              updateLoadingText('first-email', 'Email sent!', 'Check your inbox');
-
-              setTimeout(() => {
-                loadingContainer.style.display = 'none';
-                result.style.display = 'block';
-                result.innerHTML = '<div class="message success">' + data.message + '</div>';
-              }, 1000);
+              // Start polling for status
+              pollEmailGenStatus();
             } catch (err) {
               completeProgress('first-email');
               loadingContainer.style.display = 'none';
@@ -2354,6 +2435,52 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
               result.style.display = 'block';
               result.innerHTML = '<div class="message error">Failed: ' + err.message + '</div>';
             }
+          }
+
+          async function pollEmailGenStatus() {
+            const loadingContainer = document.getElementById('first-email-loading');
+            const sendGroup = document.getElementById('send-email-group');
+            const result = document.getElementById('first-email-result');
+
+            emailGenPollInterval = setInterval(async () => {
+              try {
+                const res = await fetch('/onboarding/generate-first-email/status');
+                const data = await res.json();
+
+                if (data.status === 'pending') {
+                  updateLoadingText('first-email', 'Starting...', 'Preparing to generate your email');
+                } else if (data.status === 'scanning') {
+                  updateLoadingText('first-email', 'Fetching emails...', 'Gathering your recent emails');
+                } else if (data.status === 'ranking') {
+                  updateLoadingText('first-email', 'Sending email...', 'Almost done!');
+                } else if (data.status === 'complete') {
+                  clearInterval(emailGenPollInterval);
+                  emailGenPollInterval = null;
+
+                  completeProgress('first-email');
+                  updateLoadingText('first-email', 'Email sent!', 'Check your inbox');
+
+                  setTimeout(() => {
+                    loadingContainer.style.display = 'none';
+                    result.style.display = 'block';
+                    const recipientList = (data.recipients || []).join(', ');
+                    result.innerHTML = '<div class="message success">Email sent to ' + recipientList + '</div>';
+                  }, 1000);
+                } else if (data.status === 'failed') {
+                  clearInterval(emailGenPollInterval);
+                  emailGenPollInterval = null;
+
+                  completeProgress('first-email');
+                  loadingContainer.style.display = 'none';
+                  sendGroup.style.display = '';
+                  result.style.display = 'block';
+                  result.innerHTML = '<div class="message error">Failed: ' + (data.error || 'Unknown error') + '</div>';
+                }
+              } catch (err) {
+                // Network error - keep polling
+                console.error('Poll error:', err);
+              }
+            }, 2000); // Poll every 2 seconds
           }
 
           // Check if send permission was just granted

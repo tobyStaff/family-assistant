@@ -935,6 +935,62 @@ function runMigrations() {
 
     console.log('Migration 17 completed');
   }
+
+  // Migration 18: Create onboarding_scans table for background inbox scanning
+  if (version < 18) {
+    console.log('Running migration 18: Creating onboarding_scans table for background processing');
+
+    db.transaction(() => {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS onboarding_scans (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          user_id TEXT NOT NULL,
+          status TEXT NOT NULL DEFAULT 'pending'
+            CHECK(status IN ('pending', 'scanning', 'ranking', 'complete', 'failed')),
+          result_json TEXT,
+          error_message TEXT,
+          started_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          completed_at DATETIME,
+          FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
+        );
+
+        -- Index for user lookups
+        CREATE INDEX IF NOT EXISTS idx_onboarding_scans_user ON onboarding_scans(user_id);
+        CREATE INDEX IF NOT EXISTS idx_onboarding_scans_status ON onboarding_scans(status);
+      `);
+
+      // Record migration
+      db.prepare('INSERT INTO schema_version (version, description) VALUES (?, ?)').run(
+        18,
+        'Create onboarding_scans table for background inbox scanning during onboarding'
+      );
+    })();
+
+    console.log('Migration 18 completed');
+  }
+
+  // Migration 19: Add job_type to onboarding_scans for multiple job types
+  if (version < 19) {
+    console.log('Running migration 19: Adding job_type to onboarding_scans');
+
+    db.transaction(() => {
+      // Add job_type column
+      db.exec(`ALTER TABLE onboarding_scans ADD COLUMN job_type TEXT DEFAULT 'scan_inbox';`);
+
+      // Update status check constraint to include new statuses
+      // SQLite doesn't support ALTER CONSTRAINT, but CHECK was added in initial create
+      // We'll just add an index for job_type lookups
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_onboarding_scans_job_type ON onboarding_scans(job_type);`);
+
+      // Record migration
+      db.prepare('INSERT INTO schema_version (version, description) VALUES (?, ?)').run(
+        19,
+        'Add job_type column to onboarding_scans for extract-for-training and generate-first-email jobs'
+      );
+    })();
+
+    console.log('Migration 19 completed');
+  }
 }
 
 // Run migrations after initial table creation
