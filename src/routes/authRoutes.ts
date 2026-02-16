@@ -2246,6 +2246,8 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
           }
 
           // --- Child extraction ---
+          let analyzePollInterval = null;
+
           async function startChildExtraction() {
             // Mark Train step as completed and Children step as active
             document.getElementById('step-indicator-3').classList.add('completed');
@@ -2273,32 +2275,67 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
               const data = await res.json();
               if (!res.ok) throw new Error(data.message || 'Analysis failed');
 
-              completeProgress('analyze');
-              analysisResult = data.result;
-              childrenData = analysisResult.children.map(child => ({
-                real_name: child.name,
-                display_name: '',
-                year_group: child.year_group || '',
-                school_name: child.school_name || '',
-                confidence: child.confidence,
-                example_emails: child.example_emails || [],
-                notes: '',
-              }));
-
-              updateLoadingText('analyze',
-                'Found ' + childrenData.length + ' child' + (childrenData.length !== 1 ? 'ren' : '') + '!',
-                'Analyzed ' + analysisResult.email_count_analyzed + ' emails'
-              );
-
-              setTimeout(() => {
-                renderChildCards();
-                showStep('step-children');
-              }, 1000);
+              // Start polling for status
+              pollAnalyzeStatus();
             } catch (err) {
               completeProgress('analyze');
               showMessage('error', 'Analysis failed: ' + err.message);
               showStep('step-schools');
             }
+          }
+
+          async function pollAnalyzeStatus() {
+            analyzePollInterval = setInterval(async () => {
+              try {
+                const res = await fetch('/onboarding/analyze/status');
+                const data = await res.json();
+
+                console.log('Analyze status poll:', data.status, data);
+
+                if (data.status === 'pending') {
+                  updateLoadingText('analyze', 'Starting analysis...', 'Preparing to analyze your emails');
+                } else if (data.status === 'scanning') {
+                  updateLoadingText('analyze', 'Analyzing emails...', 'Finding child names and schools');
+                } else if (data.status === 'ranking') {
+                  updateLoadingText('analyze', 'Processing results...', 'Almost done');
+                } else if (data.status === 'complete') {
+                  clearInterval(analyzePollInterval);
+                  analyzePollInterval = null;
+
+                  completeProgress('analyze');
+                  analysisResult = data.result;
+                  childrenData = analysisResult.children.map(child => ({
+                    real_name: child.name,
+                    display_name: '',
+                    year_group: child.year_group || '',
+                    school_name: child.school_name || '',
+                    confidence: child.confidence,
+                    example_emails: child.example_emails || [],
+                    notes: '',
+                  }));
+
+                  updateLoadingText('analyze',
+                    'Found ' + childrenData.length + ' child' + (childrenData.length !== 1 ? 'ren' : '') + '!',
+                    'Analyzed ' + analysisResult.email_count_analyzed + ' emails'
+                  );
+
+                  setTimeout(() => {
+                    renderChildCards();
+                    showStep('step-children');
+                  }, 1000);
+                } else if (data.status === 'failed') {
+                  clearInterval(analyzePollInterval);
+                  analyzePollInterval = null;
+
+                  completeProgress('analyze');
+                  showMessage('error', 'Analysis failed: ' + (data.error || 'Something went wrong'));
+                  showStep('step-schools');
+                }
+              } catch (err) {
+                // Network error - keep polling
+                console.error('Analyze poll error:', err);
+              }
+            }, 2000); // Poll every 2 seconds
           }
 
           // --- Child cards ---

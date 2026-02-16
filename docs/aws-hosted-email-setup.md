@@ -25,7 +25,7 @@ User forwards email → SES receives → S3 stores → Lambda parses → Webhook
 
 ### 1.2 Create IAM User for Administration
 1. Go to IAM Console → Users → Create user
-2. Username: `inbox-manager-admin`
+2. Username: `family-assistant-manager`
 3. Select "Provide user access to AWS Management Console"
 4. Attach policies: `AdministratorAccess` (or more restrictive if preferred)
 5. Save the credentials securely
@@ -124,6 +124,9 @@ Value: [verification-string-from-ses]
 ## Step 4: Configure MX Records
 
 Add an MX record to route emails to SES:
+
+⏺ Region: Got it - that's eu-north-1. The MX record endpoint would be                                     
+  inbound-smtp.eu-north-1.amazonaws.com and SES client should use region: 'eu-north-1'.
 
 ```
 Type: MX

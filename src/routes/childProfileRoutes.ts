@@ -91,7 +91,8 @@ const UpdateProfileSchema = z.object({
 export async function childProfileRoutes(fastify: FastifyInstance): Promise<void> {
   /**
    * POST /onboarding/analyze
-   * Analyze emails to extract child profile information
+   * Start background analysis to extract child profile information.
+   * Returns immediately - poll GET /onboarding/analyze/status for results.
    */
   fastify.post<{
     Body: z.infer<typeof OnboardingAnalysisSchema>;
@@ -106,71 +107,94 @@ export async function childProfileRoutes(fastify: FastifyInstance): Promise<void
 
     try {
       const userId = getUserId(request);
-      const auth = await getUserAuth(request);
-      const provider = bodyResult.data.aiProvider || 'openai';
 
-      fastify.log.info({ userId, provider }, 'Starting onboarding analysis');
-
-      // Build sender filter query from included senders
-      const includedSenders = getIncludedSenders(userId);
-      let senderQuery = '';
-      if (includedSenders.length > 0) {
-        // Gmail "from:" OR query: from:a@b.com OR from:c@d.com
-        senderQuery = includedSenders.map(s => `from:${s}`).join(' OR ');
-        senderQuery = `{${senderQuery}}`;
-      }
-
-      // Fetch last 90 days of emails with full body, filtered by included senders
-      fastify.log.info({ userId, includedSenders: includedSenders.length, senderQuery }, 'Fetching emails for analysis');
-      const rawEmails = await fetchRecentEmailsWithBody(auth, 'last90days', 100, senderQuery);
-
-      // Map to EmailMetadata with body text
-      const emails = rawEmails.map(e => ({
-        ...e,
-        bodyText: e.body,
-      }));
-
-      fastify.log.info(
-        { userId, emailCount: emails.length },
-        'Fetched emails for analysis'
-      );
-
-      if (emails.length === 0) {
+      // Check if analysis already in progress
+      if (isJobInProgress(userId, 'analyze_children')) {
         return reply.code(200).send({
           success: true,
-          message: 'No emails found in the last 90 days',
-          result: {
-            children: [],
-            schools_detected: [],
-            email_count_analyzed: 0,
-            date_range: {
-              from: new Date().toISOString(),
-              to: new Date().toISOString(),
-            },
-          },
+          status: 'scanning',
+          message: 'Analysis already in progress',
         });
       }
 
-      // Extract child profiles using AI
-      const result = await extractChildProfiles(emails, provider, bodyResult.data.schoolContext);
+      // Get auth before starting background job
+      let auth;
+      try {
+        auth = await getUserAuth(request);
+      } catch (authError: any) {
+        return reply.code(401).send({
+          error: 'Gmail not connected',
+          message: authError.message,
+        });
+      }
 
-      fastify.log.info(
-        {
-          userId,
-          childrenFound: result.children.length,
-          schoolsFound: result.schools_detected.length,
-        },
-        'Onboarding analysis completed'
-      );
+      const provider = bodyResult.data.aiProvider || 'openai';
+      const schoolContext = bodyResult.data.schoolContext;
 
-      return reply.code(200).send({
+      // Create job record
+      const jobId = createJob(userId, 'analyze_children');
+      console.log(`[POST /analyze] Created job ${jobId} for user ${userId}`);
+      fastify.log.info({ userId, jobId }, 'Starting background child analysis');
+
+      // Start background analysis (don't await!)
+      runBackgroundAnalysis(jobId, userId, auth, provider, schoolContext, fastify.log).catch(err => {
+        console.error(`[POST /analyze] Background analysis error:`, err);
+        fastify.log.error({ err, jobId, userId }, 'Background analysis failed');
+      });
+
+      // Return immediately
+      return reply.code(202).send({
         success: true,
-        result,
+        status: 'scanning',
+        message: 'Analysis started. Poll /onboarding/analyze/status for results.',
+        jobId,
       });
     } catch (error: any) {
-      fastify.log.error({ err: error }, 'Error in onboarding analysis');
+      fastify.log.error({ err: error }, 'Error starting analysis');
       return reply.code(500).send({
-        error: 'Failed to analyze emails',
+        error: 'Failed to start analysis',
+        message: error.message,
+      });
+    }
+  });
+
+  /**
+   * GET /onboarding/analyze/status
+   * Check the status of background child analysis.
+   */
+  fastify.get('/onboarding/analyze/status', { preHandler: requireAuth }, async (request, reply) => {
+    try {
+      const userId = getUserId(request);
+      const job = getLatestJob(userId, 'analyze_children');
+
+      if (!job) {
+        return reply.code(404).send({
+          error: 'No analysis found',
+          message: 'No analysis has been started.',
+        });
+      }
+
+      const response: any = {
+        status: job.status,
+        started_at: job.started_at.toISOString(),
+      };
+
+      if (job.status === 'complete' && job.result_json) {
+        const result = JSON.parse(job.result_json);
+        response.result = result;
+        response.completed_at = job.completed_at?.toISOString();
+        response.success = true;
+      } else if (job.status === 'failed') {
+        response.error = job.error_message || 'Analysis failed';
+        response.completed_at = job.completed_at?.toISOString();
+        response.success = false;
+      }
+
+      return reply.code(200).send(response);
+    } catch (error: any) {
+      fastify.log.error({ err: error }, 'Error getting analysis status');
+      return reply.code(500).send({
+        error: 'Failed to get status',
         message: error.message,
       });
     }
@@ -1392,6 +1416,84 @@ async function runBackgroundGenerateEmail(
     });
   } catch (error: any) {
     log.error({ err: error, jobId, userId }, 'Background email generation failed');
+    failJob(jobId, error.message || 'Unknown error');
+  }
+}
+
+/**
+ * Run child profile analysis in the background.
+ * Fetches emails and extracts child profiles using AI.
+ */
+async function runBackgroundAnalysis(
+  jobId: number,
+  userId: string,
+  auth: any,
+  provider: 'openai' | 'anthropic',
+  schoolContext: Array<{ name: string; year_groups: string[] }> | undefined,
+  log: any
+): Promise<void> {
+  try {
+    updateJobStatus(jobId, 'scanning');
+    console.log(`[ANALYZE ${jobId}] Starting - fetching emails`);
+    log.info({ jobId, userId, provider }, 'Background analysis: starting');
+
+    // Build sender filter query from included senders
+    const includedSenders = getIncludedSenders(userId);
+    let senderQuery = '';
+    if (includedSenders.length > 0) {
+      senderQuery = includedSenders.map(s => `from:${s}`).join(' OR ');
+      senderQuery = `{${senderQuery}}`;
+    }
+
+    // Fetch emails (reduced from 100 to 50 to avoid timeouts)
+    log.info({ jobId, userId, senderCount: includedSenders.length }, 'Background analysis: fetching emails');
+    const rawEmails = await fetchRecentEmailsWithBody(auth, 'last30days', 50, senderQuery);
+
+    console.log(`[ANALYZE ${jobId}] Fetched ${rawEmails.length} emails`);
+    log.info({ jobId, userId, emailCount: rawEmails.length }, 'Background analysis: emails fetched');
+
+    if (rawEmails.length === 0) {
+      // Complete with empty result
+      completeJob(jobId, {
+        children: [],
+        schools_detected: [],
+        email_count_analyzed: 0,
+        date_range: {
+          from: new Date().toISOString(),
+          to: new Date().toISOString(),
+        },
+      });
+      return;
+    }
+
+    // Map to format expected by extractChildProfiles
+    const emails = rawEmails.map(e => ({
+      ...e,
+      bodyText: e.body,
+    }));
+
+    // Update status to ranking (analysis phase)
+    updateJobStatus(jobId, 'ranking');
+    console.log(`[ANALYZE ${jobId}] Analyzing ${emails.length} emails with ${provider}`);
+    log.info({ jobId, userId }, 'Background analysis: extracting child profiles');
+
+    // Extract child profiles using AI
+    const result = await extractChildProfiles(emails, provider, schoolContext);
+
+    console.log(`[ANALYZE ${jobId}] Found ${result.children.length} children, ${result.schools_detected.length} schools`);
+    log.info({
+      jobId,
+      userId,
+      childrenFound: result.children.length,
+      schoolsFound: result.schools_detected.length,
+    }, 'Background analysis: complete');
+
+    // Mark as complete
+    completeJob(jobId, result);
+    console.log(`[ANALYZE ${jobId}] Done!`);
+  } catch (error: any) {
+    console.error(`[ANALYZE ${jobId}] ERROR:`, error);
+    log.error({ err: error, jobId, userId }, 'Background analysis failed');
     failJob(jobId, error.message || 'Unknown error');
   }
 }
