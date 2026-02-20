@@ -260,17 +260,108 @@ curl -X POST http://localhost:3000/api/email/inbound \
 
 Once SES domain verification completes:
 
-1. **Create SES Receipt Rule Set**
-   - Go to SES Console → Email receiving → Rule sets
-   - Create rule set: `getfamilyassistant-inbound`
-   - Create rule with S3 + Lambda actions
-   - Set as active
+---
 
-2. **Test End-to-End**
-   - Send real email to `youralias@inbox.getfamilyassistant.com`
-   - Check CloudWatch logs
-   - Verify email in app
+### 10. Create SES Receipt Rule Set
 
-3. **Request Production Access**
-   - SES Console → Account dashboard
-   - Request production access to send to non-verified emails
+#### 10.1 Create the Rule Set
+
+1. Go to **SES Console** (make sure you're in **eu-north-1**)
+2. In the left sidebar, click **Email receiving** → **Rule sets**
+3. Click **Create rule set**
+4. **Rule set name:** `getfamilyassistant-inbound`
+5. Click **Create rule set**
+
+#### 10.2 Create the Receipt Rule
+
+1. Click on your new rule set `getfamilyassistant-inbound`
+2. Click **Create rule**
+
+**Step 1 - Rule settings:**
+- **Rule name:** `process-all-emails`
+- **Status:** Enabled
+- Click **Next**
+
+**Step 2 - Recipient conditions:**
+- Leave empty for catch-all (receives all emails to `*@inbox.getfamilyassistant.com`)
+- Or add specific condition: `inbox.getfamilyassistant.com` to only accept emails for that subdomain
+- Click **Next**
+
+**Step 3 - Actions (add in this order):**
+
+1. Click **Add new action** → **Deliver to Amazon S3 bucket**
+   - **S3 bucket:** `getfamilyassistant-inbound-emails`
+   - **Object key prefix:** leave empty
+   - Click **Add action**
+
+2. Click **Add new action** → **Invoke AWS Lambda function**
+   - **Lambda function:** `getfamilyassistant-email-processor`
+   - **Invocation type:** Event (asynchronous)
+   - If prompted to add permissions, click **Add permissions** to allow SES to invoke Lambda
+   - Click **Add action**
+
+3. Click **Next**
+
+**Step 4 - Review:**
+- Review all settings
+- Click **Create rule**
+
+#### 10.3 Set Rule Set as Active
+
+1. Go back to **Email receiving** → **Rule sets**
+2. Select `getfamilyassistant-inbound`
+3. Click **Set as active**
+4. Confirm when prompted
+
+**Note:** Only one rule set can be active at a time. If you had another active rule set, it will be deactivated.
+
+#### 10.4 Verify Setup
+
+Your email flow is now:
+```
+Email arrives → SES receives → S3 stores raw email → Lambda invoked → Lambda calls webhook → App stores email
+```
+
+---
+
+### 11. Test End-to-End
+
+1. **Create a test alias in your app:**
+   ```bash
+   # Via API (while logged in) or directly in DB:
+   sqlite3 data/inbox.db "UPDATE users SET hosted_email_alias = 'testalias' WHERE email = 'your@email.com';"
+   ```
+
+2. **Send a test email:**
+   - From any email account, send to `testalias@inbox.getfamilyassistant.com`
+   - Use a clear subject like "SES Test Email"
+
+3. **Check CloudWatch Logs:**
+   - Go to **CloudWatch** → **Log groups**
+   - Find `/aws/lambda/getfamilyassistant-email-processor`
+   - Look for recent log stream
+   - Should see: "Processing email...", "Calling webhook...", "Successfully processed..."
+
+4. **Check your app:**
+   - The email should appear in the stored emails for that user
+   - Check your app logs for "Inbound email stored successfully"
+
+5. **Troubleshooting:**
+   - No logs in CloudWatch? → Check SES rule is active, MX records correct
+   - Lambda error? → Check S3 bucket name, IAM permissions
+   - Webhook failed? → Check WEBHOOK_URL and WEBHOOK_SECRET match
+
+---
+
+### 12. Request Production Access (For Outbound)
+
+To send emails to non-verified recipients:
+
+1. Go to **SES Console** → **Account dashboard**
+2. In the "Your Amazon SES account is in the sandbox" banner, click **Request production access**
+3. Fill out the form:
+   - **Mail type:** Transactional
+   - **Website URL:** `https://getfamilyassistant.com`
+   - **Use case description:** Example:
+     > "We send daily email summaries to parents containing school-related information extracted from their inboxes. Users explicitly opt-in by connecting their email or setting up forwarding. Estimated volume: under 1,000 emails/day initially."
+4. Submit and wait for approval (usually 24-48 hours)

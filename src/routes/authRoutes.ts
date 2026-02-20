@@ -712,6 +712,8 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
     const userId = (request as any).userId;
     const user = getUser(userId);
     let currentStep = user?.onboarding_step ?? 0;
+    const userRoles = (request as any).userRoles as Role[] || ['STANDARD'];
+    const userIsAdmin = isAdmin(userRoles);
 
     fastify.log.info({ userId, currentStep, gmailConnected: user?.gmail_connected }, 'Loading onboarding page');
 
@@ -1387,6 +1389,12 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
         <div class="container">
           <div class="header">
             <h1>Family Assistant</h1>
+            ${userIsAdmin ? `
+            <form method="POST" action="/admin/skip-onboarding" style="margin:0">
+              <button type="submit" style="background:none;border:none;color:#9CA3AF;font-size:13px;cursor:pointer;padding:0;font-family:inherit">
+                Skip setup →
+              </button>
+            </form>` : ''}
           </div>
 
           <div id="message" class="message"></div>

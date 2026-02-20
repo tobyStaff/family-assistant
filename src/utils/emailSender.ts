@@ -2,6 +2,7 @@
 import { google } from 'googleapis';
 import type { OAuth2Client } from 'google-auth-library';
 import type { SchoolSummary } from '../types/summary.js';
+import { SESClient, SendEmailCommand } from '@aws-sdk/client-ses';
 
 /**
  * Format date for email display
@@ -144,8 +145,75 @@ function createEmailMessage(to: string, subject: string, html: string, text?: st
 }
 
 /**
+ * Build the from-address for SES outbound emails.
+ * Uses the user's hosted alias if set, falls back to familybriefing@<domain>.
+ */
+export function buildSesFromAddress(alias: string | null): string {
+  const domain = process.env.SES_FROM_DOMAIN || 'inbox.getfamilyassistant.com';
+  return alias ? `${alias}@${domain}` : `familybriefing@${domain}`;
+}
+
+/**
+ * Build the subject line for daily summary emails.
+ */
+export function buildSummarySubject(): string {
+  const today = new Date().toLocaleDateString('en-US', {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+  });
+  return `Daily Briefing (${today})`;
+}
+
+/**
+ * Send an email via AWS SES.
+ *
+ * @param html - HTML email body
+ * @param recipients - Array of recipient email addresses
+ * @param fromAddress - Full from address (e.g. toby@inbox.getfamilyassistant.com)
+ * @param subject - Email subject
+ * @returns Number of recipients the message was sent to
+ */
+export async function sendViaSES(
+  html: string,
+  recipients: string[],
+  fromAddress: string,
+  subject: string
+): Promise<number> {
+  const accessKeyId = process.env.AWS_ACCESS_KEY_ID;
+  const secretAccessKey = process.env.AWS_SECRET_ACCESS_KEY;
+
+  if (!accessKeyId || !secretAccessKey) {
+    throw new Error('AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY must be set to send via SES');
+  }
+
+  const client = new SESClient({
+    region: process.env.AWS_REGION || 'eu-north-1',
+    credentials: { accessKeyId, secretAccessKey },
+  });
+
+  const command = new SendEmailCommand({
+    Source: fromAddress,
+    Destination: {
+      ToAddresses: recipients,
+    },
+    Message: {
+      Subject: { Data: subject, Charset: 'UTF-8' },
+      Body: {
+        Html: { Data: html, Charset: 'UTF-8' },
+        Text: { Data: 'Please view this email in an HTML-enabled email client.', Charset: 'UTF-8' },
+      },
+    },
+  });
+
+  await client.send(command);
+  return recipients.length;
+}
+
+/**
  * Send daily summary email via Gmail API (legacy - kept for compatibility)
  *
+ * @deprecated Use sendViaSES instead.
  * @param auth - OAuth2 client for the user
  * @param summary - Daily summary data
  * @param userEmail - User's email address
@@ -185,9 +253,7 @@ export async function sendDailySummary(
 /**
  * Send inbox summary email with AI-generated content
  *
- * This is the main function for sending the new AI-powered email summaries.
- * Sends to multiple recipients if specified.
- *
+ * @deprecated Use sendViaSES instead.
  * @param auth - OAuth2 client for the user (used for Gmail sending)
  * @param summary - AI-generated school summary
  * @param html - Rendered HTML email

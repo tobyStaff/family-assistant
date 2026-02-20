@@ -32,6 +32,9 @@ services:
       # Base URL for email action buttons
       - BASE_URL=${BASE_URL_PROD}
 
+      # Hosted email webhook secret
+      - HOSTED_EMAIL_WEBHOOK_SECRET=${HOSTED_EMAIL_WEBHOOK_SECRET}
+
       # AI Provider (openai or anthropic)
       - AI_PROVIDER=${AI_PROVIDER:-openai}
       - AI_API_KEY=${AI_API_KEY}
@@ -41,6 +44,12 @@ services:
       # Cron schedule for daily summary (daily at 8 AM UTC)
       - CRON_SCHEDULE=${CRON_SCHEDULE:-0 0 8 * * *}
       - TZ=${TZ:-UTC}
+
+      # AWS SES (outbound email)
+      - AWS_REGION=${AWS_REGION:-eu-north-1}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - SES_FROM_DOMAIN=${SES_FROM_DOMAIN:-inbox.getfamilyassistant.com}
 
     # Auto-restart on failure or server reboot
     restart: always

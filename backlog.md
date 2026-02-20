@@ -19,16 +19,19 @@ X. READ more Buttons -> Sometimes the buttons say pay now when the todo is nothi
 1. "Linked todos" and events -> i may complete the volcano homework, but also need to remember which day to bring it to school, for example.
 2. "More detail" - Document links - render documents on a link for further reading. 1 click from the email.
 3. Capture WhatsApp group messages.
-4. Proper "onboarding".
-6. Ability to sync data from prod to dev, to mess around with.
 7. Dedicated email address - Custom email domains. (partially done requires AWS setup)
 8. Calendar integrations with Gmail and outlook.
 1. Add "Dev" tag to the Summary email subject title when sent from localhost (dev env)
+1. Outbound email - add 1st step to onboarding ux to choose between gmail embedding and custom email. Create the 2nd onboarding flow for custom email: choose email alias -> forward the last 10 school emails to your assistant -> setup forwarding rules in gmail -> test. 
+1. Public roadmap.
 
 Done
 X. Reading text from images. e.g pdf images, pngs etc.
 X. Retry functionality - is there a way for admin or a user to retry an email parsing.
 X. Store the original attachments.
+X. Proper "onboarding".
+X. Ability to sync data from prod to dev, to mess around with.
+
 
 -------------------------
 

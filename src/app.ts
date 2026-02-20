@@ -1,4 +1,7 @@
 // src/app.ts
+// IMPORTANT: Load env config FIRST before any other imports that read process.env
+import { fastifyEnvOptions } from './config/env.js';
+
 import Fastify from 'fastify';
 import fastifyEnv from '@fastify/env';
 import cookie from '@fastify/cookie';
@@ -24,7 +27,6 @@ import dailySummaryPlugin from './plugins/dailySummary.js';
 import metricsPlugin from './plugins/metrics.js';
 import { sessionMiddleware } from './middleware/session.js';
 import { requireAdmin } from './middleware/authorization.js';
-import { fastifyEnvOptions } from './config/env.js';
 
 /**
  * Build and configure Fastify application

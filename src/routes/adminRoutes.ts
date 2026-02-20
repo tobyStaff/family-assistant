@@ -9,10 +9,10 @@ import type { DateRange } from '../utils/inboxFetcher.js';
 import { analyzeInbox, type AIProvider } from '../parsers/summaryParser.js';
 import { renderSummaryEmail } from '../utils/emailRenderer.js';
 import { generateInboxSummary } from '../utils/summaryQueries.js';
-import { sendInboxSummary } from '../utils/emailSender.js';
+import { sendViaSES, buildSesFromAddress, buildSummarySubject } from '../utils/emailSender.js';
 import { getOrCreateDefaultSettings } from '../db/settingsDb.js';
 import { saveSummary } from '../db/summaryDb.js';
-import { getAllUsersWithRoles, getUser, getUserWithRoles, resetUserData } from '../db/userDb.js';
+import { getAllUsersWithRoles, getUser, getUserWithRoles, resetUserData, getHostedEmailAlias, updateOnboardingStep } from '../db/userDb.js';
 import type { Role } from '../types/roles.js';
 import { renderLayout } from '../templates/layout.js';
 import { renderAdminContent, renderAdminScripts } from '../templates/adminContent.js';
@@ -339,31 +339,16 @@ export async function adminRoutes(fastify: FastifyInstance): Promise<void> {
   });
 
   /**
-   * POST /admin/test-gmail-send
-   * Test Gmail send capability using the same code path as production
+   * POST /admin/test-ses-send
+   * Test SES send capability using the same code path as production
    */
-  fastify.post('/admin/test-gmail-send', { preHandler: [requireAdmin, requireNoImpersonation] }, async (request, reply) => {
+  fastify.post('/admin/test-ses-send', { preHandler: [requireAdmin, requireNoImpersonation] }, async (request, reply) => {
     try {
       const userId = getUserId(request);
-      const auth = await getUserAuth(request);
-      const { google } = await import('googleapis');
+      const user = getUser(userId);
 
-      fastify.log.info({ userId }, 'Testing Gmail send capability');
+      fastify.log.info({ userId }, 'Testing SES send capability');
 
-      // Check token info first
-      const tokenInfo = await auth.getTokenInfo(auth.credentials.access_token!);
-      const hasGmailSend = tokenInfo.scopes?.includes('https://www.googleapis.com/auth/gmail.send');
-
-      if (!hasGmailSend) {
-        return reply.code(200).send({
-          success: false,
-          issue: 'missing_scope',
-          message: 'Token does not have gmail.send scope',
-          scopes: tokenInfo.scopes,
-        });
-      }
-
-      // Create a test HTML email (same format as production emails)
       const testHtml = `
         <!DOCTYPE html>
         <html>
@@ -374,52 +359,35 @@ export async function adminRoutes(fastify: FastifyInstance): Promise<void> {
           </style>
         </head>
         <body>
-          <h1>📧 Gmail API Test</h1>
-          <p>This is a test message from Inbox Manager to verify Gmail send capability.</p>
-          <p>If you received this email, the Gmail API is working correctly.</p>
+          <h1>SES Test</h1>
+          <p>This is a test message from Inbox Manager to verify SES send capability.</p>
+          <p>If you received this email, AWS SES is working correctly.</p>
           <hr>
           <p style="color: #666; font-size: 0.9em;">Sent at: ${new Date().toISOString()}</p>
         </body>
         </html>
       `;
 
-      // Use the same sendInboxSummary function as production
-      // This tests the full email sending code path including MIME encoding
-      const dummySummary = {
-        email_analysis: { total_received: 0, signal_count: 0, noise_count: 0 },
-        summary: [],
-        kit_list: { tomorrow: [], upcoming: [] },
-        financials: [],
-        calendar_updates: [],
-        attachments_requiring_review: [],
-        recurring_activities: [],
-        pro_dad_insight: '',
-      };
+      const alias = getHostedEmailAlias(userId);
+      const fromAddress = buildSesFromAddress(alias);
 
       try {
-        const sentCount = await sendInboxSummary(auth, dummySummary, testHtml, [tokenInfo.email!]);
+        const sentCount = await sendViaSES(testHtml, [user!.email], fromAddress, 'SES Test Email');
 
         return reply.code(200).send({
           success: true,
-          message: 'Successfully sent test email using production code path!',
-          recipient: tokenInfo.email,
+          message: 'Successfully sent test email via SES!',
+          recipient: user!.email,
+          fromAddress,
           sentCount,
         });
       } catch (sendError: any) {
-        fastify.log.error({ err: sendError }, 'Gmail send failed');
+        fastify.log.error({ err: sendError }, 'SES send failed');
 
         return reply.code(200).send({
           success: false,
           issue: 'api_error',
-          errorCode: sendError.code,
           errorMessage: sendError.message,
-          errorDetails: sendError.response?.data?.error,
-          possibleCauses: [
-            sendError.code === 403 ? 'Gmail API may not be enabled in Google Cloud Console' : null,
-            sendError.code === 403 ? 'App may be in testing mode with restricted users' : null,
-            sendError.code === 401 ? 'Token may be expired or invalid' : null,
-            sendError.code === 429 ? 'Rate limit exceeded' : null,
-          ].filter(Boolean),
         });
       }
     } catch (error: any) {
@@ -450,7 +418,6 @@ export async function adminRoutes(fastify: FastifyInstance): Promise<void> {
 
     try {
       const userId = getUserId(request);
-      const auth = await getUserAuth(request);
 
       fastify.log.info({ userId }, 'Generating and sending personalized daily summary');
 
@@ -550,19 +517,10 @@ export async function adminRoutes(fastify: FastifyInstance): Promise<void> {
         acc + child.today_events.length + child.upcoming_events.length, 0
       ) + summary.family_wide.today_events.length + summary.family_wide.upcoming_events.length;
 
-      // Step 6: Send email (same as production - uses dummy summary for legacy compatibility)
-      const dummySummary = {
-        email_analysis: { total_received: 0, signal_count: 0, noise_count: 0 },
-        summary: [],
-        kit_list: { tomorrow: [], upcoming: [] },
-        financials: [],
-        calendar_updates: [],
-        attachments_requiring_review: [],
-        recurring_activities: [],
-        pro_dad_insight: '',
-      };
-
-      const sentCount = await sendInboxSummary(auth, dummySummary, html, recipients);
+      // Step 6: Send email via SES
+      const alias = getHostedEmailAlias(userId);
+      const fromAddress = buildSesFromAddress(alias);
+      const sentCount = await sendViaSES(html, recipients, fromAddress, buildSummarySubject());
 
       // Step 7: Save summary to database
       saveSummary({
@@ -1339,5 +1297,17 @@ export async function adminRoutes(fastify: FastifyInstance): Promise<void> {
         message: error.message,
       });
     }
+  });
+
+  /**
+   * POST /admin/skip-onboarding
+   * Skip remaining onboarding steps and go straight to the dashboard.
+   * Admin only — useful for development and testing.
+   */
+  fastify.post('/admin/skip-onboarding', { preHandler: requireAdmin }, async (request, reply) => {
+    const userId = getUserId(request);
+    updateOnboardingStep(userId, 5);
+    fastify.log.info({ userId }, 'Onboarding skipped by admin');
+    return reply.redirect('/dashboard');
   });
 }

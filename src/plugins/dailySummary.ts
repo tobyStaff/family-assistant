@@ -5,9 +5,9 @@ import fastifyCron from 'fastify-cron';
 import { requireAdmin } from '../middleware/authorization.js';
 import { generatePersonalizedSummary, type PersonalizedSummary, type ChildSummary, type FamilySummary } from '../utils/personalizedSummaryBuilder.js';
 import { renderPersonalizedEmail, type PersonalizedSummaryWithActions, type TodoWithAction, type EventWithAction, type ChildSummaryWithActions, type FamilySummaryWithActions } from '../templates/personalizedEmailTemplate.js';
-import { sendInboxSummary } from '../utils/emailSender.js';
+import { sendViaSES, buildSesFromAddress, buildSummarySubject } from '../utils/emailSender.js';
 import { getAllUserIds } from '../db/authDb.js';
-import { getUser } from '../db/userDb.js';
+import { getUser, getHostedEmailAlias } from '../db/userDb.js';
 import { getAuth } from '../db/authDb.js';
 import { decrypt } from '../lib/crypto.js';
 import { google } from 'googleapis';
@@ -204,9 +204,6 @@ async function dailySummaryPlugin(fastify: FastifyInstance) {
                   continue;
                 }
 
-                // Get user's OAuth2 client
-                const auth = await getUserAuth(userId);
-
                 // Clean up past items before generating summary
                 const cleanupResult = cleanupPastItems(userId);
                 if (cleanupResult.todosCompleted > 0 || cleanupResult.eventsRemoved > 0) {
@@ -239,19 +236,11 @@ async function dailySummaryPlugin(fastify: FastifyInstance) {
 
                 // Only send email if there's content
                 if (totalTodos > 0 || totalEvents > 0 || summary.insights.length > 0) {
-                  // Send email to all configured recipients (uses sendInboxSummary which handles multiple recipients)
-                  const dummySummary = {
-                    email_analysis: { total_received: 0, signal_count: 0, noise_count: 0 },
-                    summary: [],
-                    kit_list: { tomorrow: [], upcoming: [] },
-                    financials: [],
-                    calendar_updates: [],
-                    attachments_requiring_review: [],
-                    recurring_activities: [],
-                    pro_dad_insight: '',
-                  };
-
-                  await sendInboxSummary(auth, dummySummary, html, settings.summary_email_recipients);
+                  // Send email via SES
+                  const alias = getHostedEmailAlias(userId);
+                  const fromAddress = buildSesFromAddress(alias);
+                  const subject = buildSummarySubject();
+                  await sendViaSES(html, settings.summary_email_recipients, fromAddress, subject);
 
                   fastify.log.info(
                     {
@@ -260,6 +249,8 @@ async function dailySummaryPlugin(fastify: FastifyInstance) {
                       todoCount: totalTodos,
                       eventCount: totalEvents,
                       childCount: summary.by_child.length,
+                      fromAddress,
+                      via: 'ses',
                     },
                     'Personalized summary sent successfully'
                   );

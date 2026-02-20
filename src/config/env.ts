@@ -95,6 +95,12 @@ export const envSchema = z.object({
   // AI Provider Configuration
   AI_PROVIDER: z.enum(['openai', 'anthropic']).default('openai'),
   AI_API_KEY: z.string().optional(), // Optional for development, required for AI parsing
+
+  // AWS SES (Outbound Email)
+  AWS_REGION: z.string().default('eu-north-1'),
+  AWS_ACCESS_KEY_ID: z.string().optional(),
+  AWS_SECRET_ACCESS_KEY: z.string().optional(),
+  SES_FROM_DOMAIN: z.string().default('inbox.getfamilyassistant.com'),
 });
 
 export type EnvConfig = z.infer<typeof envSchema>;
@@ -151,6 +157,20 @@ export const fastifyEnvOptions = {
       },
       AI_API_KEY: {
         type: 'string',
+      },
+      AWS_REGION: {
+        type: 'string',
+        default: 'eu-north-1',
+      },
+      AWS_ACCESS_KEY_ID: {
+        type: 'string',
+      },
+      AWS_SECRET_ACCESS_KEY: {
+        type: 'string',
+      },
+      SES_FROM_DOMAIN: {
+        type: 'string',
+        default: 'inbox.getfamilyassistant.com',
       },
     },
   } as const,
