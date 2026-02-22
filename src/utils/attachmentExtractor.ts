@@ -264,7 +264,7 @@ export function shouldExtractAttachment(attachment: Attachment): boolean {
 /**
  * Extract text content from attachment based on mime type
  */
-async function extractTextFromAttachment(
+export async function extractTextFromAttachment(
   buffer: Buffer,
   mimeType: string,
   filename: string
@@ -395,6 +395,32 @@ export interface AttachmentExtractionResult {
   text: string;
   downloadedAttachments: DownloadedAttachment[];
   nonExtractableFilenames: string[];
+}
+
+/**
+ * Build attachment content string for AI processing
+ * Shared between Gmail and inbound hosted email flows
+ */
+export function buildAttachmentContentString(
+  attachments: Array<{ filename: string; extractedText: string }>
+): string {
+  if (attachments.length === 0) return '';
+
+  let result = '\n\n=== IMPORTANT: ATTACHMENT CONTENT BELOW ===\n';
+  result += 'This email contains document attachments. Extract all relevant information:\n';
+  result += '- Key dates and deadlines → add to calendar_updates\n';
+  result += '- Payment requests → add to financials with amounts and deadlines\n';
+  result += '- Action items → mention in summary\n';
+  result += '- If forms require signature/action → add to attachments_requiring_review\n\n';
+
+  for (const att of attachments) {
+    result += `--- START: ${att.filename} ---\n`;
+    result += att.extractedText + '\n';
+    result += `--- END: ${att.filename} ---\n\n`;
+  }
+
+  result += '\n=== END ATTACHMENT CONTENT ===\n';
+  return result;
 }
 
 /**

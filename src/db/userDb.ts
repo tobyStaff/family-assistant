@@ -357,6 +357,35 @@ export function ensureSuperAdminRoles(email: string): void {
 }
 
 // ============================================
+// ONBOARDING PATH FUNCTIONS
+// ============================================
+
+const setOnboardingPathStmt = db.prepare(`
+  UPDATE users SET onboarding_path = ?, updated_at = datetime('now') WHERE user_id = ?
+`);
+
+const getOnboardingPathStmt = db.prepare(`
+  SELECT onboarding_path FROM users WHERE user_id = ?
+`);
+
+/**
+ * Set the onboarding path for a user
+ */
+export function setOnboardingPath(userId: string, path: 'hosted' | 'gmail'): void {
+  setOnboardingPathStmt.run(path, userId);
+}
+
+/**
+ * Get the onboarding path for a user
+ */
+export function getOnboardingPath(userId: string): 'hosted' | 'gmail' | null {
+  const row = getOnboardingPathStmt.get(userId) as { onboarding_path: string | null } | undefined;
+  const val = row?.onboarding_path;
+  if (val === 'hosted' || val === 'gmail') return val;
+  return null;
+}
+
+// ============================================
 // HOSTED EMAIL ALIAS FUNCTIONS
 // ============================================
 
@@ -512,6 +541,25 @@ export function getHostedEmailDomain(): string {
 }
 
 // ============================================
+// GMAIL FORWARDING CONFIRMATION
+// ============================================
+
+/**
+ * Store the Gmail forwarding confirmation URL for a user
+ */
+export function setGmailConfirmationUrl(userId: string, url: string): void {
+  db.prepare(`UPDATE users SET gmail_forwarding_confirmation_url = ? WHERE user_id = ?`).run(url, userId);
+}
+
+/**
+ * Get the Gmail forwarding confirmation URL for a user, if received
+ */
+export function getGmailConfirmationUrl(userId: string): string | null {
+  const row = db.prepare(`SELECT gmail_forwarding_confirmation_url FROM users WHERE user_id = ?`).get(userId) as { gmail_forwarding_confirmation_url: string | null } | undefined;
+  return row?.gmail_forwarding_confirmation_url ?? null;
+}
+
+// ============================================
 // USER RESET (SUPER_ADMIN ONLY)
 // ============================================
 
@@ -567,7 +615,7 @@ export function resetUserData(userId: string): Record<string, number> {
     // Reset onboarding state on users row
     const resetResult = db.prepare(`
       UPDATE users
-      SET onboarding_step = 0, gmail_connected = 0, hosted_email_alias = NULL, updated_at = datetime('now')
+      SET onboarding_step = 0, gmail_connected = 0, hosted_email_alias = NULL, onboarding_path = NULL, updated_at = datetime('now')
       WHERE user_id = ?
     `).run(userId);
     console.log(`[resetUserData] Reset onboarding state for ${userId}, rows affected: ${resetResult.changes}`);

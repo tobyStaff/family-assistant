@@ -3,7 +3,7 @@
 import db from './db.js';
 
 export type JobStatus = 'pending' | 'scanning' | 'ranking' | 'complete' | 'failed';
-export type JobType = 'scan_inbox' | 'extract_training' | 'generate_email' | 'analyze_children';
+export type JobType = 'scan_inbox' | 'extract_training' | 'generate_email' | 'analyze_children' | 'process_hosted';
 
 export interface OnboardingJob {
   id: number;

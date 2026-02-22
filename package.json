@@ -15,7 +15,8 @@
     "test:coverage": "vitest --coverage",
     "typecheck": "tsc --noEmit",
     "clone-user": "tsx src/scripts/cloneUserData.ts",
-    "seed-inbound": "tsx src/scripts/seedInboundEmail.ts"
+    "seed-inbound": "tsx src/scripts/seedInboundEmail.ts",
+    "clear-ses": "tsx src/scripts/clearSesEmails.ts"
   },
   "keywords": [],
   "author": "",

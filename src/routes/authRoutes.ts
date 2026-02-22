@@ -3,7 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import { google } from 'googleapis';
 import { randomBytes } from 'crypto';
 import { storeAuth } from '../db/authDb.js';
-import { upsertUser, getUser, ensureSuperAdminRoles, updateOnboardingStep, setGmailConnected, setCalendarConnected } from '../db/userDb.js';
+import { upsertUser, getUser, ensureSuperAdminRoles, updateOnboardingStep, setGmailConnected, setCalendarConnected, getOnboardingPath, getHostedEmailAlias, getGmailConfirmationUrl } from '../db/userDb.js';
 import { ensureSubscription } from '../db/subscriptionDb.js';
 import { createSession, deleteSession } from '../db/sessionDb.js';
 import { encrypt } from '../lib/crypto.js';
@@ -714,24 +714,28 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
     let currentStep = user?.onboarding_step ?? 0;
     const userRoles = (request as any).userRoles as Role[] || ['STANDARD'];
     const userIsAdmin = isAdmin(userRoles);
+    const onboardingPath = getOnboardingPath(userId);
+    const hostedAlias = getHostedEmailAlias(userId);
+    const hostedEmailAddress = hostedAlias ? `${hostedAlias}@inbox.getfamilyassistant.com` : 'your-alias@inbox.getfamilyassistant.com';
+    const hostedConfirmationUrl = getGmailConfirmationUrl(userId);
 
-    fastify.log.info({ userId, currentStep, gmailConnected: user?.gmail_connected }, 'Loading onboarding page');
+    fastify.log.info({ userId, currentStep, gmailConnected: user?.gmail_connected, onboardingPath }, 'Loading onboarding page');
 
-    // Verify OAuth tokens exist for steps that require Gmail access
+    // Verify OAuth tokens exist for Gmail path steps that require Gmail access
     const { getAuth } = await import('../db/authDb.js');
     const authEntry = getAuth(userId);
     const hasValidAuth = authEntry && authEntry.refresh_token;
 
-    if (currentStep >= 2 && !hasValidAuth) {
-      // User is past Gmail connect but tokens are missing - reset to step 1
+    if (onboardingPath !== 'hosted' && currentStep >= 2 && !hasValidAuth) {
+      // Gmail path user is past Gmail connect but tokens are missing - reset to step 1
       fastify.log.warn({ userId, currentStep }, 'User past step 2 but missing OAuth tokens, resetting to step 1');
       updateOnboardingStep(userId, 1);
       currentStep = 1;
-    } else if (currentStep === 3 || currentStep === 4) {
-      // Steps 3-4 are intermediate steps that require in-memory data from scanning
+    } else if (onboardingPath !== 'hosted' && (currentStep === 3 || currentStep === 4)) {
+      // Gmail path steps 3-4 are intermediate steps that require in-memory data from scanning
       // If user reloads here, send them back to step 2 to re-scan
       // (The sender filters are saved, but we need fresh scan data to display the UI)
-      fastify.log.info({ userId, currentStep }, 'Intermediate step on reload, showing step 2');
+      fastify.log.info({ userId, currentStep }, 'Gmail path intermediate step on reload, showing step 2');
       currentStep = 2;
     }
 
@@ -1383,6 +1387,223 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
               font-size: 13px;
             }
           }
+
+          /* Path selection cards */
+          .path-cards {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin: 30px 0;
+          }
+          @media (max-width: 600px) {
+            .path-cards {
+              grid-template-columns: 1fr;
+            }
+          }
+          .path-card {
+            border: 2px solid #E0E7ED;
+            border-radius: 16px;
+            padding: 24px;
+            cursor: pointer;
+            transition: all 0.2s;
+            background: white;
+            text-align: left;
+            position: relative;
+          }
+          .path-card:hover {
+            border-color: #2A5C82;
+            box-shadow: 0 4px 16px rgba(42, 92, 130, 0.12);
+          }
+          .path-card-badge {
+            position: absolute;
+            top: 16px;
+            right: 16px;
+            padding: 3px 10px;
+            border-radius: 20px;
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+          }
+          .badge-recommended {
+            background: #E8F5E9;
+            color: #2E7D32;
+          }
+          .badge-beta {
+            background: #E3F2FD;
+            color: #1565C0;
+          }
+          .path-card-icon {
+            font-size: 40px;
+            margin-bottom: 12px;
+          }
+          .path-card h3 {
+            font-family: 'Fraunces', Georgia, serif;
+            font-size: 18px;
+            color: #1E4562;
+            margin-bottom: 8px;
+            font-weight: 600;
+          }
+          .path-card p {
+            font-size: 13px;
+            color: #4A6B8A;
+            line-height: 1.5;
+            margin-bottom: 16px;
+          }
+          .path-card ul {
+            padding-left: 18px;
+            margin-bottom: 20px;
+          }
+          .path-card ul li {
+            font-size: 13px;
+            color: #4A6B8A;
+            padding: 3px 0;
+          }
+          .path-card .btn {
+            width: 100%;
+            text-align: center;
+          }
+          .path-card-disabled {
+            opacity: 0.45;
+            cursor: default;
+            pointer-events: none;
+          }
+          .path-card-disabled:hover {
+            border-color: #E0E7ED;
+            box-shadow: none;
+          }
+
+          /* Alias setup */
+          .alias-input-group {
+            display: flex;
+            align-items: center;
+            gap: 0;
+            border: 2px solid #E0E7ED;
+            border-radius: 10px;
+            overflow: hidden;
+            max-width: 520px;
+            margin: 0 auto 8px;
+          }
+          .alias-input-group:focus-within {
+            border-color: #2A5C82;
+          }
+          .alias-input-group input {
+            flex: 1;
+            padding: 12px 14px;
+            border: none;
+            outline: none;
+            font-size: 16px;
+            font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+            background: white;
+          }
+          .alias-input-group .alias-suffix {
+            padding: 12px 14px;
+            background: #F5F7FA;
+            color: #4A6B8A;
+            font-size: 14px;
+            white-space: nowrap;
+            border-left: 2px solid #E0E7ED;
+          }
+
+          /* Copy to clipboard */
+          .copy-box {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            background: #F5F7FA;
+            border: 2px solid #E0E7ED;
+            border-radius: 10px;
+            padding: 12px 16px;
+            max-width: 500px;
+            margin: 0 auto 20px;
+          }
+          .copy-box .copy-value {
+            flex: 1;
+            font-size: 15px;
+            font-weight: 600;
+            color: #1E4562;
+            word-break: break-all;
+          }
+          .btn-copy {
+            flex-shrink: 0;
+            background: #2A5C82;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+          }
+          .btn-copy:hover {
+            background: #1E4562;
+          }
+
+          /* Email counter */
+          .email-counter {
+            text-align: center;
+            margin: 24px 0;
+          }
+          .counter-ring {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 100px;
+            height: 100px;
+            border-radius: 50%;
+            border: 6px solid #E0E7ED;
+            font-size: 28px;
+            font-weight: 700;
+            color: #1E4562;
+            margin-bottom: 8px;
+            position: relative;
+          }
+          .counter-ring.ready {
+            border-color: #4CAF50;
+            color: #2E7D32;
+          }
+          .counter-label {
+            font-size: 14px;
+            color: #4A6B8A;
+          }
+
+          /* Forwarding instructions */
+          .forwarding-steps {
+            text-align: left;
+            max-width: 560px;
+            margin: 20px auto;
+            background: #FAF9F6;
+            border: 1px solid #E0E7ED;
+            border-radius: 12px;
+            padding: 20px 24px;
+          }
+          .forwarding-steps h4 {
+            font-size: 14px;
+            font-weight: 600;
+            color: #1E4562;
+            margin-bottom: 12px;
+          }
+          .forwarding-steps ol {
+            padding-left: 22px;
+            margin: 0;
+          }
+          .forwarding-steps li {
+            font-size: 13px;
+            color: #4A6B8A;
+            padding: 5px 0;
+            line-height: 1.5;
+          }
+          .forwarding-steps code {
+            background: #E8F0F8;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 12px;
+            color: #1E4562;
+          }
+          @keyframes spin {
+            to { transform: rotate(360deg); }
+          }
         </style>
       </head>
       <body>
@@ -1398,21 +1619,22 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
           </div>
 
           <div id="message" class="message"></div>
-          <!-- debug: onboarding_step=${currentStep} gmail_connected=${user?.gmail_connected} -->
+          <!-- debug: onboarding_step=${currentStep} gmail_connected=${user?.gmail_connected} onboarding_path=${onboardingPath} -->
+          <script>const ONBOARDING_PATH = '${onboardingPath ?? ''}';</script>
 
           <!-- Steps indicator -->
-          <div class="steps">
+          <div class="steps" id="steps-indicator" ${!onboardingPath && currentStep <= 1 ? 'style="display:none"' : ''}>
             <div class="step ${currentStep >= 1 ? 'active' : ''}" id="step-indicator-1">
               <div class="step-number">1</div>
-              <div class="step-label">Connect</div>
+              <div class="step-label" id="step-label-1">${onboardingPath === 'hosted' ? 'Alias' : 'Connect'}</div>
             </div>
             <div class="step ${currentStep >= 3 ? 'active' : ''}" id="step-indicator-2">
               <div class="step-number">2</div>
-              <div class="step-label">Senders</div>
+              <div class="step-label" id="step-label-2">${onboardingPath === 'hosted' ? 'Emails' : 'Senders'}</div>
             </div>
             <div class="step" id="step-indicator-3">
               <div class="step-number">3</div>
-              <div class="step-label">Train</div>
+              <div class="step-label" id="step-label-3">${onboardingPath === 'hosted' ? 'Process' : 'Train'}</div>
             </div>
             <div class="step ${currentStep >= 4 ? 'active' : ''}" id="step-indicator-4">
               <div class="step-number">4</div>
@@ -1420,8 +1642,171 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
             </div>
           </div>
 
-          <!-- Step 1: Welcome + Connect Gmail -->
-          <div class="step-content ${currentStep < 2 ? 'active' : ''}" id="step-welcome">
+          <!-- Path selection screen (shown before path is chosen) -->
+          <div class="step-content ${!onboardingPath && currentStep <= 1 ? 'active' : ''}" id="step-path-select">
+            <div class="welcome-content">
+              <div class="welcome-icon">✉️</div>
+              <h2>How would you like to receive your school emails?</h2>
+              <p>Choose how to connect your school inbox to Family Assistant.</p>
+
+              <div class="path-cards">
+                <div class="path-card">
+                  <span class="path-card-badge badge-recommended">Recommended</span>
+                  <div class="path-card-icon">📬</div>
+                  <h3>Hosted Email</h3>
+                  <p>Forward school emails to a dedicated address we manage for you.</p>
+                  <ul>
+                    <li>No Gmail permission required</li>
+                    <li>Works with any email provider</li>
+                    <li>You control exactly what we see</li>
+                  </ul>
+                  <button class="btn btn-primary" onclick="choosePath('hosted')">Get Started</button>
+                </div>
+                <div class="path-card${userIsAdmin ? '' : ' path-card-disabled'}">
+                  <span class="path-card-badge badge-beta">Beta</span>
+                  <div class="path-card-icon">📧</div>
+                  <h3>Connect Gmail</h3>
+                  <p>Grant read access to your Gmail inbox so we can scan for school emails.</p>
+                  <ul>
+                    <li>Scans existing inbox automatically</li>
+                    <li>Requires Gmail OAuth permission</li>
+                    <li>You choose which senders to include</li>
+                  </ul>
+                  <button class="btn btn-secondary" onclick="choosePath('gmail')" ${userIsAdmin ? '' : 'disabled'}>${userIsAdmin ? 'Connect Gmail' : 'Coming Soon'}</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Hosted: Alias setup -->
+          <div class="step-content ${onboardingPath === 'hosted' && currentStep === 1 ? 'active' : ''}" id="step-alias">
+            <div class="welcome-content">
+              <div class="welcome-icon">📬</div>
+              <h2>Choose your email alias</h2>
+              <p>This is where you'll forward school emails. Pick something memorable.</p>
+
+              <div class="alias-input-group">
+                <input type="text" id="alias-input" placeholder="yourname" oninput="updateAliasPreview(this.value)" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+                <span class="alias-suffix">@inbox.getfamilyassistant.com</span>
+              </div>
+              <div id="alias-feedback" style="font-size:13px;color:#7A8FA3;margin-bottom:20px;text-align:center;"></div>
+
+              <div class="button-group">
+                <button class="btn btn-primary" onclick="setAlias()" id="alias-btn" disabled>Continue</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Hosted: Forward emails (3 sub-steps) -->
+          <div class="step-content ${onboardingPath === 'hosted' && currentStep === 2 ? 'active' : ''}" id="step-forward-emails">
+
+            <!-- Sub-step progress bar -->
+            <div style="max-width:480px;margin:0 auto 28px;">
+              <div style="display:flex;gap:6px;margin-bottom:6px;">
+                <div id="hosted-ps-A" style="flex:1;height:4px;border-radius:2px;background:#2A5C82;transition:background 0.3s;"></div>
+                <div id="hosted-ps-B" style="flex:1;height:4px;border-radius:2px;background:#E0E7ED;transition:background 0.3s;"></div>
+                <div id="hosted-ps-C" style="flex:1;height:4px;border-radius:2px;background:#E0E7ED;transition:background 0.3s;"></div>
+              </div>
+              <div style="display:flex;justify-content:space-between;font-size:11px;color:#7A8FA3;">
+                <span>Test</span>
+                <span>Forwarding</span>
+                <span>Filter</span>
+              </div>
+            </div>
+
+            <!-- Sub-step A: Test email -->
+            <div id="hosted-substep-A" class="welcome-content">
+              <div class="welcome-icon">📨</div>
+              <h2>Test your inbox address</h2>
+              <p>Forward one school email to confirm your address is working.</p>
+
+              <div class="copy-box">
+                <span class="copy-value" id="hosted-alias-display">${hostedAlias ? `${hostedAlias}@inbox.getfamilyassistant.com` : ''}</span>
+                <button class="btn-copy" onclick="copyAlias()">Copy</button>
+              </div>
+
+              <div class="email-counter">
+                <div class="counter-ring" id="counter-ring-A">
+                  <span id="counter-num-A">0/1</span>
+                </div>
+                <div class="counter-label" id="counter-label-A">emails received</div>
+              </div>
+
+              <p style="font-size:13px;color:#4A6B8A;margin-bottom:20px;">We check every 5 seconds.</p>
+
+              <div class="button-group">
+                <button class="btn btn-secondary" onclick="hostedGoTo('B')">Skip for now</button>
+                <button class="btn btn-primary" onclick="hostedGoTo('B')" id="hosted-A-continue" disabled>Continue</button>
+              </div>
+            </div>
+
+            <!-- Sub-step B: Add forwarding address -->
+            <div id="hosted-substep-B" style="display:none;" class="welcome-content">
+              <div class="welcome-icon">⚙️</div>
+              <h2>Add your forwarding address</h2>
+              <p>Set up Gmail to forward school emails to your Family Assistant automatically.</p>
+
+              <div class="forwarding-steps">
+                <h4>Add Family Assistant as a forwarding address</h4>
+                <ol>
+                  <li>Open Gmail on your computer.</li>
+                  <li>Go to Settings (gear icon) → <strong>See all settings</strong>.</li>
+                  <li>Go to the <strong>Forwarding and POP/IMAP</strong> tab.</li>
+                  <li>Click <strong>Add a forwarding address</strong>.</li>
+                  <li>Enter <code class="hosted-email-display">${hostedEmailAddress}</code> <button type="button" class="btn-copy" onclick="copyHostedEmail(this)">Copy</button></li>
+                  <li>Approve the request on your device.</li>
+                  <li>Click the confirmation link in the email Gmail sends you.</li>
+                </ol>
+              </div>
+
+              <div style="margin:16px auto;padding:12px 14px;background:#EFF6FF;border:1px solid #BFDBFE;border-radius:8px;max-width:480px;text-align:left;">
+                <div style="display:flex;align-items:center;gap:10px;">
+                  <div style="width:12px;height:12px;border:2px solid #2A5C82;border-top-color:transparent;border-radius:50%;animation:spin 1s linear infinite;flex-shrink:0;"></div>
+                  <div>
+                    <strong style="font-size:13px;color:#1E4562;">Waiting for confirmation email…</strong>
+                    <p style="margin:2px 0 0;font-size:12px;color:#4A6B8A;">Gmail will send you a confirmation. We'll detect it automatically.</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Sub-step C: Create filter -->
+            <div id="hosted-substep-C" style="display:none;" class="welcome-content">
+              <div class="welcome-icon">✅</div>
+              <h2>Create a forwarding filter</h2>
+              <p>Now set up a Gmail filter to automatically forward your school emails.</p>
+
+              <div id="hosted-C-confirm-banner" style="margin:0 auto 16px;max-width:480px;padding:12px 14px;background:#FFF3CD;border:2px solid #FFC107;border-radius:8px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+                <div>
+                  <strong style="font-size:13px;color:#6D4C00;">📧 Gmail sent a confirmation email</strong>
+                  <p style="margin:3px 0 0;font-size:12px;color:#856404;">Confirm your forwarding address before creating the filter.</p>
+                </div>
+                <a id="hosted-C-confirm-link" href="${hostedConfirmationUrl ?? '#'}" target="_blank" rel="noopener" class="btn btn-primary" style="text-decoration:none;padding:8px 16px;font-size:13px;white-space:nowrap;flex-shrink:0;">Confirm ↗</a>
+              </div>
+
+              <div class="forwarding-steps">
+                <h4>Create a filter to forward school emails</h4>
+                <ol>
+                  <li>Open a school email in Gmail.</li>
+                  <li>Click the more options menu (three dots).</li>
+                  <li>Choose <strong>Filter messages like this</strong>.</li>
+                  <li>When the popup shows, click <strong>Create filter</strong>.</li>
+                  <li>Check <strong>Forward it to</strong> and choose <code class="hosted-email-display">${hostedEmailAddress}</code>.</li>
+                </ol>
+              </div>
+
+              <p style="font-size:12px;margin-top:4px;color:#4A6B8A;">For help visit the <a href="https://support.google.com/mail/answer/10957?hl=en-GB" target="_blank" rel="noopener" style="color:#1E4562;">Gmail support page</a>.</p>
+
+              <div class="button-group" style="margin-top:24px;">
+                <button class="btn btn-primary" onclick="processHostedEmails()" id="process-btn">Process emails</button>
+              </div>
+              <div id="process-loading" style="display:none;"></div>
+            </div>
+
+          </div>
+
+          <!-- Step 1 (Gmail path): Welcome + Connect Gmail -->
+          <div class="step-content ${onboardingPath === 'gmail' && currentStep < 2 ? 'active' : ''}" id="step-welcome">
             <div class="welcome-content">
               <div class="welcome-icon">👋</div>
               <h2>Welcome! Let's set up your family assistant in 4 steps.</h2>
@@ -1443,8 +1828,8 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
             </div>
           </div>
 
-          <!-- Step 2: Gmail connected, scan inbox -->
-          <div class="step-content ${currentStep === 2 ? 'active' : ''}" id="step-scan">
+          <!-- Step 2 (Gmail path): Gmail connected, scan inbox -->
+          <div class="step-content ${onboardingPath === 'gmail' && currentStep === 2 ? 'active' : ''}" id="step-scan">
             <div class="welcome-content">
               <div class="welcome-icon">✅</div>
               <h2>Gmail connected!</h2>
@@ -1557,31 +1942,16 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
             <div class="welcome-content">
               <div class="welcome-icon">✅</div>
               <h2>Setup almost complete!</h2>
-              <p>Your family assistant is ready. To send your first briefing email, we need permission to send emails on your behalf.</p>
 
-              <div class="button-group" id="grant-send-group">
-                <a href="/auth/google/grant-send" class="btn btn-primary" id="grant-send-btn">Allow sending emails</a>
-              </div>
+              <p>Your family assistant is ready. Generate your first briefing email to see it in action.</p>
 
-              <div class="button-group" id="send-email-group" style="display:none;">
+              <div class="button-group" id="send-email-group">
                 <button class="btn btn-primary" onclick="generateFirstEmail()" id="first-email-btn">Generate your first email</button>
               </div>
 
               <div id="first-email-loading" style="display:none;"></div>
               <div id="first-email-result" style="display:none;margin-top:20px;"></div>
 
-              <div class="feature-list" style="margin-top:30px;">
-                <strong>Explore:</strong>
-                <ul>
-                  <li><a href="/todos-view">View your todo list</a></li>
-                  <li><a href="/events-view">View your events</a></li>
-                  <li><a href="/settings">Manage settings & senders</a></li>
-                </ul>
-              </div>
-
-              <div class="button-group" style="margin-top:20px;">
-                <button class="btn btn-secondary" onclick="window.location.href='/dashboard'">Go to Dashboard</button>
-              </div>
             </div>
           </div>
         </div>
@@ -1596,6 +1966,333 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
           let detectedSchools = []; // { name: string, year_groups: string[] }
           let analysisResult = null;
           let childrenData = [];
+          let hostedSubStep = 'A';
+          let hostedEmailCount = 0;
+          let hostedEmailFull = '${hostedEmailAddress}';
+          // URL known at page-load time — don't auto-advance based on this
+          let hostedConfirmationUrlAtLoad = ${hostedConfirmationUrl ? `'${hostedConfirmationUrl}'` : 'null'};
+
+          // ============================================================
+          // PATH SELECTION
+          // ============================================================
+          async function choosePath(path) {
+            try {
+              const res = await fetch('/onboarding/choose-path', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ path }),
+              });
+              const data = await res.json();
+              if (!res.ok) throw new Error(data.message || 'Failed');
+
+              // Update global path
+              window.ONBOARDING_PATH = path;
+
+              // Show step indicator
+              document.getElementById('steps-indicator').style.display = '';
+
+              if (path === 'hosted') {
+                // Update step labels for hosted path
+                document.getElementById('step-label-1').textContent = 'Alias';
+                document.getElementById('step-label-2').textContent = 'Emails';
+                document.getElementById('step-label-3').textContent = 'Process';
+                document.getElementById('step-indicator-1').classList.add('active');
+                showStep('step-alias');
+              } else {
+                // Gmail path
+                document.getElementById('step-label-1').textContent = 'Connect';
+                document.getElementById('step-label-2').textContent = 'Senders';
+                document.getElementById('step-label-3').textContent = 'Train';
+                document.getElementById('step-indicator-1').classList.add('active');
+                showStep('step-welcome');
+              }
+            } catch (err) {
+              showMessage('error', 'Failed to set path: ' + err.message);
+            }
+          }
+
+          // ============================================================
+          // HOSTED: ALIAS SETUP
+          // ============================================================
+          const RESERVED_ALIASES = ['admin', 'support', 'help', 'info', 'contact', 'mail', 'email', 'noreply', 'no-reply', 'postmaster', 'webmaster', 'abuse'];
+          let aliasCheckTimer = null;
+
+          function updateAliasPreview(value) {
+            const btn = document.getElementById('alias-btn');
+            const feedback = document.getElementById('alias-feedback');
+            const cleaned = value.toLowerCase().replace(/[^a-z0-9._-]/g, '');
+
+            if (value !== cleaned) {
+              document.getElementById('alias-input').value = cleaned;
+            }
+
+            // Clear any pending availability check
+            if (aliasCheckTimer) clearTimeout(aliasCheckTimer);
+
+            if (!cleaned) {
+              btn.disabled = true;
+              feedback.textContent = '';
+              return;
+            }
+
+            if (cleaned.length < 2) {
+              btn.disabled = true;
+              feedback.textContent = 'Too short — minimum 2 characters';
+              feedback.style.color = '#E53935';
+              return;
+            }
+
+            if (cleaned.length > 30) {
+              btn.disabled = true;
+              feedback.textContent = 'Too long — maximum 30 characters';
+              feedback.style.color = '#E53935';
+              return;
+            }
+
+            if (RESERVED_ALIASES.includes(cleaned)) {
+              btn.disabled = true;
+              feedback.textContent = 'This alias is reserved — try another';
+              feedback.style.color = '#E53935';
+              return;
+            }
+
+            // Local validation passed — debounce the availability check
+            btn.disabled = true;
+            feedback.textContent = 'Checking availability…';
+            feedback.style.color = '#7A8FA3';
+
+            aliasCheckTimer = setTimeout(async () => {
+              try {
+                const res = await fetch(\`/api/settings/check-alias?alias=\${encodeURIComponent(cleaned)}\`);
+                const data = await res.json();
+                if (data.available) {
+                  feedback.textContent = cleaned + '@inbox.getfamilyassistant.com ✓';
+                  feedback.style.color = '#2E7D32';
+                  btn.disabled = false;
+                } else {
+                  feedback.textContent = data.reason || 'Already taken — try another';
+                  feedback.style.color = '#E53935';
+                  btn.disabled = true;
+                }
+              } catch {
+                // Network error — allow submission and let server validate
+                feedback.textContent = cleaned + '@inbox.getfamilyassistant.com';
+                feedback.style.color = '#2E7D32';
+                btn.disabled = false;
+              }
+            }, 400);
+          }
+
+          async function setAlias() {
+            const alias = document.getElementById('alias-input').value.toLowerCase().trim();
+            const btn = document.getElementById('alias-btn');
+            const feedback = document.getElementById('alias-feedback');
+
+            btn.disabled = true;
+            btn.textContent = 'Saving...';
+
+            try {
+              const res = await fetch('/onboarding/set-alias', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ alias }),
+              });
+              const data = await res.json();
+
+              if (res.status === 409) {
+                feedback.textContent = 'This alias is taken — try another';
+                feedback.style.color = '#E53935';
+                btn.disabled = false;
+                btn.textContent = 'Continue';
+                return;
+              }
+              if (!res.ok) {
+                feedback.textContent = data.error || 'Invalid alias';
+                feedback.style.color = '#E53935';
+                btn.disabled = false;
+                btn.textContent = 'Continue';
+                return;
+              }
+
+              // Success — show forward emails screen
+              hostedEmailFull = data.email;
+              document.getElementById('hosted-alias-display').textContent = data.email;
+              document.querySelectorAll('.hosted-email-display').forEach(function(el) { el.textContent = data.email; });
+              document.getElementById('step-indicator-1').classList.add('completed');
+              document.getElementById('step-indicator-2').classList.add('active');
+              showStep('step-forward-emails');
+              showHostedSubStep('A');
+              startEmailCountPolling();
+            } catch (err) {
+              feedback.textContent = 'Error: ' + err.message;
+              feedback.style.color = '#E53935';
+              btn.disabled = false;
+              btn.textContent = 'Continue';
+            }
+          }
+
+          function copyAlias() {
+            const text = document.getElementById('hosted-alias-display').textContent;
+            navigator.clipboard.writeText(text).then(() => {
+              const btn = document.querySelector('.btn-copy');
+              const orig = btn.textContent;
+              btn.textContent = 'Copied!';
+              setTimeout(() => { btn.textContent = orig; }, 2000);
+            });
+          }
+
+          function copyHostedEmail(btn) {
+            navigator.clipboard.writeText(hostedEmailFull).then(() => {
+              const orig = btn.textContent;
+              btn.textContent = 'Copied!';
+              setTimeout(() => { btn.textContent = orig; }, 2000);
+            });
+          }
+
+          // ============================================================
+          // HOSTED: SUB-STEP NAVIGATION
+          // ============================================================
+
+          function showHostedSubStep(sub) {
+            hostedSubStep = sub;
+            ['A', 'B', 'C'].forEach(function(s) {
+              var el = document.getElementById('hosted-substep-' + s);
+              if (el) el.style.display = s === sub ? '' : 'none';
+              var ps = document.getElementById('hosted-ps-' + s);
+              if (ps) {
+                if (s < sub) ps.style.background = '#4CAF50';       // done
+                else if (s === sub) ps.style.background = '#2A5C82'; // active
+                else ps.style.background = '#E0E7ED';                // upcoming
+              }
+            });
+          }
+
+          function hostedGoTo(sub) {
+            showHostedSubStep(sub);
+          }
+
+          // ============================================================
+          // HOSTED: EMAIL COUNT POLLING
+          // ============================================================
+          let emailCountInterval = null;
+
+          function startEmailCountPolling() {
+            pollEmailCount();
+            emailCountInterval = setInterval(pollEmailCount, 5000);
+          }
+
+          async function pollEmailCount() {
+            try {
+              const res = await fetch('/onboarding/hosted-email-count');
+              const data = await res.json();
+              const count = data.count ?? 0;
+              const ready = data.ready ?? false; // count >= 10
+              hostedEmailCount = count;
+
+              // Sub-step A: update 0/1 counter, enable Continue when first email arrives
+              const numA = document.getElementById('counter-num-A');
+              if (numA) numA.textContent = Math.min(count, 1) + '/1';
+              const ringA = document.getElementById('counter-ring-A');
+              const labelA = document.getElementById('counter-label-A');
+              if (count >= 1) {
+                if (ringA) ringA.classList.add('ready');
+                if (labelA) labelA.textContent = 'email received — confirmed!';
+                const continueA = document.getElementById('hosted-A-continue');
+                if (continueA) continueA.disabled = false;
+              }
+
+
+              // Handle confirmation URL — only auto-advance if the URL arrived fresh this session
+              if (data.confirmationUrl) {
+                const confirmLink = document.getElementById('hosted-C-confirm-link');
+                if (confirmLink) confirmLink.href = data.confirmationUrl;
+                const isNewUrl = data.confirmationUrl !== hostedConfirmationUrlAtLoad;
+                if (hostedSubStep === 'B' && isNewUrl) {
+                  showHostedSubStep('C');
+                }
+              }
+            } catch (err) {
+              console.error('Email count poll error:', err);
+            }
+          }
+
+          // ============================================================
+          // HOSTED: PROCESS EMAILS
+          // ============================================================
+          let processHostedPollInterval = null;
+
+          async function processHostedEmails() {
+            if (emailCountInterval) {
+              clearInterval(emailCountInterval);
+              emailCountInterval = null;
+            }
+
+            const processBtn = document.getElementById('process-btn');
+            const loadingContainer = document.getElementById('process-loading');
+            const buttonGroup = processBtn.closest('.button-group');
+
+            buttonGroup.style.display = 'none';
+            loadingContainer.innerHTML = createLoadingHTML(
+              'process-hosted',
+              'Analysing your emails...',
+              'Extracting todos and events from your school emails',
+              'This typically takes 1-2 minutes'
+            );
+            loadingContainer.style.display = 'block';
+            startFakeProgress('process-hosted', 90000);
+
+            try {
+              const res = await fetch('/onboarding/process-hosted-emails', { method: 'POST' });
+              const data = await res.json();
+              if (!res.ok) throw new Error(data.message || 'Failed to start');
+
+              pollProcessHostedStatus();
+            } catch (err) {
+              completeProgress('process-hosted');
+              loadingContainer.style.display = 'none';
+              buttonGroup.style.display = '';
+              showMessage('error', 'Processing failed: ' + err.message);
+            }
+          }
+
+          async function pollProcessHostedStatus() {
+            const loadingContainer = document.getElementById('process-loading');
+
+            processHostedPollInterval = setInterval(async () => {
+              try {
+                const res = await fetch('/onboarding/process-hosted-emails/status');
+                const data = await res.json();
+
+                if (data.status === 'pending') {
+                  updateLoadingText('process-hosted', 'Starting...', 'Preparing to analyse emails');
+                } else if (data.status === 'scanning') {
+                  updateLoadingText('process-hosted', 'Analysing emails...', 'Extracting todos and events');
+                } else if (data.status === 'complete') {
+                  clearInterval(processHostedPollInterval);
+                  processHostedPollInterval = null;
+                  completeProgress('process-hosted');
+                  updateLoadingText('process-hosted', 'Processing complete!',
+                    \`Found \${data.eventsCreated || 0} events and \${data.todosCreated || 0} todos\`);
+
+                  // Move to child profiles step — trigger analysis
+                  document.getElementById('step-indicator-2').classList.add('completed');
+                  document.getElementById('step-indicator-3').classList.add('active');
+                  setTimeout(() => {
+                    loadingContainer.style.display = 'none';
+                    startChildExtraction();
+                  }, 1200);
+                } else if (data.status === 'failed') {
+                  clearInterval(processHostedPollInterval);
+                  processHostedPollInterval = null;
+                  completeProgress('process-hosted');
+                  loadingContainer.style.display = 'none';
+                  showMessage('error', 'Processing failed: ' + (data.error || 'Unknown error'));
+                }
+              } catch (err) {
+                console.error('Process hosted poll error:', err);
+              }
+            }, 2000);
+          }
 
           function showStep(stepId) {
             document.querySelectorAll('.step-content').forEach(el => el.classList.remove('active'));
@@ -2407,8 +3104,8 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
 
           function addManualChild() {
             childrenData.push({
-              real_name: 'New Child', display_name: '', year_group: '',
-              school_name: analysisResult?.schools_detected[0] || '',
+              real_name: '', display_name: '', year_group: '',
+              school_name: '',
               confidence: 1.0, example_emails: [], notes: '',
             });
             renderChildCards();
@@ -2509,7 +3206,7 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
                     loadingContainer.style.display = 'none';
                     result.style.display = 'block';
                     const recipientList = (data.recipients || []).join(', ');
-                    result.innerHTML = '<div class="message success">Email sent to ' + recipientList + '</div>';
+                    result.innerHTML = '<div class="message success">Email sent to ' + recipientList + '</div><div class="button-group" style="margin-top:16px;"><a href="/dashboard" class="btn btn-primary">Go to Dashboard</a></div>';
                   }, 1000);
                 } else if (data.status === 'failed') {
                   clearInterval(emailGenPollInterval);
@@ -2528,32 +3225,34 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
             }, 2000); // Poll every 2 seconds
           }
 
-          // Check if send permission was just granted
-          if (new URLSearchParams(window.location.search).get('send_granted') === '1') {
-            const grantGroup = document.getElementById('grant-send-group');
-            const sendGroup = document.getElementById('send-email-group');
-            if (grantGroup) grantGroup.style.display = 'none';
-            if (sendGroup) sendGroup.style.display = '';
-            // Show the complete step
-            showStep('step-complete');
-          }
-
-          // Auto-load review data if returning to step 3+
+          // Auto-load: start email count polling if hosted path and on step-forward-emails
           (function() {
+            const path = '${onboardingPath ?? ''}';
             const step = ${currentStep};
-            if (step === 3) {
-              // Load saved senders for review
+            if (path === 'hosted' && step === 2) {
+              // Initialize to correct sub-step based on server state
+              const hasConfirmation = ${hostedConfirmationUrl ? 'true' : 'false'};
+              if (hasConfirmation) {
+                showHostedSubStep('C');
+              } else {
+                showHostedSubStep('A');
+              }
+              startEmailCountPolling();
+            }
+            if (step === 3 && path !== 'hosted') {
+              // Load saved senders for review (gmail path)
               fetch('/onboarding/senders').then(r => r.json()).then(data => {
                 if (data.filters) {
                   const included = data.filters.filter(f => f.status === 'include');
-                  const excluded = data.filters.filter(f => f.status === 'exclude');
                   const container = document.getElementById('sender-review-list');
-                  container.innerHTML = \`
-                    <div style="margin-bottom:16px;">
-                      <h3 style="color:#2E7D32;margin-bottom:8px;">Included (\${included.length})</h3>
-                      \${included.map(s => \`<div style="padding:8px;background:#E8F5E9;border-radius:8px;margin-bottom:4px;font-size:14px;color:#1E4562;">\${s.sender_name || s.sender_email} — \${s.sender_email}</div>\`).join('')}
-                    </div>
-                  \`;
+                  if (container) {
+                    container.innerHTML = \`
+                      <div style="margin-bottom:16px;">
+                        <h3 style="color:#2E7D32;margin-bottom:8px;">Included (\${included.length})</h3>
+                        \${included.map(s => \`<div style="padding:8px;background:#E8F5E9;border-radius:8px;margin-bottom:4px;font-size:14px;color:#1E4562;">\${s.sender_name || s.sender_email} — \${s.sender_email}</div>\`).join('')}
+                      </div>
+                    \`;
+                  }
                 }
               });
             }

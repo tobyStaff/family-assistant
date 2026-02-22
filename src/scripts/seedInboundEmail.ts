@@ -9,11 +9,13 @@
  *   pnpm seed-inbound --eml <path-to-file.eml> --recipient <alias@inbox.getfamilyassistant.com>
  *   pnpm seed-inbound --s3 <messageId>          --recipient <alias@inbox.getfamilyassistant.com>
  *   pnpm seed-inbound --s3-all
+ *   pnpm seed-inbound --s3-all --alias <alias>
  *
  * Options:
  *   --eml <path>         Local .eml file to replay
  *   --s3 <messageId>     Single message ID in the S3 inbound bucket to fetch and replay
  *   --s3-all             Replay every email currently in the S3 inbound bucket
+ *   --alias <alias>      Filter --s3-all to only replay emails for this alias (e.g. toby)
  *   --recipient <email>  Recipient address (e.g. toby@inbox.getfamilyassistant.com)
  *                        Required for --eml and --s3. For --s3-all, extracted from each
  *                        email's To header automatically (override with this flag if needed)
@@ -47,6 +49,7 @@ const emlPath    = getArg('--eml');
 const s3Key      = getArg('--s3');
 const s3All      = hasFlag('--s3-all');
 const recipient  = getArg('--recipient');
+const aliasFilter = getArg('--alias')?.toLowerCase();
 const webhookUrl = getArg('--url') ?? 'http://localhost:3000/api/email/inbound';
 
 const webhookSecret = process.env.HOSTED_EMAIL_WEBHOOK_SECRET;
@@ -150,6 +153,8 @@ async function sendEmail(
     virusVerdict: 'PASS',
   };
 
+  console.log(`  from="${payload.from}" subject="${payload.subject}"`);
+
   const response = await fetch(webhookUrl, {
     method: 'POST',
     headers: {
@@ -203,9 +208,10 @@ async function main() {
     return;
   }
 
-  console.log(`Found ${keys.length} email(s). Replaying...\n`);
+  const filterNote = aliasFilter ? ` (filtering by alias "${aliasFilter}")` : '';
+  console.log(`Found ${keys.length} email(s). Replaying${filterNote}...\n`);
 
-  let stored = 0, duplicate = 0, ignored = 0, failed = 0;
+  let stored = 0, duplicate = 0, ignored = 0, skippedAlias = 0, failed = 0;
 
   for (let i = 0; i < keys.length; i++) {
     const key = keys[i]!;
@@ -213,12 +219,28 @@ async function main() {
 
     try {
       const buffer = await fetchFromS3(s3, key);
+
+      // Apply alias filter if set — search raw bytes to catch the alias in
+      // any header (To, Delivered-To, Received, etc.) regardless of forwarding.
+      if (aliasFilter) {
+        const needle = `${aliasFilter}@inbox.getfamilyassistant.com`;
+        if (!buffer.toString('latin1').toLowerCase().includes(needle)) {
+          skippedAlias++;
+          continue;
+        }
+      }
+
       const result = await sendEmail(buffer, key, recipient);
 
-      if (result.status === 'stored')    { stored++;    console.log(`${prefix} stored    ${key}`); }
+      if (result.status === 'stored')         { stored++;    console.log(`${prefix} stored     ${key}`); }
       else if (result.status === 'duplicate') { duplicate++; console.log(`${prefix} duplicate  ${key}`); }
-      else if (result.status === 'ignored')   { ignored++;   console.log(`${prefix} ignored    ${key} (${result.skipped ?? 'unknown_alias'})`); }
-      else if (result.status === 'skipped')   { ignored++;   console.log(`${prefix} skipped    ${key} — ${result.skipped}`); }
+      else if (result.status === 'ignored')   {
+        ignored++;
+        const reason = (result as any).reason ?? (result as any).skipped ?? 'unknown';
+        const extra = (result as any).urlStored !== undefined ? ` urlStored=${(result as any).urlStored}` : '';
+        console.log(`${prefix} ignored    ${key} (${reason}${extra})`);
+      }
+      else if (result.status === 'skipped')   { ignored++;   console.log(`${prefix} skipped    ${key} — ${(result as any).skipped}`); }
       else { console.log(`${prefix} ${JSON.stringify(result)}  ${key}`); }
     } catch (err: any) {
       failed++;
@@ -227,7 +249,8 @@ async function main() {
   }
 
   console.log('');
-  console.log(`Done. stored=${stored} duplicate=${duplicate} ignored=${ignored} failed=${failed}`);
+  const skippedNote = aliasFilter ? ` skipped_alias=${skippedAlias}` : '';
+  console.log(`Done. stored=${stored} duplicate=${duplicate} ignored=${ignored} failed=${failed}${skippedNote}`);
 }
 
 main().catch(err => {

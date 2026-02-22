@@ -2,13 +2,18 @@
 
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { getUserByHostedAlias } from '../db/userDb.js';
+import { getUserByHostedAlias, setGmailConfirmationUrl } from '../db/userDb.js';
 import {
   createEmail,
   emailExistsBySource,
   markEmailProcessed,
 } from '../db/emailDb.js';
-import { storeDownloadedAttachments } from '../utils/attachmentExtractor.js';
+import {
+  storeDownloadedAttachments,
+  extractTextFromAttachment,
+  buildAttachmentContentString,
+  type DownloadedAttachment,
+} from '../utils/attachmentExtractor.js';
 
 const WEBHOOK_SECRET = process.env.HOSTED_EMAIL_WEBHOOK_SECRET;
 
@@ -35,85 +40,6 @@ const InboundEmailSchema = z.object({
 });
 
 type InboundEmailPayload = z.infer<typeof InboundEmailSchema>;
-
-/**
- * Extract text from attachment buffer based on mime type
- */
-async function extractTextFromBuffer(
-  buffer: Buffer,
-  mimeType: string,
-  filename: string
-): Promise<{ text: string; failed: boolean }> {
-  try {
-    // PDF
-    if (mimeType === 'application/pdf') {
-      const pdfjs = await import('pdfjs-dist/build/pdf.mjs');
-      const pdfjsLib = pdfjs;
-      const loadingTask = pdfjsLib.getDocument({ data: new Uint8Array(buffer) });
-      const pdf = await loadingTask.promise;
-
-      const textParts: string[] = [];
-      for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
-        const page = await pdf.getPage(pageNum);
-        const textContent = await page.getTextContent();
-        const pageText = textContent.items.map((item: any) => item.str).join(' ');
-        textParts.push(pageText);
-      }
-
-      const fullText = textParts.join('\n\n').trim();
-      return { text: fullText || '[PDF - no text content]', failed: false };
-    }
-
-    // DOCX
-    if (
-      mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
-      mimeType === 'application/msword'
-    ) {
-      const mammoth = await import('mammoth');
-      const result = await mammoth.default.extractRawText({ buffer });
-      return { text: result.value.trim(), failed: false };
-    }
-
-    // Plain text
-    if (mimeType.startsWith('text/')) {
-      let text = buffer.toString('utf-8').trim();
-      if (mimeType === 'text/html') {
-        text = text.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
-      }
-      return { text, failed: false };
-    }
-
-    return { text: `[${filename} - unsupported format]`, failed: false };
-  } catch (error: any) {
-    console.error(`Failed to extract text from ${filename}:`, error.message);
-    return { text: `[${filename} - extraction failed: ${error.message}]`, failed: true };
-  }
-}
-
-/**
- * Build attachment content string for AI processing
- */
-function buildAttachmentContent(
-  attachments: Array<{ filename: string; extractedText: string }>
-): string {
-  if (attachments.length === 0) return '';
-
-  let result = '\n\n=== IMPORTANT: ATTACHMENT CONTENT BELOW ===\n';
-  result += 'This email contains document attachments. Extract all relevant information:\n';
-  result += '- Key dates and deadlines → add to calendar_updates\n';
-  result += '- Payment requests → add to financials with amounts and deadlines\n';
-  result += '- Action items → mention in summary\n';
-  result += '- If forms require signature/action → add to attachments_requiring_review\n\n';
-
-  for (const att of attachments) {
-    result += `--- START: ${att.filename} ---\n`;
-    result += att.extractedText + '\n';
-    result += `--- END: ${att.filename} ---\n\n`;
-  }
-
-  result += '\n=== END ATTACHMENT CONTENT ===\n';
-  return result;
-}
 
 /**
  * Register email inbound routes
@@ -150,7 +76,16 @@ export async function emailInboundRoutes(fastify: FastifyInstance): Promise<void
 
     const email = parseResult.data;
 
-    // 3. Extract alias from recipient
+    // 3. Reject spam/virus emails
+    if (email.spamVerdict === 'FAIL' || email.virusVerdict === 'FAIL') {
+      fastify.log.info(
+        { messageId: email.messageId, spamVerdict: email.spamVerdict, virusVerdict: email.virusVerdict },
+        'Email rejected: spam or virus verdict'
+      );
+      return reply.code(200).send({ status: 'ignored', reason: 'spam_or_virus' });
+    }
+
+    // 4. Extract alias from recipient
     // e.g., "toby@inbox.getfamilyassistant.com" → "toby"
     const recipientMatch = email.recipient.match(/^([^@]+)@/);
     if (!recipientMatch) {
@@ -159,34 +94,52 @@ export async function emailInboundRoutes(fastify: FastifyInstance): Promise<void
     }
     const alias = recipientMatch[1].toLowerCase();
 
-    // 4. Look up user by alias
+    // 5. Look up user by alias
     const user = getUserByHostedAlias(alias);
     if (!user) {
       fastify.log.info({ alias }, 'No user found for alias, ignoring email');
       return reply.code(200).send({ status: 'ignored', reason: 'unknown_alias' });
     }
 
-    // 5. Check for duplicate
+    // 6. Detect Gmail forwarding confirmation email — store URL and return early
+    // Must run before duplicate check since confirmation emails are never stored in emails table
+    fastify.log.info({ from: email.from, subject: email.subject }, 'Inbound email received');
+    if (
+      email.from.toLowerCase().includes('forwarding-noreply@google.com') &&
+      email.subject.includes('Gmail Forwarding Confirmation')
+    ) {
+      // Try plain text body first; fall back to extracting href from raw HTML
+      // (stripping tags first would destroy URLs inside href attributes)
+      let confirmationUrl: string | undefined;
+      if (email.textBody) {
+        confirmationUrl = email.textBody.match(/https?:\/\/[^\s<>"]+/)?.[0];
+      }
+      if (!confirmationUrl && email.htmlBody) {
+        confirmationUrl = email.htmlBody.match(/href="(https?:\/\/[^"]+)"/i)?.[1];
+      }
+      if (confirmationUrl) {
+        setGmailConfirmationUrl(user.user_id, confirmationUrl);
+        fastify.log.info({ userId: user.user_id, confirmationUrl }, 'Stored Gmail forwarding confirmation URL');
+      } else {
+        fastify.log.warn({ userId: user.user_id, subject: email.subject }, 'Gmail forwarding confirmation email received but no URL found in body');
+      }
+      return reply.code(200).send({ status: 'ignored', reason: 'gmail_forwarding_confirmation', urlStored: !!confirmationUrl });
+    }
+
+    // 7. Check for duplicate
     if (emailExistsBySource(user.user_id, 'hosted', email.messageId)) {
       fastify.log.info({ messageId: email.messageId }, 'Duplicate email, skipping');
       return reply.code(200).send({ status: 'duplicate' });
     }
 
-    // 6. Build email body (prefer text, fall back to stripped HTML)
+    // 9. Build email body (prefer text, fall back to stripped HTML)
     let bodyText = email.textBody || '';
     if (!bodyText && email.htmlBody) {
       bodyText = email.htmlBody.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
     }
 
     // 7. Process attachments
-    const processedAttachments: Array<{
-      filename: string;
-      mimeType: string;
-      size: number;
-      buffer: Buffer;
-      extractedText: string;
-      extractionFailed: boolean;
-    }> = [];
+    const processedAttachments: DownloadedAttachment[] = [];
 
     let attachmentContent = '';
     let hasExtractionFailure = false;
@@ -194,21 +147,24 @@ export async function emailInboundRoutes(fastify: FastifyInstance): Promise<void
     if (email.attachments.length > 0) {
       for (const att of email.attachments) {
         const buffer = Buffer.from(att.content, 'base64');
-        const { text, failed } = await extractTextFromBuffer(buffer, att.contentType, att.filename);
+        const text = await extractTextFromAttachment(buffer, att.contentType, att.filename);
+        const failed = text.includes('extraction failed') || text.includes('download failed');
 
         processedAttachments.push({
           filename: att.filename,
           mimeType: att.contentType,
           size: att.size,
+          attachmentId: '', // Not from Gmail
           buffer,
           extractedText: text,
           extractionFailed: failed,
+          extractionError: failed ? text : undefined,
         });
 
         if (failed) hasExtractionFailure = true;
       }
 
-      attachmentContent = buildAttachmentContent(
+      attachmentContent = buildAttachmentContentString(
         processedAttachments.map(a => ({ filename: a.filename, extractedText: a.extractedText }))
       );
 
@@ -235,17 +191,7 @@ export async function emailInboundRoutes(fastify: FastifyInstance): Promise<void
 
     // 9. Store attachment files
     if (processedAttachments.length > 0) {
-      const downloadedAttachments = processedAttachments.map(att => ({
-        filename: att.filename,
-        mimeType: att.mimeType,
-        size: att.size,
-        attachmentId: '', // Not from Gmail
-        buffer: att.buffer,
-        extractedText: att.extractedText,
-        extractionFailed: att.extractionFailed,
-      }));
-
-      storeDownloadedAttachments(user.user_id, emailId, downloadedAttachments);
+      storeDownloadedAttachments(user.user_id, emailId, processedAttachments);
     }
 
     // 10. Mark as processed (ready for analysis)

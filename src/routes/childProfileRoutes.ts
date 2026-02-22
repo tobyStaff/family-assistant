@@ -18,7 +18,7 @@ import {
 } from '../db/childProfilesDb.js';
 import type { ChildProfile } from '../types/childProfile.js';
 import { upsertSenderFiltersBatch, upsertSenderFilter, getSenderFilters, getIncludedSenders, hasSenderFilters, deleteSenderFilter } from '../db/senderFilterDb.js';
-import { updateOnboardingStep, getUser } from '../db/userDb.js';
+import { updateOnboardingStep, getUser, setOnboardingPath, getOnboardingPath, validateHostedAlias, isHostedAliasAvailable, setHostedEmailAlias, getHostedEmailAlias } from '../db/userDb.js';
 import { rankSenderRelevance, rerankSendersWithContext } from '../utils/senderRelevanceRanker.js';
 import type { RankedSender } from '../utils/senderRelevanceRanker.js';
 import {
@@ -117,24 +117,27 @@ export async function childProfileRoutes(fastify: FastifyInstance): Promise<void
         });
       }
 
-      // Get auth before starting background job
-      let auth;
-      try {
-        auth = await getUserAuth(request);
-      } catch (authError: any) {
-        return reply.code(401).send({
-          error: 'Gmail not connected',
-          message: authError.message,
-        });
-      }
-
+      const onboardingPath = getOnboardingPath(userId);
       const provider = bodyResult.data.aiProvider || 'openai';
       const schoolContext = bodyResult.data.schoolContext;
+
+      // For hosted path, emails are already in DB — no Gmail auth needed
+      let auth: any = null;
+      if (onboardingPath !== 'hosted') {
+        try {
+          auth = await getUserAuth(request);
+        } catch (authError: any) {
+          return reply.code(401).send({
+            error: 'Gmail not connected',
+            message: authError.message,
+          });
+        }
+      }
 
       // Create job record
       const jobId = createJob(userId, 'analyze_children');
       console.log(`[POST /analyze] Created job ${jobId} for user ${userId}`);
-      fastify.log.info({ userId, jobId }, 'Starting background child analysis');
+      fastify.log.info({ userId, jobId, onboardingPath }, 'Starting background child analysis');
 
       // Start background analysis (don't await!)
       runBackgroundAnalysis(jobId, userId, auth, provider, schoolContext, fastify.log).catch(err => {
@@ -235,6 +238,10 @@ export async function childProfileRoutes(fastify: FastifyInstance): Promise<void
       // Mark onboarding as complete
       updateOnboardingStep(userId, 5);
 
+      // Ensure default settings exist (initialises summary_email_recipients to user's email)
+      const { getOrCreateDefaultSettings } = await import('../db/settingsDb.js');
+      getOrCreateDefaultSettings(userId);
+
       fastify.log.info(
         { userId, profileCount: ids.length },
         'Onboarding confirmed, profiles created'
@@ -251,6 +258,168 @@ export async function childProfileRoutes(fastify: FastifyInstance): Promise<void
         error: 'Failed to create profiles',
         message: error.message,
       });
+    }
+  });
+
+  /**
+   * POST /onboarding/choose-path
+   * Select onboarding path: 'hosted' or 'gmail'
+   */
+  fastify.post<{
+    Body: { path: 'hosted' | 'gmail' };
+  }>('/onboarding/choose-path', { preHandler: requireAuth }, async (request, reply) => {
+    try {
+      const userId = getUserId(request);
+      const { path } = request.body;
+
+      if (path !== 'hosted' && path !== 'gmail') {
+        return reply.code(400).send({ error: 'path must be "hosted" or "gmail"' });
+      }
+
+      setOnboardingPath(userId, path);
+      updateOnboardingStep(userId, 1);
+
+      fastify.log.info({ userId, path }, 'Onboarding path selected');
+      return reply.code(200).send({ success: true });
+    } catch (error: any) {
+      fastify.log.error({ err: error }, 'Error choosing onboarding path');
+      return reply.code(500).send({ error: 'Failed to set path', message: error.message });
+    }
+  });
+
+  /**
+   * POST /onboarding/set-alias
+   * Set hosted email alias for the user
+   */
+  fastify.post<{
+    Body: { alias: string };
+  }>('/onboarding/set-alias', { preHandler: requireAuth }, async (request, reply) => {
+    try {
+      const userId = getUserId(request);
+      const { alias } = request.body;
+
+      const validation = validateHostedAlias(alias);
+      if (!validation.valid) {
+        return reply.code(400).send({ error: validation.error });
+      }
+
+      if (!isHostedAliasAvailable(alias)) {
+        return reply.code(409).send({ error: 'This alias is already taken' });
+      }
+
+      const success = setHostedEmailAlias(userId, alias);
+      if (!success) {
+        return reply.code(409).send({ error: 'This alias is already taken' });
+      }
+
+      updateOnboardingStep(userId, 2);
+
+      const email = `${alias.toLowerCase()}@inbox.getfamilyassistant.com`;
+      fastify.log.info({ userId, alias, email }, 'Hosted email alias set');
+      return reply.code(200).send({ success: true, email });
+    } catch (error: any) {
+      fastify.log.error({ err: error }, 'Error setting hosted alias');
+      return reply.code(500).send({ error: 'Failed to set alias', message: error.message });
+    }
+  });
+
+  /**
+   * GET /onboarding/hosted-email-count
+   * Get count of hosted emails received for the user
+   */
+  fastify.get('/onboarding/hosted-email-count', { preHandler: requireAuth }, async (request, reply) => {
+    try {
+      const userId = getUserId(request);
+      const { default: db } = await import('../db/db.js');
+      const row = db.prepare(
+        `SELECT COUNT(*) as count FROM emails WHERE user_id = ? AND source_type = 'hosted'`
+      ).get(userId) as { count: number };
+
+      const count = row?.count ?? 0;
+
+      const { getGmailConfirmationUrl } = await import('../db/userDb.js');
+      const confirmationUrl = getGmailConfirmationUrl(userId);
+
+      return reply.code(200).send({ count, ready: count >= 10, confirmationUrl });
+    } catch (error: any) {
+      fastify.log.error({ err: error }, 'Error getting hosted email count');
+      return reply.code(500).send({ error: 'Failed to get email count', message: error.message });
+    }
+  });
+
+  /**
+   * POST /onboarding/process-hosted-emails
+   * Start background processing of hosted emails
+   */
+  fastify.post('/onboarding/process-hosted-emails', { preHandler: requireAuth }, async (request, reply) => {
+    try {
+      const userId = getUserId(request);
+
+      if (isJobInProgress(userId, 'process_hosted')) {
+        return reply.code(200).send({
+          success: true,
+          status: 'scanning',
+          message: 'Processing already in progress',
+        });
+      }
+
+      const jobId = createJob(userId, 'process_hosted');
+      updateOnboardingStep(userId, 3);
+      fastify.log.info({ userId, jobId }, 'Starting background hosted email processing');
+
+      runBackgroundProcessHosted(jobId, userId, fastify.log).catch(err => {
+        fastify.log.error({ err, jobId, userId }, 'Background hosted email processing failed');
+      });
+
+      return reply.code(202).send({
+        success: true,
+        status: 'scanning',
+        message: 'Processing started. Poll /onboarding/process-hosted-emails/status for results.',
+        jobId,
+      });
+    } catch (error: any) {
+      fastify.log.error({ err: error }, 'Error starting hosted email processing');
+      return reply.code(500).send({ error: 'Failed to start processing', message: error.message });
+    }
+  });
+
+  /**
+   * GET /onboarding/process-hosted-emails/status
+   * Check status of hosted email processing job
+   */
+  fastify.get('/onboarding/process-hosted-emails/status', { preHandler: requireAuth }, async (request, reply) => {
+    try {
+      const userId = getUserId(request);
+      const job = getLatestJob(userId, 'process_hosted');
+
+      if (!job) {
+        return reply.code(404).send({
+          error: 'No processing job found',
+          message: 'No processing has been started.',
+        });
+      }
+
+      const response: any = {
+        status: job.status,
+        started_at: job.started_at.toISOString(),
+      };
+
+      if (job.status === 'complete' && job.result_json) {
+        const result = JSON.parse(job.result_json);
+        response.eventsCreated = result.eventsCreated;
+        response.todosCreated = result.todosCreated;
+        response.completed_at = job.completed_at?.toISOString();
+        response.success = true;
+      } else if (job.status === 'failed') {
+        response.error = job.error_message || 'Processing failed';
+        response.completed_at = job.completed_at?.toISOString();
+        response.success = false;
+      }
+
+      return reply.code(200).send(response);
+    } catch (error: any) {
+      fastify.log.error({ err: error }, 'Error getting processing status');
+      return reply.code(500).send({ error: 'Failed to get status', message: error.message });
     }
   });
 
@@ -1045,20 +1214,24 @@ export async function childProfileRoutes(fastify: FastifyInstance): Promise<void
         });
       }
 
-      // Get auth before starting background job
-      let auth;
-      try {
-        auth = await getUserAuth(request);
-      } catch (authError: any) {
-        return reply.code(401).send({
-          error: 'Gmail not connected',
-          message: authError.message,
-        });
+      const onboardingPath = getOnboardingPath(userId);
+
+      // For hosted path, no Gmail auth needed — emails already in DB
+      let auth: any = null;
+      if (onboardingPath !== 'hosted') {
+        try {
+          auth = await getUserAuth(request);
+        } catch (authError: any) {
+          return reply.code(401).send({
+            error: 'Gmail not connected',
+            message: authError.message,
+          });
+        }
       }
 
       // Create job record
       const jobId = createJob(userId, 'generate_email');
-      fastify.log.info({ userId, jobId }, 'Starting background email generation');
+      fastify.log.info({ userId, jobId, onboardingPath }, 'Starting background email generation');
 
       // Start background job (don't await!)
       runBackgroundGenerateEmail(jobId, userId, auth, fastify.log).catch(err => {
@@ -1304,39 +1477,43 @@ async function runBackgroundExtraction(
 
 /**
  * Run email generation in the background.
- * Fetches emails, analyzes them, generates summary, and sends email.
+ * For hosted path (auth=null): emails already in DB, send via SES.
+ * For gmail path (auth set): fetch from Gmail, send via Gmail API.
  */
 async function runBackgroundGenerateEmail(
   jobId: number,
   userId: string,
-  auth: any,
+  auth: any | null,
   log: any
 ): Promise<void> {
   try {
     updateJobStatus(jobId, 'scanning');
-    log.info({ jobId, userId }, 'Background email generation: starting');
+    log.info({ jobId, userId, hostedPath: auth === null }, 'Background email generation: starting');
 
     // Dynamically import needed modules
-    const { fetchAndStoreEmails } = await import('../utils/emailStorageService.js');
     const { analyzeUnanalyzedEmails } = await import('../parsers/twoPassAnalyzer.js');
     const { generatePersonalizedSummary } = await import('../utils/personalizedSummaryBuilder.js');
     const { renderPersonalizedEmail } = await import('../templates/personalizedEmailTemplate.js');
-    const { sendInboxSummary } = await import('../utils/emailSender.js');
     const { createActionToken } = await import('../db/emailActionTokenDb.js');
     const { getOrCreateDefaultSettings } = await import('../db/settingsDb.js');
 
-    // Step 1: Fetch and store emails from included senders (last 7 days)
-    let senderQuery = '';
-    if (hasSenderFilters(userId)) {
-      const senders = getIncludedSenders(userId);
-      if (senders.length > 0) {
-        senderQuery = `{${senders.map(s => `from:${s}`).join(' OR ')}}`;
+    // Step 1: Fetch and store emails (Gmail path only; hosted emails already in DB)
+    if (auth !== null) {
+      const { fetchAndStoreEmails } = await import('../utils/emailStorageService.js');
+      let senderQuery = '';
+      if (hasSenderFilters(userId)) {
+        const senders = getIncludedSenders(userId);
+        if (senders.length > 0) {
+          senderQuery = `{${senders.map(s => `from:${s}`).join(' OR ')}}`;
+        }
       }
-    }
 
-    log.info({ jobId, userId, hasSenderFilter: !!senderQuery }, 'Background email: fetching emails');
-    const fetchResult = await fetchAndStoreEmails(userId, auth, 'last7days', 200, senderQuery);
-    log.info({ jobId, userId, fetched: fetchResult.fetched, stored: fetchResult.stored }, 'Background email: emails fetched');
+      log.info({ jobId, userId, hasSenderFilter: !!senderQuery }, 'Background email: fetching emails from Gmail');
+      const fetchResult = await fetchAndStoreEmails(userId, auth, 'last7days', 200, senderQuery);
+      log.info({ jobId, userId, fetched: fetchResult.fetched, stored: fetchResult.stored }, 'Background email: emails fetched');
+    } else {
+      log.info({ jobId, userId }, 'Background email: hosted path — skipping Gmail fetch, emails already in DB');
+    }
 
     // Step 2: Analyze all unanalyzed emails
     updateJobStatus(jobId, 'ranking');
@@ -1396,17 +1573,28 @@ async function runBackgroundGenerateEmail(
       ? settings.summary_email_recipients
       : [getUser(userId)?.email].filter(Boolean) as string[];
 
-    const dummySummary = {
-      email_analysis: { total_received: 0, signal_count: 0, noise_count: 0 },
-      summary: [], kit_list: { tomorrow: [], upcoming: [] },
-      financials: [], calendar_updates: [],
-      attachments_requiring_review: [], recurring_activities: [],
-      pro_dad_insight: '',
-    };
+    if (auth !== null) {
+      // Gmail path: send via Gmail API
+      const { sendInboxSummary } = await import('../utils/emailSender.js');
+      const dummySummary = {
+        email_analysis: { total_received: 0, signal_count: 0, noise_count: 0 },
+        summary: [], kit_list: { tomorrow: [], upcoming: [] },
+        financials: [], calendar_updates: [],
+        attachments_requiring_review: [], recurring_activities: [],
+        pro_dad_insight: '',
+      };
+      await sendInboxSummary(auth, dummySummary, html, recipients);
+    } else {
+      // Hosted path: send via SES
+      const { sendViaSES, buildSesFromAddress, buildSummarySubject } = await import('../utils/emailSender.js');
+      const { getHostedEmailAlias } = await import('../db/userDb.js');
+      const alias = getHostedEmailAlias(userId);
+      const fromAddress = buildSesFromAddress(alias);
+      const subject = buildSummarySubject();
+      await sendViaSES(html, recipients, fromAddress, subject);
+    }
 
-    const sentCount = await sendInboxSummary(auth, dummySummary, html, recipients);
-
-    log.info({ jobId, userId, sentCount, recipients }, 'Background email: sent successfully');
+    log.info({ jobId, userId, recipients }, 'Background email: sent successfully');
 
     // Mark as complete
     completeJob(jobId, {
@@ -1421,39 +1609,100 @@ async function runBackgroundGenerateEmail(
 }
 
 /**
+ * Run analysis of already-stored hosted emails in the background.
+ * No Gmail fetch needed — emails are already in the DB from inbound SES webhook.
+ */
+async function runBackgroundProcessHosted(
+  jobId: number,
+  userId: string,
+  log: any
+): Promise<void> {
+  try {
+    updateJobStatus(jobId, 'scanning');
+    log.info({ jobId, userId }, 'Background process-hosted: starting analysis');
+
+    const { analyzeUnanalyzedEmails } = await import('../parsers/twoPassAnalyzer.js');
+    const result = await analyzeUnanalyzedEmails(userId, 'openai', 50);
+
+    log.info({ jobId, userId, processed: result.processed }, 'Background process-hosted: analysis complete');
+
+    completeJob(jobId, {
+      eventsCreated: result.eventsCreated ?? 0,
+      todosCreated: result.todosCreated ?? 0,
+      processed: result.processed,
+    });
+  } catch (error: any) {
+    log.error({ err: error, jobId, userId }, 'Background process-hosted failed');
+    failJob(jobId, error.message || 'Unknown error');
+  }
+}
+
+/**
  * Run child profile analysis in the background.
- * Fetches emails and extracts child profiles using AI.
+ * For gmail path: fetches emails from Gmail then extracts.
+ * For hosted path (auth=null): loads already-stored emails from DB.
  */
 async function runBackgroundAnalysis(
   jobId: number,
   userId: string,
-  auth: any,
+  auth: any | null,
   provider: 'openai' | 'anthropic',
   schoolContext: Array<{ name: string; year_groups: string[] }> | undefined,
   log: any
 ): Promise<void> {
   try {
     updateJobStatus(jobId, 'scanning');
-    console.log(`[ANALYZE ${jobId}] Starting - fetching emails`);
-    log.info({ jobId, userId, provider }, 'Background analysis: starting');
+    console.log(`[ANALYZE ${jobId}] Starting - ${auth ? 'fetching from Gmail' : 'loading from DB'}`);
+    log.info({ jobId, userId, provider, hostedPath: auth === null }, 'Background analysis: starting');
 
-    // Build sender filter query from included senders
-    const includedSenders = getIncludedSenders(userId);
-    let senderQuery = '';
-    if (includedSenders.length > 0) {
-      senderQuery = includedSenders.map(s => `from:${s}`).join(' OR ');
-      senderQuery = `{${senderQuery}}`;
+    let emails: Array<any> = [];
+
+    if (auth !== null) {
+      // Gmail path: fetch from Gmail
+      const includedSenders = getIncludedSenders(userId);
+      let senderQuery = '';
+      if (includedSenders.length > 0) {
+        senderQuery = includedSenders.map(s => `from:${s}`).join(' OR ');
+        senderQuery = `{${senderQuery}}`;
+      }
+
+      log.info({ jobId, userId, senderCount: includedSenders.length }, 'Background analysis: fetching emails from Gmail');
+      const rawEmails = await fetchRecentEmailsWithBody(auth, 'last30days', 50, senderQuery);
+      console.log(`[ANALYZE ${jobId}] Fetched ${rawEmails.length} emails from Gmail`);
+
+      emails = rawEmails.map(e => ({
+        ...e,
+        bodyText: e.body,
+      }));
+    } else {
+      // Hosted path: load from DB
+      const { default: db } = await import('../db/db.js');
+      const rows = db.prepare(`
+        SELECT id, from_email, from_name, subject, date, body_text, snippet, labels, attachment_content
+        FROM emails
+        WHERE user_id = ? AND source_type = 'hosted'
+        ORDER BY date DESC
+        LIMIT 50
+      `).all(userId) as any[];
+
+      console.log(`[ANALYZE ${jobId}] Loaded ${rows.length} hosted emails from DB`);
+      log.info({ jobId, userId, emailCount: rows.length }, 'Background analysis: loaded hosted emails from DB');
+
+      emails = rows.map(r => ({
+        id: String(r.id),
+        from: r.from_email,
+        fromName: r.from_name || '',
+        subject: r.subject || '',
+        snippet: r.snippet || '',
+        receivedAt: r.date,
+        labels: r.labels ? JSON.parse(r.labels) : [],
+        hasAttachments: false,
+        bodyText: r.body_text || r.attachment_content || '',
+        body: r.body_text || r.attachment_content || '',
+      }));
     }
 
-    // Fetch emails (reduced from 100 to 50 to avoid timeouts)
-    log.info({ jobId, userId, senderCount: includedSenders.length }, 'Background analysis: fetching emails');
-    const rawEmails = await fetchRecentEmailsWithBody(auth, 'last30days', 50, senderQuery);
-
-    console.log(`[ANALYZE ${jobId}] Fetched ${rawEmails.length} emails`);
-    log.info({ jobId, userId, emailCount: rawEmails.length }, 'Background analysis: emails fetched');
-
-    if (rawEmails.length === 0) {
-      // Complete with empty result
+    if (emails.length === 0) {
       completeJob(jobId, {
         children: [],
         schools_detected: [],
@@ -1465,12 +1714,6 @@ async function runBackgroundAnalysis(
       });
       return;
     }
-
-    // Map to format expected by extractChildProfiles
-    const emails = rawEmails.map(e => ({
-      ...e,
-      bodyText: e.body,
-    }));
 
     // Update status to ranking (analysis phase)
     updateJobStatus(jobId, 'ranking');

@@ -35,6 +35,7 @@ import { requireAdmin } from './middleware/authorization.js';
  */
 export async function buildApp() {
   const fastify = Fastify({
+    bodyLimit: 25 * 1024 * 1024, // 25MB to handle inbound emails with PDF attachments (base64 inflates ~33%)
     logger:
       process.env.NODE_ENV === 'development'
         ? {

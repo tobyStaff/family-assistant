@@ -991,6 +991,37 @@ function runMigrations() {
 
     console.log('Migration 19 completed');
   }
+
+  // Migration 20: Add onboarding_path to users table for two-path onboarding
+  if (version < 20) {
+    console.log('Running migration 20: Adding onboarding_path to users table');
+
+    db.transaction(() => {
+      db.exec(`ALTER TABLE users ADD COLUMN onboarding_path TEXT DEFAULT NULL;`);
+
+      db.prepare('INSERT INTO schema_version (version, description) VALUES (?, ?)').run(
+        20,
+        'Add onboarding_path column to users for hosted/gmail two-path onboarding flow'
+      );
+    })();
+
+    console.log('Migration 20 completed');
+  }
+
+  if (version < 21) {
+    console.log('Running migration 21: Adding gmail_forwarding_confirmation_url to users table');
+
+    db.transaction(() => {
+      db.exec(`ALTER TABLE users ADD COLUMN gmail_forwarding_confirmation_url TEXT DEFAULT NULL;`);
+
+      db.prepare('INSERT INTO schema_version (version, description) VALUES (?, ?)').run(
+        21,
+        'Add gmail_forwarding_confirmation_url to users for inline confirmation prompt'
+      );
+    })();
+
+    console.log('Migration 21 completed');
+  }
 }
 
 // Run migrations after initial table creation
