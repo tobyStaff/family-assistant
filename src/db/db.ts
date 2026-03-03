@@ -1054,6 +1054,22 @@ function runMigrations() {
 
     console.log('Migration 22 completed');
   }
+
+  // Migration 23: Remove auto-generated Prep:/Pack: events (replaced by inference in email template)
+  if (version < 23) {
+    console.log('Running migration 23: Removing auto-generated Prep: and Pack: reminder events');
+
+    db.transaction(() => {
+      db.exec(`DELETE FROM events WHERE title LIKE 'Prep: %' OR title LIKE 'Pack: %';`);
+
+      db.prepare('INSERT INTO schema_version (version, description) VALUES (?, ?)').run(
+        23,
+        'Remove auto-generated Prep:/Pack: events — PACK reminders now inferred in email template'
+      );
+    })();
+
+    console.log('Migration 23 completed');
+  }
 }
 
 // Run migrations after initial table creation

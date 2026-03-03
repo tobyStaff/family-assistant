@@ -282,13 +282,11 @@ export async function runBackgroundGenerateEmail(
       emailsAnalyzed: summary.emailsAnalyzed,
     };
 
-    // Build inaugural briefing — combines welcome message + briefing content into one email
-    const user = getUser(userId);
-    const { getChildProfiles } = await import('../db/childProfilesDb.js');
-    const { renderInauguralBriefingEmail } = await import('../templates/onboardingSequenceEmails.js');
-    const profiles = getChildProfiles(userId, true);
-    const userName = user?.name?.split(' ')[0] || '';
-    const { html, subject } = renderInauguralBriefingEmail({ userName, childProfiles: profiles, summary: summaryWithActions, baseUrl });
+    // Render the standard Family Briefing email
+    const { renderPersonalizedEmail } = await import('../templates/personalizedEmailTemplate.js');
+    const { buildSummarySubject } = await import('../utils/emailSender.js');
+    const html = renderPersonalizedEmail(summaryWithActions);
+    const subject = buildSummarySubject();
 
     // Send to user's email
     const settings = getOrCreateDefaultSettings(userId);
@@ -315,13 +313,13 @@ export async function runBackgroundGenerateEmail(
       await sendViaSES(html, recipients, fromAddress, subject);
     }
 
-    log.info({ jobId, userId, recipients }, 'Background email: inaugural briefing sent successfully');
+    log.info({ jobId, userId, recipients }, 'Background email: first briefing sent successfully');
 
     // Mark onboarding complete and start trial
     updateOnboardingStep(userId, 5);
     setTrialStarted(userId);
     markOnboardingEmailSent(userId, 1, 'welcome');
-    log.info({ jobId, userId }, 'Day 1 inaugural briefing email sent, trial started');
+    log.info({ jobId, userId }, 'Day 1 briefing email sent, trial started');
 
     // Mark as complete
     completeJob(jobId, {

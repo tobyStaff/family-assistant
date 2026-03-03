@@ -172,7 +172,8 @@ function getTodayReminders(summary: PersonalizedSummaryWithActions): {
 
 /**
  * Get evening reminders - things to prepare/do tonight
- * Includes: READ, PACK (for tomorrow), BUY, PAY, FILL, SIGN, homework due this week
+ * Includes: READ, BUY, PAY, FILL, SIGN, REMIND due within a week;
+ *           PACK only when due tomorrow (pack tonight for tomorrow morning)
  * Excludes: events, items due next week+
  */
 function getEveningReminders(summary: PersonalizedSummaryWithActions): TodoWithAction[] {
@@ -183,6 +184,10 @@ function getEveningReminders(summary: PersonalizedSummaryWithActions): TodoWithA
 
   const today = new Date();
   today.setHours(0, 0, 0, 0);
+  const tomorrow = new Date(today);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const dayAfterTomorrow = new Date(today);
+  dayAfterTomorrow.setDate(dayAfterTomorrow.getDate() + 2);
   const oneWeekFromNow = new Date(today);
   oneWeekFromNow.setDate(oneWeekFromNow.getDate() + 7);
 
@@ -192,12 +197,17 @@ function getEveningReminders(summary: PersonalizedSummaryWithActions): TodoWithA
       return false;
     }
 
-    // Include items without due date (they need to be done soon)
+    // PACK: only surface tonight if the item is due tomorrow
+    if (todo.type === 'PACK') {
+      if (!todo.due_date) return false;
+      const dueDate = new Date(todo.due_date);
+      return dueDate >= tomorrow && dueDate < dayAfterTomorrow;
+    }
+
+    // All other types: include if due within the next week (or no due date)
     if (!todo.due_date) {
       return true;
     }
-
-    // Include items due within the next week
     const dueDate = new Date(todo.due_date);
     return dueDate <= oneWeekFromNow;
   });

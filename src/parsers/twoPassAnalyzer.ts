@@ -364,46 +364,6 @@ export async function analyzeEmail(
 
         createTodoEnhanced(userId, todoInput);
         todosCreated++;
-
-        // Auto-create reminder events for PACK todos
-        if (todo.type === 'PACK' && fixedDueDate) {
-          const dueDateTime = new Date(fixedDueDate);
-
-          // Event 1: Evening prep (7pm day before)
-          const eveningDate = new Date(dueDateTime);
-          eveningDate.setDate(eveningDate.getDate() - 1);
-          eveningDate.setHours(19, 0, 0, 0);
-
-          const eveningEventInput: CreateEventInput = {
-            title: `Prep: ${todo.description}`,
-            date: eveningDate.toISOString(),
-            child_name: todo.child_name || 'General',
-            source_email_id: email.gmail_message_id,
-            confidence: todo.confidence,
-            recurring: todo.recurring,
-            recurrence_pattern: todo.recurrence_pattern || undefined,
-          };
-          createEvent(userId, eveningEventInput);
-          eventsCreated++;
-
-          // Event 2: Morning reminder (7am day of)
-          const morningDate = new Date(dueDateTime);
-          morningDate.setHours(7, 0, 0, 0);
-
-          const morningEventInput: CreateEventInput = {
-            title: `Pack: ${todo.description}`,
-            date: morningDate.toISOString(),
-            child_name: todo.child_name || 'General',
-            source_email_id: email.gmail_message_id,
-            confidence: todo.confidence,
-            recurring: todo.recurring,
-            recurrence_pattern: todo.recurrence_pattern || undefined,
-          };
-          createEvent(userId, morningEventInput);
-          eventsCreated++;
-
-          console.log(`[TwoPass] Created PACK reminder events for "${todo.description}"`);
-        }
       } catch (err: any) {
         console.error(`[TwoPass] Error creating todo:`, err.message);
       }
