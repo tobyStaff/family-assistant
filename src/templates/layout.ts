@@ -41,8 +41,8 @@ const NAV_ITEMS: NavItem[] = [
   { href: '/todos-view', icon: '📝', label: 'TODOs' },
   { href: '/events-view', icon: '📅', label: 'Events' },
   { href: '/child-profiles-manage', icon: '👶', label: 'Child Profiles' },
-  { href: '/settings/senders', icon: '📨', label: 'Monitored Senders' },
-  { href: '/settings/training', icon: '🎯', label: 'Relevance Training' },
+  { href: '/settings/senders', icon: '📨', label: 'Monitored Senders', adminOnly: true },
+  { href: '/settings/training', icon: '🎯', label: 'Relevance Training', adminOnly: true },
   { href: '/settings', icon: '⚙️', label: 'Settings' },
 ];
 
@@ -74,7 +74,9 @@ export function renderLayout(options: LayoutOptions): string {
     `;
   };
 
-  const mainNavItems = NAV_ITEMS.map(renderNavItem).join('');
+  const mainNavItems = NAV_ITEMS
+    .filter(item => !item.adminOnly || userIsAdmin)
+    .map(renderNavItem).join('');
   const adminNavItems = userIsAdmin
     ? ADMIN_NAV_ITEMS.map(renderNavItem).join('')
     : '';

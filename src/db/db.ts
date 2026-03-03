@@ -1022,6 +1022,38 @@ function runMigrations() {
 
     console.log('Migration 21 completed');
   }
+
+  // Migration 22: Add trial tracking — trial_started_at on users + onboarding_emails_sent table
+  if (version < 22) {
+    console.log('Running migration 22: Adding trial_started_at and onboarding_emails_sent table');
+
+    db.transaction(() => {
+      // Track when the 7-day trial started for each user (set when briefing is first generated)
+      db.exec(`ALTER TABLE users ADD COLUMN trial_started_at TEXT DEFAULT NULL;`);
+
+      // Track which onboarding sequence emails have been sent per user
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS onboarding_emails_sent (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          user_id TEXT NOT NULL,
+          day INTEGER NOT NULL,
+          email_type TEXT NOT NULL,
+          sent_at TEXT NOT NULL DEFAULT (datetime('now')),
+          UNIQUE(user_id, day, email_type),
+          FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_onboarding_emails_user ON onboarding_emails_sent(user_id);
+      `);
+
+      db.prepare('INSERT INTO schema_version (version, description) VALUES (?, ?)').run(
+        22,
+        'Add trial_started_at to users and onboarding_emails_sent table for 7-day email sequence'
+      );
+    })();
+
+    console.log('Migration 22 completed');
+  }
 }
 
 // Run migrations after initial table creation

@@ -10,6 +10,7 @@ import {
 } from '../db/settingsDb.js';
 import { getUserId } from '../lib/userContext.js';
 import { requireAuth } from '../middleware/session.js';
+import { requireAdmin } from '../middleware/authorization.js';
 import {
   getUser,
   isHostedAliasAvailable,
@@ -408,7 +409,7 @@ export async function settingsRoutes(fastify: FastifyInstance): Promise<void> {
    * GET /settings/senders
    * Dedicated page for managing sender filters
    */
-  fastify.get('/settings/senders', { preHandler: requireAuth }, async (request, reply) => {
+  fastify.get('/settings/senders', { preHandler: requireAdmin }, async (request, reply) => {
     try {
       const userId = getUserId(request);
       const user = getUser(userId);
@@ -449,7 +450,7 @@ export async function settingsRoutes(fastify: FastifyInstance): Promise<void> {
    * GET /settings/training
    * Dedicated page for relevance training
    */
-  fastify.get('/settings/training', { preHandler: requireAuth }, async (request, reply) => {
+  fastify.get('/settings/training', { preHandler: requireAdmin }, async (request, reply) => {
     try {
       const userId = getUserId(request);
       const user = getUser(userId);

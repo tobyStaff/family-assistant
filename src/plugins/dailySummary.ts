@@ -19,6 +19,7 @@ import { analyzeUnanalyzedEmails } from '../parsers/twoPassAnalyzer.js';
 import { getIncludedSenders, hasSenderFilters } from '../db/senderFilterDb.js';
 import { createActionToken, cleanupExpiredTokens } from '../db/emailActionTokenDb.js';
 import { cleanupPastItems } from '../utils/cleanupPastItems.js';
+import { runOnboardingSequence } from '../utils/onboardingSequence.js';
 import type { Todo } from '../types/todo.js';
 import type { ExtractedEvent } from '../types/extraction.js';
 
@@ -595,6 +596,24 @@ async function dailySummaryPlugin(fastify: FastifyInstance) {
         start: true,
 
         // Timezone for cron schedule
+        timeZone: 'UTC',
+      },
+      {
+        // Onboarding sequence emailer — sends Days 2-7 emails for trial users
+        // Cron schedule: Daily at 8:00 AM UTC
+        cronTime: '0 0 8 * * *',
+
+        name: 'onboarding-sequence',
+
+        onTick: async function () {
+          try {
+            await runOnboardingSequence(fastify.log);
+          } catch (error) {
+            fastify.log.error({ err: error }, 'Fatal error in onboarding sequence cron job');
+          }
+        },
+
+        start: true,
         timeZone: 'UTC',
       },
     ],

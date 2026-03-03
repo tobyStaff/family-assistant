@@ -17,7 +17,7 @@ import { authRoutes } from './routes/authRoutes.js';
 import { settingsRoutes } from './routes/settingsRoutes.js';
 import { adminRoutes } from './routes/adminRoutes.js';
 import { metricsRoutes } from './routes/metricsRoutes.js';
-import { childProfileRoutes } from './routes/childProfileRoutes.js';
+import { onboardingRoutes } from './routes/onboardingRoutes.js';
 import { processingRoutes } from './routes/processingRoutes.js';
 import { actionRoutes } from './routes/actionRoutes.js';
 import { landingRoutes } from './routes/landingRoutes.js';
@@ -100,7 +100,7 @@ export async function buildApp() {
   await fastify.register(settingsRoutes);
   await fastify.register(adminRoutes);
   await fastify.register(metricsRoutes);
-  await fastify.register(childProfileRoutes);
+  await fastify.register(onboardingRoutes);
   await fastify.register(processingRoutes);
   await fastify.register(calendarRoutes);
   await fastify.register(todoRoutes);
