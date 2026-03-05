@@ -3,6 +3,8 @@ import { google } from 'googleapis';
 import type { OAuth2Client } from 'google-auth-library';
 import type { SchoolSummary } from '../types/summary.js';
 import { SESClient, SendEmailCommand } from '@aws-sdk/client-ses';
+import { Resend } from 'resend';
+import { isEmailSuppressed } from '../db/userDb.js';
 
 /**
  * Format date for email display
@@ -150,7 +152,8 @@ function createEmailMessage(to: string, subject: string, html: string, text?: st
  */
 export function buildSesFromAddress(alias: string | null): string {
   const domain = process.env.SES_FROM_DOMAIN || 'inbox.getfamilyassistant.com';
-  return alias ? `${alias}@${domain}` : `familybriefing@${domain}`;
+  const email = alias ? `${alias}@${domain}` : `familybriefing@${domain}`;
+  return `"Family Assistant" <${email}>`;
 }
 
 /**
@@ -187,6 +190,16 @@ export async function sendViaSES(
     throw new Error('AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY must be set to send via SES');
   }
 
+  // Filter out suppressed addresses (bounces or complaints)
+  const activeRecipients = recipients.filter(email => !isEmailSuppressed(email));
+  if (activeRecipients.length === 0) {
+    console.log('[SES] All recipients suppressed, skipping send');
+    return 0;
+  }
+  if (activeRecipients.length < recipients.length) {
+    console.log(`[SES] Skipping ${recipients.length - activeRecipients.length} suppressed recipient(s)`);
+  }
+
   const client = new SESClient({
     region: process.env.AWS_REGION || 'eu-north-1',
     credentials: { accessKeyId, secretAccessKey },
@@ -195,7 +208,7 @@ export async function sendViaSES(
   const command = new SendEmailCommand({
     Source: fromAddress,
     Destination: {
-      ToAddresses: recipients,
+      ToAddresses: activeRecipients,
     },
     Message: {
       Subject: { Data: subject, Charset: 'UTF-8' },
@@ -207,7 +220,72 @@ export async function sendViaSES(
   });
 
   await client.send(command);
-  return recipients.length;
+  return activeRecipients.length;
+}
+
+/**
+ * Send an email via Resend.
+ *
+ * @param html - HTML email body
+ * @param recipients - Array of recipient email addresses
+ * @param fromAddress - Full from address (e.g. toby@inbox.getfamilyassistant.com)
+ * @param subject - Email subject
+ * @returns Number of recipients the message was sent to
+ */
+async function sendViaResend(
+  html: string,
+  recipients: string[],
+  fromAddress: string,
+  subject: string
+): Promise<number> {
+  const apiKey = process.env.RESEND_API_KEY;
+  if (!apiKey) {
+    throw new Error('RESEND_API_KEY must be set to send via Resend');
+  }
+
+  // Filter out suppressed addresses (bounces or complaints)
+  const activeRecipients = recipients.filter(email => !isEmailSuppressed(email));
+  if (activeRecipients.length === 0) {
+    console.log('[Resend] All recipients suppressed, skipping send');
+    return 0;
+  }
+  if (activeRecipients.length < recipients.length) {
+    console.log(`[Resend] Skipping ${recipients.length - activeRecipients.length} suppressed recipient(s)`);
+  }
+
+  const resend = new Resend(apiKey);
+
+  for (const to of activeRecipients) {
+    const { error } = await resend.emails.send({ from: fromAddress, to, subject, html });
+    if (error) {
+      throw new Error(`Resend failed to send to ${to}: ${error.message}`);
+    }
+  }
+
+  return activeRecipients.length;
+}
+
+/**
+ * Send an email via the configured provider (EMAIL_PROVIDER env var).
+ * Defaults to SES if EMAIL_PROVIDER is not set.
+ *
+ * @param html - HTML email body
+ * @param recipients - Array of recipient email addresses
+ * @param fromAddress - Full from address
+ * @param subject - Email subject
+ * @returns Number of recipients the message was sent to
+ */
+export async function sendEmail(
+  html: string,
+  recipients: string[],
+  fromAddress: string,
+  subject: string
+): Promise<number> {
+  const provider = process.env.EMAIL_PROVIDER || 'ses';
+  if (provider === 'resend') {
+    return sendViaResend(html, recipients, fromAddress, subject);
+  }
+  return sendViaSES(html, recipients, fromAddress, subject);
 }
 
 /**

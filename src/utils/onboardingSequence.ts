@@ -13,7 +13,7 @@ import {
   renderDay6PreviewEmail,
   renderDay7PaywallEmail,
 } from '../templates/onboardingSequenceEmails.js';
-import { sendViaSES, buildSesFromAddress } from './emailSender.js';
+import { sendEmail, buildSesFromAddress } from './emailSender.js';
 import { getHostedEmailAlias } from '../db/userDb.js';
 
 /**
@@ -44,7 +44,7 @@ async function sendOnboardingEmail(
   const fromAddress = buildSesFromAddress(alias);
   const subject = `Day ${day}: ${emailType.replace(/_/g, ' ')}`;
 
-  await sendViaSES(html, recipients, fromAddress, subject);
+  await sendEmail(html, recipients, fromAddress, subject);
   markOnboardingEmailSent(userId, day, emailType);
   log.info({ userId, day, emailType, recipients }, 'Onboarding sequence email sent');
 }

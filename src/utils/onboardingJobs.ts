@@ -307,10 +307,10 @@ export async function runBackgroundGenerateEmail(
       await sendInboxSummary(auth, dummySummary, html, recipients);
     } else {
       // Hosted path: send via SES
-      const { sendViaSES, buildSesFromAddress } = await import('../utils/emailSender.js');
+      const { sendEmail, buildSesFromAddress } = await import('../utils/emailSender.js');
       const alias = getHostedEmailAlias(userId);
       const fromAddress = buildSesFromAddress(alias);
-      await sendViaSES(html, recipients, fromAddress, subject);
+      await sendEmail(html, recipients, fromAddress, subject);
     }
 
     log.info({ jobId, userId, recipients }, 'Background email: first briefing sent successfully');

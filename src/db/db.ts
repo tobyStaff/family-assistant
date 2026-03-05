@@ -1070,6 +1070,23 @@ function runMigrations() {
 
     console.log('Migration 23 completed');
   }
+
+  // Migration 24: Add email suppression columns for SES bounce/complaint handling
+  if (version < 24) {
+    console.log('Running migration 24: Adding email suppression columns to users table');
+
+    db.transaction(() => {
+      db.exec(`ALTER TABLE users ADD COLUMN email_suppressed INTEGER DEFAULT 0;`);
+      db.exec(`ALTER TABLE users ADD COLUMN email_suppressed_at DATETIME;`);
+
+      db.prepare('INSERT INTO schema_version (version, description) VALUES (?, ?)').run(
+        24,
+        'Add email_suppressed and email_suppressed_at columns to users for SES bounce/complaint handling'
+      );
+    })();
+
+    console.log('Migration 24 completed');
+  }
 }
 
 // Run migrations after initial table creation

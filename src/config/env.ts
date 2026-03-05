@@ -101,6 +101,10 @@ export const envSchema = z.object({
   AWS_ACCESS_KEY_ID: z.string().optional(),
   AWS_SECRET_ACCESS_KEY: z.string().optional(),
   SES_FROM_DOMAIN: z.string().default('inbox.getfamilyassistant.com'),
+
+  // Email Provider Selection
+  EMAIL_PROVIDER: z.enum(['ses', 'resend']).default('ses'),
+  RESEND_API_KEY: z.string().optional(),
 });
 
 export type EnvConfig = z.infer<typeof envSchema>;
@@ -171,6 +175,14 @@ export const fastifyEnvOptions = {
       SES_FROM_DOMAIN: {
         type: 'string',
         default: 'inbox.getfamilyassistant.com',
+      },
+      EMAIL_PROVIDER: {
+        type: 'string',
+        enum: ['ses', 'resend'],
+        default: 'ses',
+      },
+      RESEND_API_KEY: {
+        type: 'string',
       },
     },
   } as const,

@@ -560,6 +560,39 @@ export function getGmailConfirmationUrl(userId: string): string | null {
 }
 
 // ============================================
+// EMAIL SUPPRESSION (SES bounce/complaint handling)
+// ============================================
+
+/**
+ * Suppress email sending for a user by their email address.
+ * Called when SES reports a bounce or complaint.
+ *
+ * @param email - The email address to suppress
+ * @returns true if a user was found and suppressed, false if no user found
+ */
+export function suppressUserByEmail(email: string): boolean {
+  const result = db.prepare(`
+    UPDATE users
+    SET email_suppressed = 1, email_suppressed_at = datetime('now'), updated_at = datetime('now')
+    WHERE LOWER(email) = LOWER(?)
+  `).run(email);
+  return result.changes > 0;
+}
+
+/**
+ * Check whether sending to an email address has been suppressed.
+ *
+ * @param email - The email address to check
+ * @returns true if suppressed
+ */
+export function isEmailSuppressed(email: string): boolean {
+  const row = db.prepare(`
+    SELECT email_suppressed FROM users WHERE LOWER(email) = LOWER(?)
+  `).get(email) as { email_suppressed: number } | undefined;
+  return !!row?.email_suppressed;
+}
+
+// ============================================
 // TRIAL USER QUERIES
 // ============================================
 

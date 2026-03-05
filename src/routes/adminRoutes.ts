@@ -9,7 +9,7 @@ import type { DateRange } from '../utils/inboxFetcher.js';
 import { analyzeInbox, type AIProvider } from '../parsers/summaryParser.js';
 import { renderSummaryEmail } from '../utils/emailRenderer.js';
 import { generateInboxSummary } from '../utils/summaryQueries.js';
-import { sendViaSES, buildSesFromAddress, buildSummarySubject } from '../utils/emailSender.js';
+import { sendViaSES, sendEmail, buildSesFromAddress, buildSummarySubject } from '../utils/emailSender.js';
 import { getOrCreateDefaultSettings } from '../db/settingsDb.js';
 import { saveSummary } from '../db/summaryDb.js';
 import { getAllUsersWithRoles, getUser, getUserWithRoles, resetUserData, getHostedEmailAlias, updateOnboardingStep } from '../db/userDb.js';
@@ -520,7 +520,7 @@ export async function adminRoutes(fastify: FastifyInstance): Promise<void> {
       // Step 6: Send email via SES
       const alias = getHostedEmailAlias(userId);
       const fromAddress = buildSesFromAddress(alias);
-      const sentCount = await sendViaSES(html, recipients, fromAddress, buildSummarySubject());
+      const sentCount = await sendEmail(html, recipients, fromAddress, buildSummarySubject());
 
       // Step 7: Save summary to database
       saveSummary({

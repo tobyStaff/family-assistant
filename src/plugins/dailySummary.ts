@@ -5,7 +5,7 @@ import fastifyCron from 'fastify-cron';
 import { requireAdmin } from '../middleware/authorization.js';
 import { generatePersonalizedSummary, type PersonalizedSummary, type ChildSummary, type FamilySummary } from '../utils/personalizedSummaryBuilder.js';
 import { renderPersonalizedEmail, type PersonalizedSummaryWithActions, type TodoWithAction, type EventWithAction, type ChildSummaryWithActions, type FamilySummaryWithActions } from '../templates/personalizedEmailTemplate.js';
-import { sendViaSES, buildSesFromAddress, buildSummarySubject } from '../utils/emailSender.js';
+import { sendEmail, buildSesFromAddress, buildSummarySubject } from '../utils/emailSender.js';
 import { getAllUserIds } from '../db/authDb.js';
 import { getUser, getHostedEmailAlias } from '../db/userDb.js';
 import { getAuth } from '../db/authDb.js';
@@ -235,31 +235,26 @@ async function dailySummaryPlugin(fastify: FastifyInstance) {
                   acc + child.today_events.length + child.upcoming_events.length, 0
                 ) + summary.family_wide.today_events.length + summary.family_wide.upcoming_events.length;
 
-                // Only send email if there's content
-                if (totalTodos > 0 || totalEvents > 0 || summary.insights.length > 0) {
-                  // Send email via SES
-                  const alias = getHostedEmailAlias(userId);
-                  const fromAddress = buildSesFromAddress(alias);
-                  const subject = buildSummarySubject();
-                  await sendViaSES(html, settings.summary_email_recipients, fromAddress, subject);
+                // Always send email (template handles empty state)
+                const alias = getHostedEmailAlias(userId);
+                const fromAddress = buildSesFromAddress(alias);
+                const subject = buildSummarySubject();
+                await sendEmail(html, settings.summary_email_recipients, fromAddress, subject);
 
-                  fastify.log.info(
-                    {
-                      userId,
-                      recipientCount: settings.summary_email_recipients.length,
-                      todoCount: totalTodos,
-                      eventCount: totalEvents,
-                      childCount: summary.by_child.length,
-                      fromAddress,
-                      via: 'ses',
-                    },
-                    'Personalized summary sent successfully'
-                  );
+                fastify.log.info(
+                  {
+                    userId,
+                    recipientCount: settings.summary_email_recipients.length,
+                    todoCount: totalTodos,
+                    eventCount: totalEvents,
+                    childCount: summary.by_child.length,
+                    fromAddress,
+                    via: process.env.EMAIL_PROVIDER || 'ses',
+                  },
+                  'Personalized summary sent successfully'
+                );
 
-                  successCount++;
-                } else {
-                  fastify.log.debug({ userId }, 'Skipping email - no upcoming items');
-                }
+                successCount++;
               } catch (userError) {
                 errorCount++;
                 fastify.log.error(
