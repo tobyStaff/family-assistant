@@ -57,6 +57,11 @@ async function sendOnboardingEmail(
  * This function handles days 2–7.
  */
 export async function runOnboardingSequence(log: any): Promise<void> {
+  if (!process.env.ONBOARDING_SEQUENCE_ENABLED) {
+    log.info('Onboarding sequence: disabled (ONBOARDING_SEQUENCE_ENABLED not set)');
+    return;
+  }
+
   log.info('Onboarding sequence: starting daily run');
 
   let processed = 0;

@@ -45,6 +45,15 @@ services:
       - CRON_SCHEDULE=${CRON_SCHEDULE:-0 0 8 * * *}
       - TZ=${TZ:-UTC}
 
+      # Onboarding email sequence (disabled by default — set to 'true' to enable)
+      - ONBOARDING_SEQUENCE_ENABLED=${ONBOARDING_SEQUENCE_ENABLED}
+
+      # Outbound email provider ('ses' or 'resend', default: ses)
+      - EMAIL_PROVIDER=${EMAIL_PROVIDER:-ses}
+
+      # Resend (no sandbox restrictions)
+      - RESEND_API_KEY=${RESEND_API_KEY}
+
       # AWS SES (outbound email)
       - AWS_REGION=${AWS_REGION:-eu-north-1}
       - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
