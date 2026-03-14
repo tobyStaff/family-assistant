@@ -1087,6 +1087,21 @@ function runMigrations() {
 
     console.log('Migration 24 completed');
   }
+
+  if (version < 25) {
+    console.log('Running migration 25: Drop onboarding_path from users table');
+
+    db.transaction(() => {
+      db.exec(`ALTER TABLE users DROP COLUMN onboarding_path;`);
+
+      db.prepare('INSERT INTO schema_version (version, description) VALUES (?, ?)').run(
+        25,
+        'Drop onboarding_path from users — email source type is stored in user_settings.email_source'
+      );
+    })();
+
+    console.log('Migration 25 completed');
+  }
 }
 
 // Run migrations after initial table creation

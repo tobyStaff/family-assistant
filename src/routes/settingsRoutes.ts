@@ -37,7 +37,7 @@ import { renderRelevanceTrainingContent, renderRelevanceTrainingScripts } from '
 const UpdateSettingsSchema = z.object({
   summaryEmailRecipients: z.array(z.string().email()).optional(),
   summaryEnabled: z.boolean().optional(),
-  summaryTimeUtc: z.number().int().min(0).max(23).optional(),
+  summaryTimeUtc: z.number().int().min(6).max(10).optional(),
   timezone: z.string().optional(),
 });
 

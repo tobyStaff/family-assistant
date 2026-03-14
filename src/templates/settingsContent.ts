@@ -468,19 +468,15 @@ export function renderSettingsContent(options: SettingsContentOptions): string {
           </div>
 
           <div class="form-group">
-            <label for="summaryTimeUtc">Time to send summary (UTC hour):</label>
-            <input
-              type="number"
-              id="summaryTimeUtc"
-              min="0"
-              max="23"
-              value="${summaryTimeUtc}"
-            >
-            <div class="help-text">
-              Hour in UTC (0-23). Currently set to: <strong>${summaryTimeUtc}:00 UTC</strong>
-              <br>
-              <small>UK Examples: For 7am GMT set 7, for 7am BST (summer) set 6</small>
-            </div>
+            <label for="summaryTimeUtc">Time to send summary:</label>
+            <select id="summaryTimeUtc">
+              <option value="6"  ${summaryTimeUtc === 6  ? 'selected' : ''}>6:00 AM UTC</option>
+              <option value="7"  ${summaryTimeUtc === 7  ? 'selected' : ''}>7:00 AM UTC</option>
+              <option value="8"  ${summaryTimeUtc === 8  ? 'selected' : ''}>8:00 AM UTC</option>
+              <option value="9"  ${summaryTimeUtc === 9  ? 'selected' : ''}>9:00 AM UTC</option>
+              <option value="10" ${summaryTimeUtc === 10 ? 'selected' : ''}>10:00 AM UTC</option>
+            </select>
+            <div class="help-text">Choose your preferred delivery time (6–10 AM UTC).</div>
             <div id="localTimePreview" class="help-text" style="margin-top: 5px; color: var(--primary-color);"></div>
           </div>
 

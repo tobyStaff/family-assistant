@@ -27,14 +27,13 @@ import {
 import {
   updateOnboardingStep,
   getUser,
-  setOnboardingPath,
-  getOnboardingPath,
   validateHostedAlias,
   isHostedAliasAvailable,
   setHostedEmailAlias,
   getHostedEmailAlias,
   getGmailConfirmationUrl,
 } from '../db/userDb.js';
+import { setEmailSource, getEmailSource } from '../db/settingsDb.js';
 import { rerankSendersWithContext } from '../utils/senderRelevanceRanker.js';
 import type { RankedSender } from '../utils/senderRelevanceRanker.js';
 import {
@@ -116,7 +115,7 @@ export async function onboardingRoutes(fastify: FastifyInstance): Promise<void> 
     let currentStep = user?.onboarding_step ?? 0;
     const userRoles = (request as any).userRoles as Role[] || ['STANDARD'];
     const userIsAdmin = isAdmin(userRoles);
-    const onboardingPath = getOnboardingPath(userId);
+    const onboardingPath = currentStep > 0 ? getEmailSource(userId) : null;
     const hostedAlias = getHostedEmailAlias(userId);
     const hostedEmailAddress = hostedAlias ? `${hostedAlias}@inbox.getfamilyassistant.com` : 'your-alias@inbox.getfamilyassistant.com';
     const hostedConfirmationUrl = getGmailConfirmationUrl(userId);
@@ -222,7 +221,7 @@ export async function onboardingRoutes(fastify: FastifyInstance): Promise<void> 
         });
       }
 
-      const onboardingPath = getOnboardingPath(userId);
+      const onboardingPath = getEmailSource(userId);
       const provider = bodyResult.data.aiProvider || 'openai';
       const schoolContext = bodyResult.data.schoolContext;
 
@@ -377,7 +376,7 @@ export async function onboardingRoutes(fastify: FastifyInstance): Promise<void> 
         return reply.code(400).send({ error: 'path must be "hosted" or "gmail"' });
       }
 
-      setOnboardingPath(userId, path);
+      setEmailSource(userId, path);
       updateOnboardingStep(userId, 1);
 
       fastify.log.info({ userId, path }, 'Onboarding path selected');
@@ -1312,7 +1311,7 @@ export async function onboardingRoutes(fastify: FastifyInstance): Promise<void> 
         });
       }
 
-      const onboardingPath = getOnboardingPath(userId);
+      const onboardingPath = getEmailSource(userId);
 
       // For hosted path, no Gmail auth needed — emails already in DB
       let auth: any = null;

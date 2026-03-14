@@ -327,8 +327,8 @@ async function dailySummaryPlugin(fastify: FastifyInstance) {
       },
       {
         // Daily email fetch job
-        // Cron schedule: Daily at 6:00 AM UTC (before daily summary at 8:00 AM)
-        cronTime: process.env.EMAIL_FETCH_SCHEDULE || '0 0 6 * * *',
+        // Cron schedule: Daily at 5:00 AM UTC (before daily summary at 6:00 AM)
+        cronTime: process.env.EMAIL_FETCH_SCHEDULE || '0 0 5 * * *',
 
         // Job name for logging
         name: 'daily-email-fetch',
@@ -421,8 +421,8 @@ async function dailySummaryPlugin(fastify: FastifyInstance) {
       },
       {
         // Daily email analysis job (Two-Pass AI Analysis - Task 2)
-        // Cron schedule: Daily at 7:00 AM UTC (after email fetch at 6:00 AM)
-        cronTime: process.env.EMAIL_ANALYSIS_SCHEDULE || '0 0 7 * * *',
+        // Cron schedule: Daily at 5:30 AM UTC (after email fetch at 5:00 AM)
+        cronTime: process.env.EMAIL_ANALYSIS_SCHEDULE || '0 30 5 * * *',
 
         // Job name for logging
         name: 'daily-email-analysis',
@@ -742,7 +742,7 @@ async function dailySummaryPlugin(fastify: FastifyInstance) {
 
   fastify.log.info(
     {
-      schedule: process.env.EMAIL_FETCH_SCHEDULE || '0 0 6 * * *',
+      schedule: process.env.EMAIL_FETCH_SCHEDULE || '0 0 5 * * *',
       timezone: process.env.TZ || 'UTC',
     },
     'Daily email fetch cron job registered'
@@ -750,7 +750,7 @@ async function dailySummaryPlugin(fastify: FastifyInstance) {
 
   fastify.log.info(
     {
-      schedule: process.env.EMAIL_ANALYSIS_SCHEDULE || '0 0 7 * * *',
+      schedule: process.env.EMAIL_ANALYSIS_SCHEDULE || '0 30 5 * * *',
       timezone: process.env.TZ || 'UTC',
     },
     'Daily email analysis cron job registered'
