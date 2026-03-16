@@ -16,6 +16,7 @@ import { getAllUsersWithRoles, getUser, getUserWithRoles, resetUserData, getHost
 import type { Role } from '../types/roles.js';
 import { renderLayout } from '../templates/layout.js';
 import { renderAdminContent, renderAdminScripts } from '../templates/adminContent.js';
+import { processUserSummary } from '../plugins/dailySummary.js';
 
 /**
  * Zod schema for test endpoint
@@ -1309,5 +1310,89 @@ export async function adminRoutes(fastify: FastifyInstance): Promise<void> {
     updateOnboardingStep(userId, 5);
     fastify.log.info({ userId }, 'Onboarding skipped by admin');
     return reply.redirect('/dashboard');
+  });
+
+  /**
+   * POST /admin/cron/:job/fire
+   * Trigger a named cron job on demand. Supports --force for daily-summary to bypass hour check.
+   */
+  const KNOWN_JOBS = ['daily-summary', 'daily-email-fetch', 'daily-email-analysis', 'onboarding-sequence', 'event-sync-retry'] as const;
+  type KnownJob = typeof KNOWN_JOBS[number];
+
+  const CronFireSchema = z.object({
+    userId: z.string().optional(),
+    force: z.boolean().optional(),
+  });
+
+  fastify.post<{
+    Params: { job: string };
+    Body: z.infer<typeof CronFireSchema>;
+  }>('/admin/cron/:job/fire', { preHandler: [requireAdmin] }, async (request, reply) => {
+    const { job } = request.params;
+
+    if (!KNOWN_JOBS.includes(job as KnownJob)) {
+      return reply.code(400).send({
+        error: 'Unknown job',
+        known_jobs: KNOWN_JOBS,
+      });
+    }
+
+    const bodyResult = CronFireSchema.safeParse(request.body ?? {});
+    if (!bodyResult.success) {
+      return reply.code(400).send({ error: 'Invalid request body', details: bodyResult.error.issues });
+    }
+
+    const { userId: targetUserId, force } = bodyResult.data;
+    const startedAt = new Date().toISOString();
+    const t0 = Date.now();
+
+    fastify.log.info({ job, targetUserId, force }, 'Admin triggered cron job');
+
+    try {
+      if (job === 'daily-summary') {
+        const userIds = targetUserId
+          ? [targetUserId]
+          : getAllUsersWithRoles().map(u => u.user_id);
+
+        const results: Array<{ userId: string; result: string; reason?: string }> = [];
+
+        for (const uid of userIds) {
+          try {
+            const settings = getOrCreateDefaultSettings(uid);
+            const currentHourUtc = force ? (settings.summary_time_utc ?? 8) : new Date().getUTCHours();
+            const outcome = await processUserSummary(uid, currentHourUtc, fastify.log);
+            results.push({ userId: uid, ...outcome });
+          } catch (err: any) {
+            results.push({ userId: uid, result: 'error', reason: err.message });
+          }
+        }
+
+        return reply.code(200).send({
+          job,
+          started_at: startedAt,
+          force: !!force,
+          results,
+          duration_ms: Date.now() - t0,
+        });
+      }
+
+      // All other jobs: fire via cron and await
+      const cronJob = (fastify as any).cron?.getJobByName(job);
+      if (!cronJob) {
+        return reply.code(500).send({ error: `Cron job '${job}' not found` });
+      }
+
+      await cronJob.fireOnTick();
+
+      return reply.code(200).send({
+        job,
+        started_at: startedAt,
+        status: 'fired',
+        duration_ms: Date.now() - t0,
+      });
+    } catch (error: any) {
+      fastify.log.error({ err: error, job }, 'Error firing cron job');
+      return reply.code(500).send({ error: 'Failed to fire cron job', message: error.message });
+    }
   });
 }

@@ -147,6 +147,80 @@ function addActionsToSummary(
 }
 
 /**
+ * Process the daily summary for a single user.
+ * Exported so admin routes can trigger it on demand with a custom hour.
+ *
+ * @param userId - User to process
+ * @param currentHourUtc - UTC hour to compare against user's summary_time_utc setting
+ * @param logger - Fastify-compatible logger
+ */
+export async function processUserSummary(
+  userId: string,
+  currentHourUtc: number,
+  logger: { info: Function; debug: Function; error: Function }
+): Promise<{ result: 'success' | 'skipped' | 'error'; reason?: string }> {
+  const settings = getOrCreateDefaultSettings(userId);
+
+  if (!settings.summary_enabled) {
+    logger.info({ userId }, 'Skipping user - daily summary disabled');
+    return { result: 'skipped', reason: 'summary disabled' };
+  }
+
+  const userSendHour = settings.summary_time_utc ?? 8;
+  if (currentHourUtc !== userSendHour) {
+    return { result: 'skipped', reason: 'hour mismatch' };
+  }
+
+  if (settings.summary_email_recipients.length === 0) {
+    logger.info({ userId }, 'Skipping user - no email recipients configured');
+    return { result: 'skipped', reason: 'no recipients' };
+  }
+
+  logger.info({ userId, userSendHour }, 'Processing daily summary for user');
+
+  const cleanupResult = cleanupPastItems(userId);
+  if (cleanupResult.todosCompleted > 0 || cleanupResult.eventsRemoved > 0) {
+    logger.debug(
+      { userId, todosCompleted: cleanupResult.todosCompleted, eventsRemoved: cleanupResult.eventsRemoved },
+      'Cleaned up past items before summary'
+    );
+  }
+
+  const summary = await generatePersonalizedSummary(userId, 7);
+  const baseUrl = process.env.BASE_URL || 'http://localhost:3000';
+  const summaryWithActions = addActionsToSummary(summary, userId, baseUrl);
+  const html = renderPersonalizedEmail(summaryWithActions);
+
+  const totalTodos = summary.by_child.reduce((acc, child) =>
+    acc + child.today_todos.length + child.upcoming_todos.length, 0
+  ) + summary.family_wide.today_todos.length + summary.family_wide.upcoming_todos.length;
+
+  const totalEvents = summary.by_child.reduce((acc, child) =>
+    acc + child.today_events.length + child.upcoming_events.length, 0
+  ) + summary.family_wide.today_events.length + summary.family_wide.upcoming_events.length;
+
+  const alias = getHostedEmailAlias(userId);
+  const fromAddress = buildSesFromAddress(alias);
+  const subject = buildSummarySubject();
+  await sendEmail(html, settings.summary_email_recipients, fromAddress, subject);
+
+  logger.info(
+    {
+      userId,
+      recipientCount: settings.summary_email_recipients.length,
+      todoCount: totalTodos,
+      eventCount: totalEvents,
+      childCount: summary.by_child.length,
+      fromAddress,
+      via: process.env.EMAIL_PROVIDER || 'ses',
+    },
+    'Personalized summary sent successfully'
+  );
+
+  return { result: 'success' };
+}
+
+/**
  * Daily Summary Cron Plugin
  * Sends automated daily summaries of upcoming TODOs and events
  *
@@ -172,68 +246,6 @@ async function dailySummaryPlugin(fastify: FastifyInstance) {
 
           const USER_TIMEOUT_MS = 30_000;
 
-          async function processUserSummary(userId: string): Promise<'success' | 'skipped' | 'error'> {
-            const settings = getOrCreateDefaultSettings(userId);
-
-            if (!settings.summary_enabled) {
-              fastify.log.info({ userId }, 'Skipping user - daily summary disabled');
-              return 'skipped';
-            }
-
-            const userSendHour = settings.summary_time_utc ?? 8;
-            if (currentHourUtc !== userSendHour) {
-              return 'skipped';
-            }
-
-            if (settings.summary_email_recipients.length === 0) {
-              fastify.log.info({ userId }, 'Skipping user - no email recipients configured');
-              return 'skipped';
-            }
-
-            fastify.log.info({ userId, userSendHour }, 'Processing daily summary for user');
-
-            const cleanupResult = cleanupPastItems(userId);
-            if (cleanupResult.todosCompleted > 0 || cleanupResult.eventsRemoved > 0) {
-              fastify.log.debug(
-                { userId, todosCompleted: cleanupResult.todosCompleted, eventsRemoved: cleanupResult.eventsRemoved },
-                'Cleaned up past items before summary'
-              );
-            }
-
-            const summary = await generatePersonalizedSummary(userId, 7);
-            const baseUrl = process.env.BASE_URL || 'http://localhost:3000';
-            const summaryWithActions = addActionsToSummary(summary, userId, baseUrl);
-            const html = renderPersonalizedEmail(summaryWithActions);
-
-            const totalTodos = summary.by_child.reduce((acc, child) =>
-              acc + child.today_todos.length + child.upcoming_todos.length, 0
-            ) + summary.family_wide.today_todos.length + summary.family_wide.upcoming_todos.length;
-
-            const totalEvents = summary.by_child.reduce((acc, child) =>
-              acc + child.today_events.length + child.upcoming_events.length, 0
-            ) + summary.family_wide.today_events.length + summary.family_wide.upcoming_events.length;
-
-            const alias = getHostedEmailAlias(userId);
-            const fromAddress = buildSesFromAddress(alias);
-            const subject = buildSummarySubject();
-            await sendEmail(html, settings.summary_email_recipients, fromAddress, subject);
-
-            fastify.log.info(
-              {
-                userId,
-                recipientCount: settings.summary_email_recipients.length,
-                todoCount: totalTodos,
-                eventCount: totalEvents,
-                childCount: summary.by_child.length,
-                fromAddress,
-                via: process.env.EMAIL_PROVIDER || 'ses',
-              },
-              'Personalized summary sent successfully'
-            );
-
-            return 'success';
-          }
-
           try {
             const userIds = getAllUsersWithRoles().map(u => u.user_id);
 
@@ -246,7 +258,7 @@ async function dailySummaryPlugin(fastify: FastifyInstance) {
                 const timeoutPromise = new Promise<never>((_, reject) =>
                   setTimeout(() => reject(new Error(`Timed out after ${USER_TIMEOUT_MS}ms`)), USER_TIMEOUT_MS)
                 );
-                const result = await Promise.race([processUserSummary(userId), timeoutPromise]);
+                const { result } = await Promise.race([processUserSummary(userId, currentHourUtc, fastify.log), timeoutPromise]);
                 if (result === 'success') successCount++;
                 else skippedCount++;
               } catch (userError) {
