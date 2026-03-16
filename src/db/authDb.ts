@@ -131,7 +131,7 @@ export function updateAccessToken(
  *
  * @returns Array of user IDs
  */
-export function getAllUserIds(): string[] {
+export function getAllOAuthUserIds(): string[] {
   const rows = getAllUserIdsStmt.all() as any[];
   return rows.map(row => row.user_id);
 }

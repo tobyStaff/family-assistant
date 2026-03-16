@@ -6,14 +6,14 @@ import { requireAdmin } from '../middleware/authorization.js';
 import { generatePersonalizedSummary, type PersonalizedSummary, type ChildSummary, type FamilySummary } from '../utils/personalizedSummaryBuilder.js';
 import { renderPersonalizedEmail, type PersonalizedSummaryWithActions, type TodoWithAction, type EventWithAction, type ChildSummaryWithActions, type FamilySummaryWithActions } from '../templates/personalizedEmailTemplate.js';
 import { sendEmail, buildSesFromAddress, buildSummarySubject } from '../utils/emailSender.js';
-import { getAllUserIds } from '../db/authDb.js';
-import { getUser, getHostedEmailAlias } from '../db/userDb.js';
+import { getAllOAuthUserIds } from '../db/authDb.js';
+import { getUser, getHostedEmailAlias, getAllUsersWithRoles } from '../db/userDb.js';
 import { getAuth } from '../db/authDb.js';
 import { decrypt } from '../lib/crypto.js';
 import { google } from 'googleapis';
 import type { OAuth2Client } from 'google-auth-library';
 import { cleanupExpiredSessions } from '../db/sessionDb.js';
-import { getOrCreateDefaultSettings } from '../db/settingsDb.js';
+import { getEmailSource, getOrCreateDefaultSettings } from '../db/settingsDb.js';
 import { fetchAndStoreEmails, syncProcessedLabels } from '../utils/emailStorageService.js';
 import { analyzeUnanalyzedEmails } from '../parsers/twoPassAnalyzer.js';
 import { getIncludedSenders, hasSenderFilters } from '../db/senderFilterDb.js';
@@ -235,7 +235,7 @@ async function dailySummaryPlugin(fastify: FastifyInstance) {
           }
 
           try {
-            const userIds = getAllUserIds();
+            const userIds = getAllUsersWithRoles().map(u => u.user_id);
 
             let successCount = 0;
             let errorCount = 0;
@@ -339,7 +339,7 @@ async function dailySummaryPlugin(fastify: FastifyInstance) {
 
           try {
             // Get all users with stored auth
-            const userIds = getAllUserIds();
+            const userIds = getAllOAuthUserIds();
             fastify.log.info(`Processing email fetch for ${userIds.length} users`);
 
             let totalFetched = 0;
@@ -349,6 +349,12 @@ async function dailySummaryPlugin(fastify: FastifyInstance) {
             // Process each user
             for (const userId of userIds) {
               try {
+                // Skip users whose email source is not Gmail
+                if (getEmailSource(userId) !== 'gmail') {
+                  fastify.log.debug({ userId }, 'Skipping email fetch for non-Gmail user');
+                  continue;
+                }
+
                 // Get user's OAuth2 client
                 const auth = await getUserAuth(userId);
 
@@ -432,8 +438,7 @@ async function dailySummaryPlugin(fastify: FastifyInstance) {
           fastify.log.info('Starting daily email analysis cron job');
 
           try {
-            // Get all users with stored auth
-            const userIds = getAllUserIds();
+            const userIds = getAllUsersWithRoles().map(u => u.user_id);
             fastify.log.info(`Processing email analysis for ${userIds.length} users`);
 
             let totalProcessed = 0;
@@ -512,12 +517,12 @@ async function dailySummaryPlugin(fastify: FastifyInstance) {
 
           try {
             // Import required functions
-            const { getAllUserIds } = await import('../db/authDb.js');
+            const { getAllOAuthUserIds } = await import('../db/authDb.js');
             const { syncPendingEventsForUser } = await import('../utils/eventSyncService.js');
             const { isCalendarConnected } = await import('../db/userDb.js');
 
             // Get all users with stored auth
-            const userIds = getAllUserIds();
+            const userIds = getAllOAuthUserIds();
             let totalProcessed = 0;
             let totalSynced = 0;
             let totalFailed = 0;

@@ -3,26 +3,9 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import Database from 'better-sqlite3';
 
 // Mock the db import with a factory function
-vi.mock('./db.js', () => {
-  const testDb = new Database(':memory:');
-  testDb.pragma('journal_mode = WAL');
-
-  // Create tables for testing
-  testDb.exec(`
-    CREATE TABLE IF NOT EXISTS users (
-      user_id TEXT PRIMARY KEY,
-      email TEXT NOT NULL UNIQUE,
-      name TEXT,
-      picture_url TEXT,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    );
-    CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
-  `);
-
-  return {
-    default: testDb,
-  };
+vi.mock('./db.js', async () => {
+  const { createTestDb } = await import('../tests/createTestDb.js');
+  return { default: createTestDb() };
 });
 
 // Import functions after mocking

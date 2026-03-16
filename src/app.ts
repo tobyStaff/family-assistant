@@ -8,7 +8,6 @@ import cookie from '@fastify/cookie';
 import formbody from '@fastify/formbody';
 import fastifyStatic from '@fastify/static';
 import { join } from 'path';
-import { calendarRoutes } from './routes/calendarRoutes.js';
 import { todoRoutes } from './routes/todoRoutes.js';
 import { eventRoutes } from './routes/eventRoutes.js';
 import { emailRoutes } from './routes/emailRoutes.js';
@@ -103,7 +102,6 @@ export async function buildApp() {
   await fastify.register(metricsRoutes);
   await fastify.register(onboardingRoutes);
   await fastify.register(processingRoutes);
-  await fastify.register(calendarRoutes);
   await fastify.register(todoRoutes);
   await fastify.register(eventRoutes);
   await fastify.register(emailRoutes);

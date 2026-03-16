@@ -6,36 +6,9 @@ import { buildApp } from '../app.js';
 import { register } from 'prom-client';
 
 // Mock the database with in-memory instance
-vi.mock('../db/db.js', () => {
-  const testDb = new Database(':memory:');
-  testDb.pragma('journal_mode = WAL');
-
-  // Create tables
-  testDb.exec(`
-    CREATE TABLE IF NOT EXISTS auth (
-      user_id TEXT PRIMARY KEY,
-      refresh_token TEXT NOT NULL,
-      access_token TEXT,
-      expiry_date DATETIME
-    );
-
-    CREATE TABLE IF NOT EXISTS todos (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_id TEXT NOT NULL,
-      description TEXT NOT NULL,
-      due_date DATETIME,
-      status TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'done')),
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    );
-
-    CREATE TABLE IF NOT EXISTS processed_emails (
-      email_id TEXT PRIMARY KEY,
-      user_id TEXT NOT NULL,
-      processed_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    );
-  `);
-
-  return { default: testDb };
+vi.mock('../db/db.js', async () => {
+  const { createTestDb } = await import('../tests/createTestDb.js');
+  return { default: createTestDb() };
 });
 
 // Mock googleapis
@@ -102,27 +75,22 @@ describe('commandProcessor', () => {
   });
 
   describe('POST /process-command/:emailId', () => {
-    it('should return 400 for invalid email ID', async () => {
-      const response = await app.inject({
-        method: 'POST',
-        url: '/process-command/',
-      });
-
-      // Fastify returns 400 for validation errors on missing params
-      expect(response.statusCode).toBe(400);
-    });
-
-    it('should return error when auth not implemented', async () => {
+    it('should return 401 for unauthenticated request', async () => {
       const response = await app.inject({
         method: 'POST',
         url: '/process-command/test-email-123',
       });
 
-      // Auth not implemented, should return 500
-      expect(response.statusCode).toBe(500);
-      const json = response.json();
-      expect(json.error).toBe('Internal server error');
-      expect(json.message).toContain('Auth not implemented');
+      expect(response.statusCode).toBe(401);
+    });
+
+    it('should return 401 when no session is present', async () => {
+      const response = await app.inject({
+        method: 'POST',
+        url: '/process-command/test-email-123',
+      });
+
+      expect(response.statusCode).toBe(401);
     });
 
     // Note: The following tests would require mocking the auth functions

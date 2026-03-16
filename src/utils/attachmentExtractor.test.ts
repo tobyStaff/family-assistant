@@ -27,7 +27,8 @@ describe('PDF Extraction', () => {
     console.log('Testing pdfjs-dist library...');
 
     try {
-      const pdfjsLib = await import('pdfjs-dist');
+      const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
+      const pdfjsLib = (pdfjs as any).default ?? pdfjs;
       console.log('✓ pdfjs-dist module loaded');
 
       const loadingTask = pdfjsLib.getDocument({ data: new Uint8Array(simplePDF) });

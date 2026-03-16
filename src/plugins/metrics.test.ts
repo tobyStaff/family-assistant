@@ -1,5 +1,22 @@
 // src/plugins/metrics.test.ts
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+
+// Full schema DB mock (buildApp loads all DB modules at startup)
+vi.mock('../db/db.js', async () => {
+  const { createTestDb } = await import('../tests/createTestDb.js');
+  return { default: createTestDb() };
+});
+
+// Bypass auth so /metrics is accessible without a session
+vi.mock('../middleware/authorization.js', () => ({
+  requireAdmin: vi.fn((_req: any, _reply: any, done: () => void) => done()),
+  requireSuperAdmin: vi.fn((_req: any, _reply: any, done: () => void) => done()),
+  requireNoImpersonation: vi.fn((_req: any, _reply: any, done: () => void) => done()),
+  isRequestUserSuperAdmin: vi.fn(() => false),
+  getEffectiveUserId: vi.fn(() => null),
+  isImpersonating: vi.fn(() => false),
+}));
+
 import { buildApp } from '../app.js';
 import type { FastifyInstance } from 'fastify';
 import { register } from 'prom-client';

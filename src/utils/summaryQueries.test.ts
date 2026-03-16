@@ -3,22 +3,9 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import Database from 'better-sqlite3';
 
 // Mock the database
-vi.mock('../db/db.js', () => {
-  const testDb = new Database(':memory:');
-  testDb.pragma('journal_mode = WAL');
-
-  testDb.exec(`
-    CREATE TABLE IF NOT EXISTS todos (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_id TEXT NOT NULL,
-      description TEXT NOT NULL,
-      due_date DATETIME,
-      status TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'done')),
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    );
-  `);
-
-  return { default: testDb };
+vi.mock('../db/db.js', async () => {
+  const { createTestDb } = await import('../tests/createTestDb.js');
+  return { default: createTestDb() };
 });
 
 // Mock googleapis
