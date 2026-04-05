@@ -20,8 +20,9 @@ Daily Briefing
 
 Backlog items from this
 -----------------------
-1. Enable custom inbox receiving and sending. (BIG) - Prevents initially having to concede to google scope policy and not storing emails, enabling the one click links (since we can store the emails now).
+1. Enable custom inbox receiving and sending. (BIG) - Prevents initially having to concede to google scope policy and not storing emails, enabling the one click links (since we can store the emails now). DONE
 2. Enable Pricing to work (MED) - Very important to confirm if tool is worth paying for asap.
-3. Setup flow (really good copy to make the user feel like they are getting a real assistant) & Welcome email.
+3. Refine Setup flow (really good copy to make the user feel like they are getting a real assistant) & Welcome email.
 4. One-click more details (hosted pages containing more detailed summaries).
-5. Bugs.
+5. Bugs
+    - Recurring Reminders - Main bug so far is "Ella athletics every wednesday" email doesn't result in the required reminder every wednesday.
