@@ -3,9 +3,9 @@ import Database from 'better-sqlite3';
 import { join } from 'path';
 import { mkdirSync, existsSync } from 'fs';
 
-// Environment variable for DB path, defaults to ./data/app.db
+// Environment variable for DB path, defaults to ./data/inbox.db
 // In Docker, this will be mounted as a volume for persistence
-const DB_PATH = process.env.DB_PATH || join(process.cwd(), 'data', 'app.db');
+const DB_PATH = process.env.DB_PATH || join(process.cwd(), 'data', 'inbox.db');
 
 // Ensure data directory exists
 const dataDir = join(process.cwd(), 'data');
