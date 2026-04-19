@@ -17,7 +17,7 @@ import { getEmailSource, getOrCreateDefaultSettings } from '../db/settingsDb.js'
 import { fetchAndStoreEmails, syncProcessedLabels } from '../utils/emailStorageService.js';
 import { analyzeUnanalyzedEmails } from '../parsers/twoPassAnalyzer.js';
 import { getIncludedSenders, hasSenderFilters } from '../db/senderFilterDb.js';
-import { createActionToken, cleanupExpiredTokens } from '../db/emailActionTokenDb.js';
+import { createActionToken, createViewToken, cleanupExpiredTokens } from '../db/emailActionTokenDb.js';
 import { cleanupPastItems } from '../utils/cleanupPastItems.js';
 import { runOnboardingSequence } from '../utils/onboardingSequence.js';
 import type { Todo } from '../types/todo.js';
@@ -82,56 +82,61 @@ async function getUserEmail(userId: string): Promise<string> {
 }
 
 /**
- * Transform a todo to include an action URL for completing it
+ * Transform a todo to include action + detail URLs
  */
-function addTodoAction(todo: Todo, userId: string, baseUrl: string): TodoWithAction {
+function addTodoAction(todo: Todo, userId: string, baseUrl: string, viewBase: string): TodoWithAction {
   const token = createActionToken(userId, 'complete_todo', todo.id);
   return {
     ...todo,
     actionUrl: `${baseUrl}/api/action/${token}`,
+    detailUrl: `${viewBase}/todo/${todo.id}`,
   };
 }
 
 /**
- * Transform an event to include an action URL for removing it
+ * Transform an event to include action + detail URLs
  */
-function addEventAction(event: ExtractedEvent & { id?: number }, userId: string, baseUrl: string): EventWithAction {
-  // Only add action URL if event has an id
+function addEventAction(event: ExtractedEvent & { id?: number }, userId: string, baseUrl: string, viewBase: string): EventWithAction {
   if (event.id) {
     const token = createActionToken(userId, 'remove_event', event.id);
     return {
       ...event,
       actionUrl: `${baseUrl}/api/action/${token}`,
+      detailUrl: `${viewBase}/event/${event.id}`,
     };
   }
   return { ...event };
 }
 
 /**
- * Transform a PersonalizedSummary to include action URLs for todos and events
+ * Transform a PersonalizedSummary to include action URLs (one-shot Done/Remove)
+ * and a forwardable detail URL (per-summary view token) on every item.
  */
-function addActionsToSummary(
+export function addActionsToSummary(
   summary: PersonalizedSummary,
   userId: string,
   baseUrl: string
 ): PersonalizedSummaryWithActions {
-  // Transform child summaries
+  // One view token per summary email. Same token gates every L2/L3 request
+  // for the lifetime of the email (7 days). Forwardable.
+  const viewToken = createViewToken(userId);
+  const viewBase = `${baseUrl}/view/${viewToken}`;
+
   const byChildWithActions: ChildSummaryWithActions[] = summary.by_child.map(child => ({
     child_name: child.child_name,
     display_name: child.display_name,
-    today_todos: child.today_todos.map(todo => addTodoAction(todo, userId, baseUrl)),
-    today_events: child.today_events.map(event => addEventAction(event, userId, baseUrl)),
-    upcoming_todos: child.upcoming_todos.map(todo => addTodoAction(todo, userId, baseUrl)),
-    upcoming_events: child.upcoming_events.map(event => addEventAction(event, userId, baseUrl)),
+    today_todos: child.today_todos.map(todo => addTodoAction(todo, userId, baseUrl, viewBase)),
+    today_events: child.today_events.map(event => addEventAction(event, userId, baseUrl, viewBase)),
+    upcoming_todos: child.upcoming_todos.map(todo => addTodoAction(todo, userId, baseUrl, viewBase)),
+    upcoming_events: child.upcoming_events.map(event => addEventAction(event, userId, baseUrl, viewBase)),
     insights: child.insights,
   }));
 
-  // Transform family-wide summary
   const familyWideWithActions: FamilySummaryWithActions = {
-    today_todos: summary.family_wide.today_todos.map(todo => addTodoAction(todo, userId, baseUrl)),
-    today_events: summary.family_wide.today_events.map(event => addEventAction(event, userId, baseUrl)),
-    upcoming_todos: summary.family_wide.upcoming_todos.map(todo => addTodoAction(todo, userId, baseUrl)),
-    upcoming_events: summary.family_wide.upcoming_events.map(event => addEventAction(event, userId, baseUrl)),
+    today_todos: summary.family_wide.today_todos.map(todo => addTodoAction(todo, userId, baseUrl, viewBase)),
+    today_events: summary.family_wide.today_events.map(event => addEventAction(event, userId, baseUrl, viewBase)),
+    upcoming_todos: summary.family_wide.upcoming_todos.map(todo => addTodoAction(todo, userId, baseUrl, viewBase)),
+    upcoming_events: summary.family_wide.upcoming_events.map(event => addEventAction(event, userId, baseUrl, viewBase)),
     insights: summary.family_wide.insights,
   };
 

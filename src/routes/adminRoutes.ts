@@ -426,7 +426,7 @@ export async function adminRoutes(fastify: FastifyInstance): Promise<void> {
       const { generatePersonalizedSummary } = await import('../utils/personalizedSummaryBuilder.js');
       const { renderPersonalizedEmail } = await import('../templates/personalizedEmailTemplate.js');
       const { cleanupPastItems } = await import('../utils/cleanupPastItems.js');
-      const { createActionToken } = await import('../db/emailActionTokenDb.js');
+      const { addActionsToSummary } = await import('../plugins/dailySummary.js');
 
       // Step 1: Clean up past items (same as production)
       const cleanupResult = cleanupPastItems(userId);
@@ -440,48 +440,9 @@ export async function adminRoutes(fastify: FastifyInstance): Promise<void> {
       // Step 2: Generate personalized summary (same as production)
       const summary = await generatePersonalizedSummary(userId, 7);
 
-      // Step 3: Add action URLs (same as production)
+      // Step 3: Add action URLs + forwardable detail URLs (same as production cron)
       const baseUrl = process.env.BASE_URL || 'http://localhost:3000';
-
-      // Helper to add action URL to todo
-      const addTodoAction = (todo: any) => {
-        const token = createActionToken(userId, 'complete_todo', todo.id);
-        return { ...todo, actionUrl: `${baseUrl}/api/action/${token}` };
-      };
-
-      // Helper to add action URL to event
-      const addEventAction = (event: any) => {
-        if (event.id) {
-          const token = createActionToken(userId, 'remove_event', event.id);
-          return { ...event, actionUrl: `${baseUrl}/api/action/${token}` };
-        }
-        return { ...event };
-      };
-
-      // Transform summary with action URLs
-      const summaryWithActions = {
-        generated_at: summary.generated_at,
-        date_range: summary.date_range,
-        by_child: summary.by_child.map(child => ({
-          child_name: child.child_name,
-          display_name: child.display_name,
-          today_todos: child.today_todos.map(addTodoAction),
-          today_events: child.today_events.map(addEventAction),
-          upcoming_todos: child.upcoming_todos.map(addTodoAction),
-          upcoming_events: child.upcoming_events.map(addEventAction),
-          insights: child.insights,
-        })),
-        family_wide: {
-          today_todos: summary.family_wide.today_todos.map(addTodoAction),
-          today_events: summary.family_wide.today_events.map(addEventAction),
-          upcoming_todos: summary.family_wide.upcoming_todos.map(addTodoAction),
-          upcoming_events: summary.family_wide.upcoming_events.map(addEventAction),
-          insights: summary.family_wide.insights,
-        },
-        insights: summary.insights,
-        highlight: summary.highlight,
-        emailsAnalyzed: summary.emailsAnalyzed,
-      };
+      const summaryWithActions = addActionsToSummary(summary, userId, baseUrl);
 
       // Step 4: Render HTML (same as production)
       const html = renderPersonalizedEmail(summaryWithActions);
@@ -677,7 +638,7 @@ export async function adminRoutes(fastify: FastifyInstance): Promise<void> {
       const { generatePersonalizedSummary } = await import('../utils/personalizedSummaryBuilder.js');
       const { renderPersonalizedEmail } = await import('../templates/personalizedEmailTemplate.js');
       const { cleanupPastItems } = await import('../utils/cleanupPastItems.js');
-      const { createActionToken } = await import('../db/emailActionTokenDb.js');
+      const { addActionsToSummary } = await import('../plugins/dailySummary.js');
 
       // Clean up past items before generating summary (same as production)
       const cleanupResult = cleanupPastItems(userId);
@@ -691,45 +652,9 @@ export async function adminRoutes(fastify: FastifyInstance): Promise<void> {
       // Generate personalized summary (uses stored events/todos from database)
       const summary = await generatePersonalizedSummary(userId, 7); // Look ahead 7 days
 
-      // Add action URLs (same as production)
+      // Add action URLs + forwardable detail URLs (same as production cron)
       const baseUrl = process.env.BASE_URL || 'http://localhost:3000';
-
-      const addTodoAction = (todo: any) => {
-        const token = createActionToken(userId, 'complete_todo', todo.id);
-        return { ...todo, actionUrl: `${baseUrl}/api/action/${token}` };
-      };
-
-      const addEventAction = (event: any) => {
-        if (event.id) {
-          const token = createActionToken(userId, 'remove_event', event.id);
-          return { ...event, actionUrl: `${baseUrl}/api/action/${token}` };
-        }
-        return { ...event };
-      };
-
-      const summaryWithActions = {
-        generated_at: summary.generated_at,
-        date_range: summary.date_range,
-        by_child: summary.by_child.map(child => ({
-          child_name: child.child_name,
-          display_name: child.display_name,
-          today_todos: child.today_todos.map(addTodoAction),
-          today_events: child.today_events.map(addEventAction),
-          upcoming_todos: child.upcoming_todos.map(addTodoAction),
-          upcoming_events: child.upcoming_events.map(addEventAction),
-          insights: child.insights,
-        })),
-        family_wide: {
-          today_todos: summary.family_wide.today_todos.map(addTodoAction),
-          today_events: summary.family_wide.today_events.map(addEventAction),
-          upcoming_todos: summary.family_wide.upcoming_todos.map(addTodoAction),
-          upcoming_events: summary.family_wide.upcoming_events.map(addEventAction),
-          insights: summary.family_wide.insights,
-        },
-        insights: summary.insights,
-        highlight: summary.highlight,
-        emailsAnalyzed: summary.emailsAnalyzed,
-      };
+      const summaryWithActions = addActionsToSummary(summary, userId, baseUrl);
 
       // Render HTML (same as production)
       const html = renderPersonalizedEmail(summaryWithActions);

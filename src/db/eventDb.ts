@@ -306,6 +306,23 @@ export function getEvent(userId: string, id: number): Event | null {
 }
 
 /**
+ * Get all events linked to a given source email (by gmail_message_id string).
+ * Used by the progressive-detail L2 view to list related items.
+ */
+export function getEventsBySourceEmailId(
+  userId: string,
+  sourceEmailId: string
+): Event[] {
+  const stmt = db.prepare(`
+    SELECT * FROM events
+    WHERE user_id = ? AND source_email_id = ?
+    ORDER BY created_at ASC
+  `);
+  const rows = stmt.all(userId, sourceEmailId) as any[];
+  return rows.map(mapRowToEvent);
+}
+
+/**
  * Get events with advanced filtering
  */
 export function getEvents(

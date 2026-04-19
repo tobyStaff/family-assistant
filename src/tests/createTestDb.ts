@@ -215,8 +215,8 @@ export function createTestDb(): Database.Database {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       token TEXT NOT NULL UNIQUE,
       user_id TEXT NOT NULL,
-      action_type TEXT NOT NULL CHECK(action_type IN ('complete_todo', 'remove_event')),
-      target_id INTEGER NOT NULL,
+      action_type TEXT NOT NULL CHECK(action_type IN ('complete_todo', 'remove_event', 'view_summary')),
+      target_id INTEGER,
       expires_at DATETIME NOT NULL,
       used_at DATETIME,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP

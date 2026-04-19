@@ -338,6 +338,23 @@ export function getTodosByType(userId: string, type: TodoType): Todo[] {
 }
 
 /**
+ * Get all todos linked to a given source email (by gmail_message_id string).
+ * Used by the progressive-detail L2 view to list related items.
+ */
+export function getTodosBySourceEmailId(
+  userId: string,
+  sourceEmailId: string
+): Todo[] {
+  const stmt = db.prepare(`
+    SELECT * FROM todos
+    WHERE user_id = ? AND source_email_id = ?
+    ORDER BY created_at ASC
+  `);
+  const rows = stmt.all(userId, sourceEmailId) as any[];
+  return rows.map(mapRowToTodo);
+}
+
+/**
  * Get todos by child
  *
  * @param userId - User ID

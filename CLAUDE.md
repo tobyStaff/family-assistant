@@ -83,7 +83,7 @@ src/
 - SQLite with WAL mode
 - Location: `DB_PATH` env var; in Docker: `/app/data/app.db` (named volume `db-data`)
 - Migrations run automatically on startup in `db.ts`
-- **Current migration version: 24**
+- **Current migration version: 26**
 
 ### Key DB Tables
 | Table | Purpose |
@@ -163,6 +163,16 @@ Key env vars:
 - Created in `emailActionTokenDb.ts`, validated in `actionRoutes.ts`
 - Expire after 7 days
 - Route: `GET /api/action/:token`
+- **Action types**: `complete_todo`, `remove_event` (one-shot, consumed by `validateAndUseToken`), and `view_summary` (forwardable, read-only, validated by `validateTokenReadOnly` — does not mark `used_at`, `target_id` is NULL)
+- One `view_summary` token is minted per daily summary email and gates the progressive-detail routes below.
+
+### Progressive Detail (L2/L3) — `detailRoutes.ts`
+- `GET /view/:token/todo/:id` — item detail page for a todo
+- `GET /view/:token/event/:id` — item detail page for an event
+- `GET /view/:token/email/:emailId` — original source email rendered as mobile-styled HTML (plaintext → linkified HTML via `utils/renderEmailBody.ts`); supports `?from=todo:N` / `?from=event:N` for a back-to-item breadcrumb
+- `GET /view/:token/attachment/:id` — stream an attachment file (path-traversal-guarded under `data/attachments/`)
+- `POST /view/:token/todo/:id/done` and `/event/:id/remove` — mutating actions, require both a valid token AND a session whose user matches the token owner
+- Read-only routes are forwardable (token survives reads); Done/Remove buttons are hidden in L2 when no session.
 
 ### Hosted Email
 - Users can claim an alias (e.g. `toby@inbox.getfamilyassistant.com`)

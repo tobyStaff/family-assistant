@@ -211,7 +211,7 @@ export async function runBackgroundGenerateEmail(
     // Dynamically import heavy modules (lazy load)
     const { analyzeUnanalyzedEmails } = await import('../parsers/twoPassAnalyzer.js');
     const { generatePersonalizedSummary } = await import('../utils/personalizedSummaryBuilder.js');
-    const { createActionToken } = await import('../db/emailActionTokenDb.js');
+    const { addActionsToSummary } = await import('../plugins/dailySummary.js');
     const { getOrCreateDefaultSettings } = await import('../db/settingsDb.js');
 
     // Step 1: Fetch and store emails (Gmail path only; hosted emails already in DB)
@@ -243,44 +243,9 @@ export async function runBackgroundGenerateEmail(
     log.info({ jobId, userId }, 'Background email: generating summary');
     const summary = await generatePersonalizedSummary(userId, 7);
 
-    // Add action URLs
+    // Add action URLs + forwardable detail URLs (same as production cron)
     const baseUrl = process.env.BASE_URL || 'http://localhost:3000';
-
-    const addTodoAction = (todo: any) => {
-      const token = createActionToken(userId, 'complete_todo', todo.id);
-      return { ...todo, actionUrl: `${baseUrl}/api/action/${token}` };
-    };
-    const addEventAction = (event: any) => {
-      if (event.id) {
-        const token = createActionToken(userId, 'remove_event', event.id);
-        return { ...event, actionUrl: `${baseUrl}/api/action/${token}` };
-      }
-      return { ...event };
-    };
-
-    const summaryWithActions = {
-      generated_at: summary.generated_at,
-      date_range: summary.date_range,
-      by_child: summary.by_child.map(child => ({
-        child_name: child.child_name,
-        display_name: child.display_name,
-        today_todos: child.today_todos.map(addTodoAction),
-        today_events: child.today_events.map(addEventAction),
-        upcoming_todos: child.upcoming_todos.map(addTodoAction),
-        upcoming_events: child.upcoming_events.map(addEventAction),
-        insights: child.insights,
-      })),
-      family_wide: {
-        today_todos: summary.family_wide.today_todos.map(addTodoAction),
-        today_events: summary.family_wide.today_events.map(addEventAction),
-        upcoming_todos: summary.family_wide.upcoming_todos.map(addTodoAction),
-        upcoming_events: summary.family_wide.upcoming_events.map(addEventAction),
-        insights: summary.family_wide.insights,
-      },
-      insights: summary.insights,
-      highlight: summary.highlight,
-      emailsAnalyzed: summary.emailsAnalyzed,
-    };
+    const summaryWithActions = addActionsToSummary(summary, userId, baseUrl);
 
     // Render the standard Family Briefing email
     const { renderPersonalizedEmail } = await import('../templates/personalizedEmailTemplate.js');

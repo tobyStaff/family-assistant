@@ -6,7 +6,7 @@ import db from './db.js';
 /**
  * Action types for email tokens
  */
-export type ActionType = 'complete_todo' | 'remove_event';
+export type ActionType = 'complete_todo' | 'remove_event' | 'view_summary';
 
 /**
  * Token record from database
@@ -16,7 +16,7 @@ export interface ActionToken {
   token: string;
   user_id: string;
   action_type: ActionType;
-  target_id: number;
+  target_id: number | null;
   expires_at: Date;
   used_at: Date | null;
   created_at: Date;
@@ -29,7 +29,7 @@ export interface TokenValidationResult {
   valid: boolean;
   userId?: string;
   actionType?: ActionType;
-  targetId?: number;
+  targetId?: number | null;
   error?: string;
 }
 
@@ -51,6 +51,24 @@ export function createActionToken(
     INSERT INTO email_action_tokens (token, user_id, action_type, target_id, expires_at)
     VALUES (?, ?, ?, ?, ?)
   `).run(token, userId, actionType, targetId, expiresAt.toISOString());
+
+  return token;
+}
+
+/**
+ * Create a forwardable read-only view token for a daily summary.
+ * One token per summary email — gates access to L2/L3 detail pages for that user's items.
+ * Target id is unused (null) because the URL path carries the item id.
+ */
+export function createViewToken(userId: string, expiresInDays: number = 7): string {
+  const token = randomUUID();
+  const expiresAt = new Date();
+  expiresAt.setDate(expiresAt.getDate() + expiresInDays);
+
+  db.prepare(`
+    INSERT INTO email_action_tokens (token, user_id, action_type, target_id, expires_at)
+    VALUES (?, ?, ?, NULL, ?)
+  `).run(token, userId, 'view_summary', expiresAt.toISOString());
 
   return token;
 }
@@ -104,6 +122,40 @@ export function validateAndUseToken(token: string): TokenValidationResult {
 }
 
 /**
+ * Validate a token without consuming it.
+ * Used for forwardable read-only views (L2/L3). Unlike validateAndUseToken,
+ * this does NOT mark used_at, and it does not reject tokens that have been used —
+ * a mutating one-shot token can still power a read-only view after being consumed.
+ */
+export function validateTokenReadOnly(token: string): TokenValidationResult {
+  const row = db.prepare(`
+    SELECT user_id, action_type, target_id, expires_at
+    FROM email_action_tokens
+    WHERE token = ?
+  `).get(token) as {
+    user_id: string;
+    action_type: ActionType;
+    target_id: number | null;
+    expires_at: string;
+  } | undefined;
+
+  if (!row) {
+    return { valid: false, error: 'Token not found' };
+  }
+
+  if (new Date(row.expires_at) < new Date()) {
+    return { valid: false, error: 'Token has expired' };
+  }
+
+  return {
+    valid: true,
+    userId: row.user_id,
+    actionType: row.action_type,
+    targetId: row.target_id,
+  };
+}
+
+/**
  * Get token info without using it (for debugging/display)
  */
 export function getTokenInfo(token: string): ActionToken | null {
@@ -116,7 +168,7 @@ export function getTokenInfo(token: string): ActionToken | null {
     token: string;
     user_id: string;
     action_type: ActionType;
-    target_id: number;
+    target_id: number | null;
     expires_at: string;
     used_at: string | null;
     created_at: string;

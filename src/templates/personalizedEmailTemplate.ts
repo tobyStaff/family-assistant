@@ -48,6 +48,8 @@ export interface PersonalizedSummaryWithActions {
  */
 export interface TodoWithAction extends Todo {
   actionUrl?: string;
+  /** Forwardable token URL to the L2 progressive-detail page for this todo. */
+  detailUrl?: string;
 }
 
 /**
@@ -56,6 +58,8 @@ export interface TodoWithAction extends Todo {
 export interface EventWithAction extends ExtractedEvent {
   id?: number;
   actionUrl?: string;
+  /** Forwardable token URL to the L2 progressive-detail page for this event. */
+  detailUrl?: string;
 }
 
 /**
@@ -275,6 +279,11 @@ function renderTodo(todo: TodoWithAction, size: 'large' | 'small' = 'large'): st
     ? `<a href="${escapeHtml(todo.actionUrl)}" class="complete-button${size === 'small' ? ' complete-button-small' : ''}">✓ Done</a>`
     : '';
 
+  // Progressive-detail link (L2) — forwardable, read-only
+  const detailLink = todo.detailUrl
+    ? `<a href="${escapeHtml(todo.detailUrl)}" class="detail-link">View details →</a>`
+    : '';
+
   // Build meta items
   const metaItems: string[] = [];
   if (dueDate) metaItems.push(`<span>⏰ ${dueDate}</span>`);
@@ -292,10 +301,11 @@ function renderTodo(todo: TodoWithAction, size: 'large' | 'small' = 'large'): st
       </div>
       <div class="todo-description">${escapeHtml(todo.description)}</div>
       ${metaItems.length > 0 ? `<div class="todo-meta">${metaItems.join('')}</div>` : ''}
-      ${(actionButton || completeButton) ? `
+      ${(actionButton || completeButton || detailLink) ? `
         <div class="todo-actions">
           ${actionButton}
           ${completeButton}
+          ${detailLink}
         </div>
       ` : ''}
     </div>
@@ -319,6 +329,10 @@ function renderEvent(event: EventWithAction, size: 'large' | 'small' = 'large'):
     ? `<a href="${escapeHtml(event.actionUrl)}" class="remove-button${size === 'small' ? ' remove-button-small' : ''}">✕ Remove</a>`
     : '';
 
+  const detailLink = event.detailUrl
+    ? `<a href="${escapeHtml(event.detailUrl)}" class="detail-link">View details →</a>`
+    : '';
+
   const cardClass = size === 'small' ? 'event-item event-item-small' : 'event-item';
 
   return `
@@ -333,6 +347,7 @@ function renderEvent(event: EventWithAction, size: 'large' | 'small' = 'large'):
       </div>
       ${location}
       ${event.description ? `<div class="event-description">${escapeHtml(event.description)}</div>` : ''}
+      ${detailLink ? `<div class="event-details-link">${detailLink}</div>` : ''}
     </div>
   `;
 }
@@ -1167,6 +1182,21 @@ export function renderPersonalizedEmail(summary: PersonalizedSummaryWithActions)
     .remove-button-small {
       padding: 4px 10px;
       font-size: 11px;
+    }
+
+    /* Progressive-detail link (L2) — understated text link */
+    .detail-link {
+      display: inline-block;
+      color: #2A5C82;
+      text-decoration: none;
+      font-size: 13px;
+      font-weight: 500;
+      border-bottom: 1px dotted #2A5C82;
+      padding-bottom: 1px;
+    }
+    .event-details-link {
+      margin-top: 8px;
+      font-size: 13px;
     }
 
     /* Payment provider badge */

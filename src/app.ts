@@ -19,6 +19,7 @@ import { metricsRoutes } from './routes/metricsRoutes.js';
 import { onboardingRoutes } from './routes/onboardingRoutes.js';
 import { processingRoutes } from './routes/processingRoutes.js';
 import { actionRoutes } from './routes/actionRoutes.js';
+import { detailRoutes } from './routes/detailRoutes.js';
 import { landingRoutes } from './routes/landingRoutes.js';
 import { checkoutRoutes } from './routes/checkoutRoutes.js';
 import { emailInboundRoutes } from './routes/emailInboundRoutes.js';
@@ -97,6 +98,7 @@ export async function buildApp() {
   await fastify.register(checkoutRoutes);
   await fastify.register(authRoutes);
   await fastify.register(actionRoutes);  // Token-based auth, no session required
+  await fastify.register(detailRoutes);  // Token-based progressive-detail views (L2/L3)
   await fastify.register(settingsRoutes);
   await fastify.register(adminRoutes);
   await fastify.register(metricsRoutes);

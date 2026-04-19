@@ -1102,6 +1102,50 @@ function runMigrations() {
 
     console.log('Migration 25 completed');
   }
+
+  // Migration 26: Rebuild email_action_tokens to widen CHECK constraint (add view_summary)
+  // and allow NULL target_id for read-only view tokens that gate progressive-detail pages.
+  if (version < 26) {
+    console.log('Running migration 26: Rebuilding email_action_tokens for view_summary tokens');
+
+    db.transaction(() => {
+      db.exec(`
+        CREATE TABLE email_action_tokens_new (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          token TEXT NOT NULL UNIQUE,
+          user_id TEXT NOT NULL,
+          action_type TEXT NOT NULL CHECK(action_type IN ('complete_todo', 'remove_event', 'view_summary')),
+          target_id INTEGER,
+          expires_at DATETIME NOT NULL,
+          used_at DATETIME,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
+        );
+      `);
+
+      db.exec(`
+        INSERT INTO email_action_tokens_new (
+          id, token, user_id, action_type, target_id, expires_at, used_at, created_at
+        )
+        SELECT id, token, user_id, action_type, target_id, expires_at, used_at, created_at
+        FROM email_action_tokens;
+      `);
+
+      db.exec(`DROP TABLE email_action_tokens;`);
+      db.exec(`ALTER TABLE email_action_tokens_new RENAME TO email_action_tokens;`);
+
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_action_tokens_token ON email_action_tokens(token);`);
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_action_tokens_expires ON email_action_tokens(expires_at);`);
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_action_tokens_user ON email_action_tokens(user_id);`);
+
+      db.prepare('INSERT INTO schema_version (version, description) VALUES (?, ?)').run(
+        26,
+        'Widen email_action_tokens action_type CHECK to include view_summary; allow NULL target_id'
+      );
+    })();
+
+    console.log('Migration 26 completed');
+  }
 }
 
 // Run migrations after initial table creation
