@@ -45,13 +45,6 @@ export function renderSourceEmail(opts: {
 
   const body = renderEmailBody(email.body_text || '');
 
-  const attachmentTextBlock = email.attachment_content
-    ? `<div class="card">
-        <h3>Attachment text (extracted)</h3>
-        <div class="extracted-block">${esc(email.attachment_content)}</div>
-      </div>`
-    : '';
-
   const attachmentFiles = attachments.length > 0
     ? `<div class="card">
         <h3>Attachment files</h3>
@@ -73,7 +66,23 @@ export function renderSourceEmail(opts: {
     ? `<a href="${esc(backHref)}">← Back to item</a>`
     : '';
 
+  // Blog-style typography applied only on L3. Scoped to .prose-body so it
+  // does not bleed into L2 or the email template.
+  const proseStyles = `
+    <style>
+      .prose-body { max-width: 640px; font-size: 18px; line-height: 1.7; }
+      .prose-body p { margin: 0 0 24px 0; }
+      .prose-body p:last-child { margin-bottom: 0; }
+      .prose-body ul,
+      .prose-body ol { margin: 0 0 24px 0; padding-left: 24px; }
+      .prose-body li { margin-bottom: 8px; }
+      .prose-body li:last-child { margin-bottom: 0; }
+      .prose-body a { color: #2A5C82; text-decoration: underline; text-underline-offset: 2px; }
+    </style>
+  `;
+
   const content = `
+    ${proseStyles}
     <div class="card">
       <h3>From</h3>
       <div class="meta-line">${sender}</div>
@@ -84,9 +93,8 @@ export function renderSourceEmail(opts: {
     </div>
     <div class="card">
       <h3>Body</h3>
-      <div class="email-body">${body || '<p style="color:#7A8FA3;">No body text stored.</p>'}</div>
+      <div class="email-body prose-body">${body || '<p style="color:#7A8FA3;">No body text stored.</p>'}</div>
     </div>
-    ${attachmentTextBlock}
     ${attachmentFiles}
   `;
 
