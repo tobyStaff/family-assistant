@@ -172,14 +172,33 @@ export function renderOnboardingPage(options: OnboardingPageOptions): string {
       align-items: start;
     }
     .child-row .remove-btn {
-      background: transparent;
+      background: #FEE2E2;
       border: none;
       color: #B91C1C;
       cursor: pointer;
-      font-size: 18px;
-      padding: 12px;
+      font-size: 20px;
+      font-weight: 500;
+      width: 40px;
+      height: 40px;
+      border-radius: 8px;
+      padding: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      line-height: 1;
       align-self: center;
+      transition: background 0.15s, color 0.15s;
     }
+    .child-row .remove-btn:hover {
+      background: #DC2626;
+      color: white;
+    }
+    .child-row .remove-btn:focus-visible {
+      outline: 2px solid #DC2626;
+      outline-offset: 2px;
+    }
+    /* Always keep at least one row — the first row can't be removed. */
+    .child-row:first-child .remove-btn { display: none; }
     .alias-display {
       display: flex;
       align-items: center;
@@ -283,6 +302,53 @@ export function renderOnboardingPage(options: OnboardingPageOptions): string {
       padding: 4px 8px;
     }
     .dev-skip-btn:hover { color: #64748B; }
+
+    @media (max-width: 480px) {
+      body {
+        padding: 12px;
+        align-items: flex-start;
+      }
+      .card {
+        padding: 24px 20px;
+        border-radius: 16px;
+      }
+      h1 {
+        font-size: 22px;
+        line-height: 1.25;
+      }
+      .subtitle {
+        font-size: 14px;
+        margin-bottom: 20px;
+      }
+      .alias-suffix {
+        font-size: 13px;
+        padding: 10px 10px;
+      }
+      input[type="text"] {
+        font-size: 16px; /* keep 16px+ to suppress iOS auto-zoom on focus */
+      }
+      /* Stack the children form: name + remove on top row, year-group full-width below.
+         For the first row (no remove button), the third column collapses to 0px. */
+      .child-row {
+        grid-template-columns: 1fr auto;
+        grid-template-rows: auto auto;
+        column-gap: 8px;
+        row-gap: 8px;
+      }
+      .child-row > input[name="real_name"] { grid-column: 1; grid-row: 1; }
+      .child-row > input[name="year_group"] { grid-column: 1 / -1; grid-row: 2; }
+      .child-row > .remove-btn { grid-column: 2; grid-row: 1; }
+      .alias-text {
+        font-size: 14px;
+      }
+      .step-list li {
+        font-size: 14px;
+        padding-left: 32px;
+      }
+      .copy-icon-btn {
+        padding: 8px; /* slightly larger thumb target */
+      }
+    }
   </style>
 </head>
 <body>
@@ -404,11 +470,11 @@ function renderChildrenScreen(): string {
         list.appendChild(wrapper.firstElementChild);
       });
 
+      // Remove a child row. CSS hides the button on the first child, so the
+      // user can never delete the last remaining row.
       list.addEventListener('click', (e) => {
         if (e.target.classList.contains('remove-btn')) {
-          if (list.children.length > 1) {
-            e.target.closest('.child-row').remove();
-          }
+          e.target.closest('.child-row').remove();
         }
       });
 

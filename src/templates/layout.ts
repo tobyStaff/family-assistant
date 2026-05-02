@@ -177,6 +177,23 @@ export function renderLayout(options: LayoutOptions): string {
       display: flex;
       flex-direction: column;
       z-index: 100;
+      transition: transform 0.25s ease;
+    }
+
+    /* Mobile drawer toggle / backdrop — hidden on desktop, revealed in @media block below */
+    .menu-toggle { display: none; }
+    .sidebar-backdrop {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.4);
+      z-index: 99;
+      opacity: 0;
+      transition: opacity 0.2s ease;
+    }
+    .sidebar-backdrop.visible {
+      display: block;
+      opacity: 1;
     }
 
     .sidebar-header {
@@ -496,21 +513,66 @@ export function renderLayout(options: LayoutOptions): string {
     @media (max-width: 768px) {
       .sidebar {
         transform: translateX(-100%);
+        width: min(280px, 80vw);
+      }
+      .sidebar.open {
+        transform: translateX(0);
+        box-shadow: 4px 0 24px rgba(0, 0, 0, 0.25);
       }
 
       .header {
         left: 0;
+        padding: 0 12px;
       }
 
       .main {
         margin-left: 0;
+        padding: 20px 16px;
       }
+
+      .menu-toggle {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 40px;
+        height: 40px;
+        background: transparent;
+        border: none;
+        border-radius: 8px;
+        color: var(--primary-dark);
+        font-size: 22px;
+        cursor: pointer;
+        padding: 0;
+        margin-right: 4px;
+      }
+      .menu-toggle:hover { background: var(--sky); }
+
+      .header-left { gap: 8px; min-width: 0; flex: 1; }
+
+      .page-title {
+        font-size: 18px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        min-width: 0;
+      }
+
+      /* On mobile we collapse the user pill to just the avatar — full identity
+         lives in the drawer. This stops the title from colliding with the email. */
+      .user-menu {
+        padding: 0;
+        background: transparent;
+        gap: 0;
+      }
+      .user-info { display: none; }
+      .user-avatar { width: 36px; height: 36px; border: 1.5px solid var(--border-light); }
     }
   </style>
 </head>
 <body>
   <!-- Sidebar -->
-  <aside class="sidebar">
+  <div class="sidebar-backdrop" id="sidebar-backdrop"></div>
+  <aside class="sidebar" id="sidebar">
     <div class="sidebar-header">
       <a href="/dashboard" class="sidebar-logo">
         <span class="sidebar-logo-icon">📬</span>
@@ -544,6 +606,9 @@ export function renderLayout(options: LayoutOptions): string {
   <!-- Header -->
   <header class="header">
     <div class="header-left">
+      <button type="button" class="menu-toggle" id="menu-toggle" aria-label="Open navigation" aria-controls="sidebar" aria-expanded="false">
+        ☰
+      </button>
       <h1 class="page-title">${title}</h1>
     </div>
 
@@ -579,6 +644,36 @@ export function renderLayout(options: LayoutOptions): string {
 
     ${content}
   </main>
+
+  <script>
+    (function () {
+      const sidebar = document.getElementById('sidebar');
+      const backdrop = document.getElementById('sidebar-backdrop');
+      const toggle = document.getElementById('menu-toggle');
+      if (!sidebar || !backdrop || !toggle) return;
+
+      function open() {
+        sidebar.classList.add('open');
+        backdrop.classList.add('visible');
+        toggle.setAttribute('aria-expanded', 'true');
+        document.body.style.overflow = 'hidden';
+      }
+      function close() {
+        sidebar.classList.remove('open');
+        backdrop.classList.remove('visible');
+        toggle.setAttribute('aria-expanded', 'false');
+        document.body.style.overflow = '';
+      }
+
+      toggle.addEventListener('click', () => {
+        sidebar.classList.contains('open') ? close() : open();
+      });
+      backdrop.addEventListener('click', close);
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && sidebar.classList.contains('open')) close();
+      });
+    })();
+  </script>
 
   ${scripts || ''}
 </body>
