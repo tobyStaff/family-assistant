@@ -3,7 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import { google } from 'googleapis';
 import { randomBytes } from 'crypto';
 import { storeAuth } from '../db/authDb.js';
-import { upsertUser, getUser, ensureSuperAdminRoles, setCalendarConnected } from '../db/userDb.js';
+import { upsertUser, getUser, ensureSuperAdminRoles, setCalendarConnected, getGmailConfirmationUrl } from '../db/userDb.js';
 import { isOnboardingComplete } from '../lib/onboardingState.js';
 import { readDevSkipCookie } from './onboardingRoutes.js';
 import { ensureSubscription } from '../db/subscriptionDb.js';
@@ -496,6 +496,7 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
     const content = renderDashboardContent({
       userIsAdmin: userIsAdmin_,
       upcomingEvents,
+      forwardingConfirmationUrl: getGmailConfirmationUrl(effectiveUserId),
     });
 
     const scripts = renderDashboardScripts(userIsAdmin_);

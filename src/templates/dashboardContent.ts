@@ -14,13 +14,14 @@ interface UpcomingEvent {
 interface DashboardOptions {
   userIsAdmin: boolean;
   upcomingEvents: UpcomingEvent[];
+  forwardingConfirmationUrl?: string | null;
 }
 
 /**
  * Generate the dashboard content HTML (without layout wrapper)
  */
 export function renderDashboardContent(options: DashboardOptions): string {
-  const { userIsAdmin, upcomingEvents } = options;
+  const { userIsAdmin, upcomingEvents, forwardingConfirmationUrl } = options;
 
   const eventsHtml = upcomingEvents.length > 0
     ? upcomingEvents.map(event => `
@@ -207,7 +208,98 @@ export function renderDashboardContent(options: DashboardOptions): string {
       .danger-zone .admin-section-title {
         color: var(--danger-dark);
       }
+
+      .forwarding-banner {
+        background: #FFF8E1;
+        border: 1px solid #F59E0B;
+        border-radius: var(--radius-md);
+        padding: 16px 20px;
+        margin-bottom: 20px;
+        display: flex;
+        gap: 16px;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+      }
+      .forwarding-banner-message {
+        flex: 1;
+        min-width: 240px;
+        color: #78350F;
+        font-size: 14px;
+        line-height: 1.4;
+      }
+      .forwarding-banner-message strong { color: #92400E; }
+      .forwarding-banner-actions {
+        display: flex;
+        gap: 8px;
+        flex-shrink: 0;
+      }
+      .forwarding-banner .btn-confirm {
+        background: #92400E;
+        color: white;
+        border: none;
+        padding: 10px 18px;
+        border-radius: 8px;
+        font-size: 14px;
+        font-weight: 600;
+        cursor: pointer;
+        text-decoration: none;
+        font-family: inherit;
+      }
+      .forwarding-banner .btn-confirm:hover { background: #78350F; }
+      .forwarding-banner .btn-dismiss {
+        background: transparent;
+        border: none;
+        color: #92400E;
+        cursor: pointer;
+        font-size: 13px;
+        text-decoration: underline;
+        padding: 6px 8px;
+        font-family: inherit;
+      }
     </style>
+
+    ${forwardingConfirmationUrl ? `
+      <div class="forwarding-banner" id="forwarding-banner">
+        <div class="forwarding-banner-message">
+          <strong>📨 Gmail wants to confirm forwarding to your inbox.</strong>
+          Click below to open Google's confirmation page and approve it.
+        </div>
+        <div class="forwarding-banner-actions">
+          <a href="${forwardingConfirmationUrl}" target="_blank" rel="noopener noreferrer"
+             class="btn-confirm" id="forwarding-confirm-btn">
+            Confirm forwarding ↗
+          </a>
+          <button type="button" class="btn-dismiss" id="forwarding-dismiss-btn" aria-label="Dismiss">Dismiss</button>
+        </div>
+      </div>
+      <script>
+        (function () {
+          const banner = document.getElementById('forwarding-banner');
+          const confirmBtn = document.getElementById('forwarding-confirm-btn');
+          const dismissBtn = document.getElementById('forwarding-dismiss-btn');
+          if (!banner) return;
+
+          async function clearOnServer() {
+            try {
+              await fetch('/api/forwarding-confirmation/dismiss', { method: 'POST' });
+            } catch (err) { /* non-fatal — link still opens */ }
+          }
+          // Treat opening the link as intent to confirm: clear our copy of the URL
+          // so the banner stays gone after a refresh. If they don't actually click
+          // the button on Google's page, no emails will arrive and they'll re-trigger
+          // a fresh confirmation by reattempting forwarding.
+          confirmBtn?.addEventListener('click', () => {
+            clearOnServer();
+            banner.style.display = 'none';
+          });
+          dismissBtn?.addEventListener('click', async () => {
+            await clearOnServer();
+            banner.style.display = 'none';
+          });
+        })();
+      </script>
+    ` : ''}
 
     <div class="dashboard-grid">
       <!-- Welcome Card -->

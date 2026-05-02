@@ -18,6 +18,7 @@ import {
   getHostedEmailDomain,
   isCalendarConnected,
   setCalendarConnected,
+  setGmailConfirmationUrl,
 } from '../db/userDb.js';
 import type { Role } from '../types/roles.js';
 import { isAdmin } from '../types/roles.js';
@@ -296,6 +297,23 @@ export async function settingsRoutes(fastify: FastifyInstance): Promise<void> {
       });
     } catch (error) {
       fastify.log.error({ err: error }, 'Error checking alias availability');
+      return reply.code(500).send({ error: 'Internal server error' });
+    }
+  });
+
+  /**
+   * POST /api/forwarding-confirmation/dismiss
+   * Clear the stored Gmail forwarding confirmation URL. Called when the user
+   * either opens the confirm link or explicitly dismisses the banner.
+   */
+  fastify.post('/api/forwarding-confirmation/dismiss', { preHandler: requireAuth }, async (request, reply) => {
+    try {
+      const userId = getUserId(request);
+      setGmailConfirmationUrl(userId, null);
+      fastify.log.info({ userId }, 'Cleared Gmail forwarding confirmation URL');
+      return reply.code(200).send({ success: true });
+    } catch (error) {
+      fastify.log.error({ err: error }, 'Error clearing forwarding confirmation');
       return reply.code(500).send({ error: 'Internal server error' });
     }
   });

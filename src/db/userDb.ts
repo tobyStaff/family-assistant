@@ -516,9 +516,10 @@ export function getHostedEmailDomain(): string {
 // ============================================
 
 /**
- * Store the Gmail forwarding confirmation URL for a user
+ * Store the Gmail forwarding confirmation URL for a user, or pass null to clear it
+ * (e.g. once the user has clicked through to confirm).
  */
-export function setGmailConfirmationUrl(userId: string, url: string): void {
+export function setGmailConfirmationUrl(userId: string, url: string | null): void {
   db.prepare(`UPDATE users SET gmail_forwarding_confirmation_url = ? WHERE user_id = ?`).run(url, userId);
 }
 
