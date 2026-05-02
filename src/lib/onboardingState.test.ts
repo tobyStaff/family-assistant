@@ -99,6 +99,37 @@ describe('getNextOnboardingStep', () => {
   });
 });
 
+describe('getNextOnboardingStep with skip set', () => {
+  beforeEach(() => {
+    testDb.exec(`
+      DELETE FROM emails;
+      DELETE FROM child_profiles;
+      DELETE FROM users;
+    `);
+  });
+
+  it('returns "children" when alias is missing but skipped', () => {
+    seedUser(null);
+    expect(getNextOnboardingStep(USER_ID, new Set(['alias']))).toBe('children');
+  });
+
+  it('returns "forward" when alias and children are both missing but skipped', () => {
+    seedUser(null);
+    expect(getNextOnboardingStep(USER_ID, new Set(['alias', 'children']))).toBe('forward');
+  });
+
+  it('returns "done" when all incomplete steps are skipped', () => {
+    seedUser(null);
+    expect(getNextOnboardingStep(USER_ID, new Set(['alias', 'children', 'forward']))).toBe('done');
+  });
+
+  it('skipping a complete step has no effect', () => {
+    seedUser('toby');
+    seedChild();
+    expect(getNextOnboardingStep(USER_ID, new Set(['alias', 'children']))).toBe('forward');
+  });
+});
+
 describe('isOnboardingComplete', () => {
   beforeEach(() => {
     testDb.exec(`

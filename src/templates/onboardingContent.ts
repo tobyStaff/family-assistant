@@ -10,10 +10,11 @@ export interface OnboardingPageOptions {
   step: OnboardingStep;
   hostedEmailDomain: string;
   hostedEmailAddress: string | null;
+  isDev?: boolean;
 }
 
 export function renderOnboardingPage(options: OnboardingPageOptions): string {
-  const { step, hostedEmailDomain, hostedEmailAddress } = options;
+  const { step, hostedEmailDomain, hostedEmailAddress, isDev = false } = options;
 
   const screen =
     step === 'alias'
@@ -21,6 +22,8 @@ export function renderOnboardingPage(options: OnboardingPageOptions): string {
       : step === 'children'
       ? renderChildrenScreen()
       : renderForwardScreen(hostedEmailAddress ?? `your-alias@${hostedEmailDomain}`);
+
+  const devSkipLink = isDev && step !== 'done' ? renderDevSkipLink(step) : '';
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -178,25 +181,40 @@ export function renderOnboardingPage(options: OnboardingPageOptions): string {
       align-self: center;
     }
     .alias-display {
+      display: flex;
+      align-items: center;
+      gap: 8px;
       background: #F5F7FA;
       border: 2px dashed #2A5C82;
       border-radius: 10px;
-      padding: 16px;
+      padding: 12px 14px;
+      margin-bottom: 20px;
+    }
+    .alias-text {
+      flex: 1;
       font-family: 'Courier New', monospace;
       font-size: 16px;
-      text-align: center;
-      margin-bottom: 20px;
       word-break: break-all;
+      min-width: 0;
     }
-    .copy-btn {
+    .copy-icon-btn {
+      flex-shrink: 0;
       background: transparent;
       border: none;
       color: #2A5C82;
       cursor: pointer;
-      font-size: 13px;
-      margin-top: 6px;
-      text-decoration: underline;
+      padding: 6px;
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.15s;
     }
+    .copy-icon-btn:hover { background: #E0E7ED; }
+    .copy-icon-btn .icon-check { display: none; }
+    .copy-icon-btn.copied { color: #15803D; }
+    .copy-icon-btn.copied .icon-copy { display: none; }
+    .copy-icon-btn.copied .icon-check { display: block; }
     .step-list {
       list-style: none;
       counter-reset: step;
@@ -248,15 +266,57 @@ export function renderOnboardingPage(options: OnboardingPageOptions): string {
     @keyframes spin {
       to { transform: rotate(360deg); }
     }
+    .dev-skip {
+      margin-top: 24px;
+      padding-top: 16px;
+      border-top: 1px dashed #E0E7ED;
+      text-align: center;
+    }
+    .dev-skip-btn {
+      background: transparent;
+      border: none;
+      color: #94A3B8;
+      cursor: pointer;
+      font-size: 12px;
+      font-family: inherit;
+      text-decoration: underline;
+      padding: 4px 8px;
+    }
+    .dev-skip-btn:hover { color: #64748B; }
   </style>
 </head>
 <body>
   <div class="card">
     ${renderProgress(step)}
     ${screen}
+    ${devSkipLink}
   </div>
 </body>
 </html>`;
+}
+
+function renderDevSkipLink(step: Exclude<OnboardingStep, 'done'>): string {
+  return `
+    <div class="dev-skip">
+      <button type="button" class="dev-skip-btn" id="dev-skip-btn" data-step="${step}">
+        Skip this step (dev only — restored on next login)
+      </button>
+    </div>
+    <script>
+      document.getElementById('dev-skip-btn').addEventListener('click', async () => {
+        try {
+          await fetch('/onboarding/dev-skip', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ step: ${JSON.stringify(step)} }),
+          });
+          window.location.href = '/onboarding';
+        } catch (err) {
+          alert('Failed to skip step');
+        }
+      });
+    </script>
+  `;
 }
 
 function renderProgress(step: OnboardingStep): string {
@@ -412,8 +472,18 @@ function renderForwardScreen(emailAddress: string): string {
   return `
     <h1>Forward your first emails</h1>
     <p class="subtitle">Send us the latest newsletter or bulletin from each of your children's schools. We'll process them overnight and email you a summary in the morning.</p>
-    <div class="alias-display" id="alias-display">${emailAddress}</div>
-    <button type="button" class="copy-btn" id="copy-btn">Copy address</button>
+    <div class="alias-display">
+      <span class="alias-text">${emailAddress}</span>
+      <button type="button" class="copy-icon-btn" id="copy-btn" aria-label="Copy address" title="Copy address">
+        <svg class="icon-copy" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+          <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+        </svg>
+        <svg class="icon-check" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="20 6 9 17 4 12"></polyline>
+        </svg>
+      </button>
+    </div>
     <ol class="step-list">
       <li>Open your inbox and find the most recent email from each school.</li>
       <li>Forward each one to <strong>${emailAddress}</strong>.</li>
@@ -428,10 +498,14 @@ function renderForwardScreen(emailAddress: string): string {
       copyBtn.addEventListener('click', async () => {
         try {
           await navigator.clipboard.writeText(${JSON.stringify(emailAddress)});
-          copyBtn.textContent = 'Copied!';
-          setTimeout(() => { copyBtn.textContent = 'Copy address'; }, 2000);
+          copyBtn.classList.add('copied');
+          copyBtn.setAttribute('title', 'Copied!');
+          setTimeout(() => {
+            copyBtn.classList.remove('copied');
+            copyBtn.setAttribute('title', 'Copy address');
+          }, 2000);
         } catch (err) {
-          copyBtn.textContent = 'Press Ctrl+C to copy';
+          copyBtn.setAttribute('title', 'Press Ctrl+C to copy');
         }
       });
 

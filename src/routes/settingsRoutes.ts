@@ -20,6 +20,7 @@ import {
   setCalendarConnected,
 } from '../db/userDb.js';
 import type { Role } from '../types/roles.js';
+import { isAdmin } from '../types/roles.js';
 import { renderLayout } from '../templates/layout.js';
 import { renderSettingsContent, renderSettingsScripts } from '../templates/settingsContent.js';
 import { getSubscription, ensureSubscription } from '../db/subscriptionDb.js';
@@ -85,6 +86,7 @@ export async function settingsRoutes(fastify: FastifyInstance): Promise<void> {
           hostedAlias,
           hostedEmail,
           hostedDomain: getHostedEmailDomain(),
+          userIsAdmin: isAdmin(userRoles),
           calendarConnected,
           subscription: {
             tier: subscription.tier,
@@ -204,6 +206,7 @@ export async function settingsRoutes(fastify: FastifyInstance): Promise<void> {
   }>('/api/settings/alias', { preHandler: requireAuth }, async (request, reply) => {
     try {
       const userId = getUserId(request);
+      const userRoles = (request as any).userRoles as Role[] || ['STANDARD'];
       const { alias } = request.body;
 
       if (!alias) {
@@ -217,6 +220,12 @@ export async function settingsRoutes(fastify: FastifyInstance): Promise<void> {
 
       const currentAlias = getHostedEmailAlias(userId);
       if (currentAlias?.toLowerCase() !== alias.toLowerCase()) {
+        // Once an alias is claimed, only admins can change it.
+        if (currentAlias && !isAdmin(userRoles)) {
+          return reply.code(403).send({
+            error: 'Your forwarding address can\'t be changed once set. Contact support if you need to update it.',
+          });
+        }
         if (!isHostedAliasAvailable(alias)) {
           return reply.code(409).send({ error: 'This alias is already taken' });
         }
@@ -224,7 +233,7 @@ export async function settingsRoutes(fastify: FastifyInstance): Promise<void> {
         if (!success) {
           return reply.code(409).send({ error: 'Failed to claim alias. It may have been taken.' });
         }
-        fastify.log.info({ userId, alias }, 'User claimed hosted email alias');
+        fastify.log.info({ userId, alias, byAdmin: !!currentAlias }, 'Hosted email alias claimed/changed');
       }
 
       const hostedEmail = getHostedEmailAddress(userId);

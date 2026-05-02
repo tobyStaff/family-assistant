@@ -5,6 +5,7 @@ import { randomBytes } from 'crypto';
 import { storeAuth } from '../db/authDb.js';
 import { upsertUser, getUser, ensureSuperAdminRoles, setCalendarConnected } from '../db/userDb.js';
 import { isOnboardingComplete } from '../lib/onboardingState.js';
+import { readDevSkipCookie } from './onboardingRoutes.js';
 import { ensureSubscription } from '../db/subscriptionDb.js';
 import { createSession, deleteSession } from '../db/sessionDb.js';
 import { encrypt } from '../lib/crypto.js';
@@ -430,6 +431,9 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
         path: '/',
       });
 
+      // Fresh login clears any dev-only onboarding-skip cookie so skipped steps reappear.
+      (reply as any).clearCookie('dev_skip_onboarding', { path: '/' });
+
       fastify.log.info({ userId, sessionId }, 'Session created successfully');
 
       // Route based on what's still missing — onboarding wizard handles the next-step logic.
@@ -465,8 +469,10 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
       return reply.redirect('/login');
     }
 
-    // Redirect to onboarding if not complete
-    if (!isOnboardingComplete(realUserId)) {
+    // Redirect to onboarding if not complete (honour dev-skip cookie so skipping every step
+    // doesn't bounce the user back into a redirect loop).
+    const skip = readDevSkipCookie(request as any);
+    if (!isOnboardingComplete(realUserId, skip)) {
       return reply.redirect('/onboarding');
     }
 

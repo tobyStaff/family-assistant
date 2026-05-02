@@ -37,10 +37,31 @@ import {
   deleteFeedbackItem,
 } from '../db/relevanceFeedbackDb.js';
 import { updateSenderFilterScores, getLowRelevanceSenders } from '../utils/senderScoreCalculator.js';
-import { getNextOnboardingStep, isOnboardingComplete } from '../lib/onboardingState.js';
+import {
+  getNextOnboardingStep,
+  isOnboardingComplete,
+  ONBOARDING_FLOW_ORDER,
+  type OnboardingFlowStep,
+} from '../lib/onboardingState.js';
 import { renderOnboardingPage } from '../templates/onboardingContent.js';
 import { renderLayout } from '../templates/layout.js';
 import type { Role } from '../types/roles.js';
+
+const DEV_SKIP_COOKIE = 'dev_skip_onboarding';
+const isDevEnv = process.env.NODE_ENV !== 'production';
+
+export function readDevSkipCookie(request: { cookies?: Record<string, string | undefined> }): Set<OnboardingFlowStep> {
+  if (!isDevEnv) return new Set();
+  const raw = request.cookies?.[DEV_SKIP_COOKIE];
+  if (!raw) return new Set();
+  const valid = new Set(ONBOARDING_FLOW_ORDER as readonly string[]);
+  return new Set(
+    raw
+      .split(',')
+      .map((s) => s.trim())
+      .filter((s): s is OnboardingFlowStep => valid.has(s))
+  );
+}
 
 const ConfirmOnboardingSchema = z.object({
   profiles: z.array(
@@ -71,22 +92,57 @@ export async function onboardingRoutes(fastify: FastifyInstance): Promise<void> 
    */
   fastify.get('/onboarding', { preHandler: requireAuth }, async (request, reply) => {
     const userId = (request as any).userId;
-    const step = getNextOnboardingStep(userId);
+    const skip = readDevSkipCookie(request as any);
+    const step = getNextOnboardingStep(userId, skip);
 
     if (step === 'done') {
       return reply.redirect('/dashboard');
     }
 
-    fastify.log.info({ userId, step }, 'Rendering onboarding step');
+    fastify.log.info({ userId, step, skipped: [...skip] }, 'Rendering onboarding step');
 
     const html = renderOnboardingPage({
       step,
       hostedEmailDomain: getHostedEmailDomain(),
       hostedEmailAddress: getHostedEmailAddress(userId),
+      isDev: isDevEnv,
     });
 
     return reply.type('text/html').send(html);
   });
+
+  /**
+   * POST /onboarding/dev-skip
+   * Adds the given step to the dev_skip_onboarding cookie. Dev only.
+   * The cookie is cleared on next login (see authRoutes callback) so
+   * skips do not persist across sessions.
+   */
+  fastify.post<{ Body: { step: string } }>(
+    '/onboarding/dev-skip',
+    { preHandler: requireAuth },
+    async (request, reply) => {
+      if (!isDevEnv) {
+        return reply.code(404).send({ error: 'Not available in production' });
+      }
+      const stepToSkip = request.body?.step;
+      if (!stepToSkip || !(ONBOARDING_FLOW_ORDER as readonly string[]).includes(stepToSkip)) {
+        return reply.code(400).send({ error: 'Invalid step' });
+      }
+
+      const existing = readDevSkipCookie(request as any);
+      existing.add(stepToSkip as OnboardingFlowStep);
+      const value = [...existing].join(',');
+
+      (reply as any).setCookie(DEV_SKIP_COOKIE, value, {
+        httpOnly: true,
+        secure: false, // dev only
+        sameSite: 'lax',
+        path: '/',
+      });
+
+      return reply.code(200).send({ success: true, skipped: [...existing] });
+    }
+  );
 
   /**
    * POST /onboarding/set-alias

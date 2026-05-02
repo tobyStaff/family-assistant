@@ -10,6 +10,7 @@ export interface SettingsContentOptions {
   hostedAlias?: string | null;
   hostedEmail?: string | null;
   hostedDomain?: string;
+  userIsAdmin?: boolean;
   calendarConnected?: boolean;
   // Subscription options
   subscription?: {
@@ -37,9 +38,12 @@ export function renderSettingsContent(options: SettingsContentOptions): string {
     hostedAlias,
     hostedEmail,
     hostedDomain = 'inbox.getfamilyassistant.com',
+    userIsAdmin = false,
     calendarConnected = false,
     subscription,
   } = options;
+
+  const aliasIsLocked = !!hostedAlias && !userIsAdmin;
 
   // Generate subscription section HTML
   const subscriptionHtml = subscription ? generateSubscriptionSection(subscription) : '';
@@ -168,14 +172,6 @@ export function renderSettingsContent(options: SettingsContentOptions): string {
       .btn-sm {
         padding: 6px 12px;
         font-size: 12px;
-      }
-
-      .btn-save {
-        width: 100%;
-        padding: 14px 32px;
-        font-size: 16px;
-        font-weight: 600;
-        margin-top: 10px;
       }
 
       .message {
@@ -330,11 +326,46 @@ export function renderSettingsContent(options: SettingsContentOptions): string {
       .current-hosted-email strong {
         color: var(--primary-color);
       }
+
+      .unsaved-banner {
+        position: sticky;
+        top: 0;
+        z-index: 50;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        background: #FEF3C7;
+        border: 1px solid #F59E0B;
+        color: #92400E;
+        padding: 10px 16px;
+        border-radius: 8px;
+        margin-bottom: 16px;
+        font-size: 14px;
+        font-weight: 500;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+      }
+      .unsaved-banner-message { display: flex; align-items: center; gap: 8px; }
+      .unsaved-banner-save {
+        background: #92400E;
+        color: white;
+        border: none;
+        padding: 6px 14px;
+        border-radius: 6px;
+        font-size: 13px;
+        font-weight: 600;
+        cursor: pointer;
+        font-family: inherit;
+      }
+      .unsaved-banner-save:hover { background: #78350F; }
     </style>
 
     <div id="message" class="message"></div>
 
-    ${subscriptionHtml}
+    <div id="unsavedBanner" class="unsaved-banner" style="display: none;">
+      <span class="unsaved-banner-message">⚠️ You have unsaved changes</span>
+      <button type="button" class="unsaved-banner-save" id="unsavedBannerSaveBtn">Save now</button>
+    </div>
 
     <form id="settingsForm">
       <div class="settings-grid">
@@ -344,51 +375,33 @@ export function renderSettingsContent(options: SettingsContentOptions): string {
           <p class="help-text" style="margin-bottom: 15px;">Forward school emails to this address and we'll process them into your daily briefing.</p>
 
           <div class="alias-config visible" id="aliasConfig">
-            <label style="font-weight: 500; color: #555; font-size: 14px;">Your forwarding address:</label>
-            <div class="alias-input-group">
-              <input
-                type="text"
-                id="hostedAlias"
-                placeholder="yourname"
-                value="${hostedAlias || ''}"
-                oninput="checkAliasAvailability()"
-                pattern="[a-z0-9]+"
-                style="text-transform: lowercase;"
-              >
-              <span class="alias-domain">@${hostedDomain}</span>
-            </div>
-            <div class="alias-status" id="aliasStatus"></div>
-            ${hostedEmail ? `
+            ${aliasIsLocked ? `
+              <label style="font-weight: 500; color: #555; font-size: 14px;">Your forwarding address:</label>
               <div class="current-hosted-email">
-                Your current address: <strong>${hostedEmail}</strong>
-                <br><small>Forward emails to this address to have them processed.</small>
-              </div>
-            ` : ''}
-          </div>
-        </div>
-
-        <!-- Google Calendar Integration -->
-        <div class="card">
-          <div class="section-title">📅 Google Calendar Integration</div>
-          <p class="help-text" style="margin-bottom: 15px;">Sync extracted events to your Google Calendar automatically.</p>
-
-          <div id="calendarStatus" style="padding: 15px; border-radius: 8px; ${calendarConnected ? 'background: #d4edda; border: 1px solid #c3e6cb;' : 'background: #f8f9fa; border: 1px solid #e0e0e0;'}">
-            ${calendarConnected ? `
-              <div style="display: flex; justify-content: space-between; align-items: center;">
-                <div>
-                  <div style="font-weight: 600; color: #155724; margin-bottom: 4px;">✅ Connected</div>
-                  <div style="font-size: 13px; color: #666;">Events will automatically sync to your Google Calendar.</div>
-                </div>
-                <button type="button" class="btn btn-danger" onclick="disconnectCalendar()" id="disconnectCalendarBtn">Disconnect</button>
+                <strong>${hostedEmail}</strong>
+                <br><small>Forward emails to this address to have them processed. Your forwarding address can't be changed once set — contact support if you need to update it.</small>
               </div>
             ` : `
-              <div style="display: flex; justify-content: space-between; align-items: center;">
-                <div>
-                  <div style="font-weight: 600; color: #333; margin-bottom: 4px;">Not connected</div>
-                  <div style="font-size: 13px; color: #666;">Connect to sync school events to your calendar.</div>
-                </div>
-                <a href="/auth/google/connect-calendar" class="btn btn-primary" style="text-decoration: none;">Connect Calendar</a>
+              <label style="font-weight: 500; color: #555; font-size: 14px;">Your forwarding address:</label>
+              <div class="alias-input-group">
+                <input
+                  type="text"
+                  id="hostedAlias"
+                  placeholder="yourname"
+                  value="${hostedAlias || ''}"
+                  oninput="checkAliasAvailability()"
+                  pattern="[a-z0-9]+"
+                  style="text-transform: lowercase;"
+                >
+                <span class="alias-domain">@${hostedDomain}</span>
               </div>
+              <div class="alias-status" id="aliasStatus"></div>
+              ${hostedEmail ? `
+                <div class="current-hosted-email">
+                  Your current address: <strong>${hostedEmail}</strong>
+                  <br><small>Forward emails to this address to have them processed.</small>
+                </div>
+              ` : ''}
             `}
           </div>
         </div>
@@ -444,19 +457,18 @@ export function renderSettingsContent(options: SettingsContentOptions): string {
           </div>
 
           <div class="form-group">
-            <label for="timezone">Your timezone (for display only):</label>
+            <label for="timezone">Your timezone:</label>
             <input
               type="text"
               id="timezone"
               value="${timezone}"
               placeholder="e.g., Europe/London"
             >
-            <div class="help-text">Your timezone for reference. The send time above must be set in UTC.</div>
+            <div class="help-text">Auto-detected from your browser. <a href="#" id="useDetectedTimezone" style="display: none;">Use detected (<span id="detectedTimezone"></span>)</a></div>
           </div>
         </div>
       </div>
 
-      <button type="submit" class="btn btn-primary btn-save">Save Settings</button>
     </form>
   `;
 }
@@ -471,6 +483,41 @@ export function renderSettingsScripts(initialRecipients: string[]): string {
       let recipients = ${JSON.stringify(initialRecipients)};
       let aliasCheckTimeout = null;
       let lastCheckedAlias = '';
+
+      // ============================================
+      // UNSAVED-CHANGES BANNER
+      // Snapshot of saved state. updated after every successful save so the
+      // banner reflects "differs from server" rather than "differs from page-load".
+      // ============================================
+      let savedSnapshot = null;
+
+      function readFormState() {
+        return {
+          alias: (document.getElementById('hostedAlias')?.value || '').toLowerCase().trim(),
+          recipients: [...recipients],
+          enabled: document.getElementById('summaryEnabled').checked,
+          timeUtc: parseInt(document.getElementById('summaryTimeUtc').value, 10),
+          timezone: document.getElementById('timezone').value.trim(),
+        };
+      }
+
+      function isDirty() {
+        if (!savedSnapshot) return false;
+        const now = readFormState();
+        return (
+          now.alias !== savedSnapshot.alias ||
+          now.enabled !== savedSnapshot.enabled ||
+          now.timeUtc !== savedSnapshot.timeUtc ||
+          now.timezone !== savedSnapshot.timezone ||
+          JSON.stringify(now.recipients) !== JSON.stringify(savedSnapshot.recipients)
+        );
+      }
+
+      function updateBanner() {
+        const banner = document.getElementById('unsavedBanner');
+        if (!banner) return;
+        banner.style.display = isDirty() ? 'flex' : 'none';
+      }
 
       function renderRecipients() {
         const list = document.getElementById('recipientsList');
@@ -511,13 +558,15 @@ export function renderSettingsScripts(initialRecipients: string[]): string {
         recipients.push(email);
         renderRecipients();
         input.value = '';
-        showMessage('Email added. Click "Save Settings" to apply changes.', 'success');
+        updateBanner();
+        showMessage('Email added. Click "Save now" to apply changes.', 'success');
       }
 
       function removeRecipient(index) {
         recipients.splice(index, 1);
         renderRecipients();
-        showMessage('Email removed. Click "Save Settings" to apply changes.', 'success');
+        updateBanner();
+        showMessage('Email removed. Click "Save now" to apply changes.', 'success');
       }
 
       function showMessage(text, type) {
@@ -653,12 +702,59 @@ export function renderSettingsScripts(initialRecipients: string[]): string {
       document.getElementById('summaryTimeUtc').addEventListener('input', updateLocalTimePreview);
       updateLocalTimePreview();
 
+      // Wire dirty-tracking listeners
+      ['hostedAlias', 'summaryEnabled', 'summaryTimeUtc', 'timezone'].forEach((id) => {
+        const el = document.getElementById(id);
+        if (el) {
+          el.addEventListener('input', updateBanner);
+          el.addEventListener('change', updateBanner);
+        }
+      });
+      document.getElementById('unsavedBannerSaveBtn')?.addEventListener('click', () => {
+        document.getElementById('settingsForm').requestSubmit();
+      });
+
+      // Snapshot the server-saved state BEFORE any auto-fill, so any divergence
+      // (e.g. timezone auto-detect overwriting a stale 'UTC' default) shows up
+      // as unsaved changes and prompts the user to save.
+      savedSnapshot = readFormState();
+
+      // Timezone auto-detect: fill in from the browser if the saved value is the
+      // unconfigured default ('UTC' or empty); otherwise show a "use detected"
+      // link so the user can opt in if their browser TZ differs from saved.
+      const tzInput = document.getElementById('timezone');
+      const detectedTz = (Intl.DateTimeFormat().resolvedOptions().timeZone) || '';
+      if (tzInput && detectedTz) {
+        const saved = (tzInput.value || '').trim();
+        const isUnset = !saved || saved.toUpperCase() === 'UTC';
+        if (isUnset) {
+          tzInput.value = detectedTz;
+        } else if (saved !== detectedTz) {
+          const link = document.getElementById('useDetectedTimezone');
+          const label = document.getElementById('detectedTimezone');
+          if (link && label) {
+            label.textContent = detectedTz;
+            link.style.display = 'inline';
+            link.addEventListener('click', (e) => {
+              e.preventDefault();
+              tzInput.value = detectedTz;
+              link.style.display = 'none';
+              updateBanner();
+            });
+          }
+        }
+      }
+
+      updateBanner();
+
       document.getElementById('settingsForm').addEventListener('submit', async (e) => {
         e.preventDefault();
 
-        const submitBtn = e.target.querySelector('.btn-save');
-        submitBtn.disabled = true;
-        submitBtn.textContent = 'Saving...';
+        const submitBtn = document.getElementById('unsavedBannerSaveBtn');
+        if (submitBtn) {
+          submitBtn.disabled = true;
+          submitBtn.textContent = 'Saving…';
+        }
 
         try {
           // First save alias if user has set one
@@ -666,8 +762,10 @@ export function renderSettingsScripts(initialRecipients: string[]): string {
           if (aliasInput && aliasInput.value.trim()) {
             const aliasSaved = await saveAlias();
             if (!aliasSaved) {
-              submitBtn.disabled = false;
-              submitBtn.textContent = 'Save Settings';
+              if (submitBtn) {
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Save now';
+              }
               return;
             }
           }
@@ -692,14 +790,19 @@ export function renderSettingsScripts(initialRecipients: string[]): string {
 
           if (response.ok) {
             showMessage('Settings saved successfully!', 'success');
+            // Re-snapshot now that we match server state, hide the banner.
+            savedSnapshot = readFormState();
+            updateBanner();
           } else {
             showMessage('Error: ' + (data.error || 'Failed to save settings'), 'error');
           }
         } catch (error) {
           showMessage('Error: Failed to save settings', 'error');
         } finally {
-          submitBtn.disabled = false;
-          submitBtn.textContent = 'Save Settings';
+          if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'Save now';
+          }
         }
       });
 
