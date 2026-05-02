@@ -7,7 +7,6 @@ export interface SettingsContentOptions {
   summaryEnabled: boolean;
   summaryTimeUtc: number;
   timezone: string;
-  emailSource?: 'gmail' | 'hosted';
   hostedAlias?: string | null;
   hostedEmail?: string | null;
   hostedDomain?: string;
@@ -35,7 +34,6 @@ export function renderSettingsContent(options: SettingsContentOptions): string {
     summaryEnabled,
     summaryTimeUtc,
     timezone,
-    emailSource = 'gmail',
     hostedAlias,
     hostedEmail,
     hostedDomain = 'inbox.getfamilyassistant.com',
@@ -340,47 +338,12 @@ export function renderSettingsContent(options: SettingsContentOptions): string {
 
     <form id="settingsForm">
       <div class="settings-grid">
-        <!-- Email Source Section -->
+        <!-- Forwarding Address Section -->
         <div class="card">
-          <div class="section-title">📬 Email Source</div>
-          <p class="help-text" style="margin-bottom: 15px;">Choose how you want to receive emails for processing.</p>
+          <div class="section-title">📬 Forwarding Address</div>
+          <p class="help-text" style="margin-bottom: 15px;">Forward school emails to this address and we'll process them into your daily briefing.</p>
 
-          <div class="email-source-options">
-            <label class="source-option ${emailSource === 'gmail' ? 'selected' : ''}" id="gmailOption">
-              <input
-                type="radio"
-                name="emailSource"
-                value="gmail"
-                ${emailSource === 'gmail' ? 'checked' : ''}
-                onchange="selectEmailSource('gmail')"
-              >
-              <div class="source-option-content">
-                <div class="source-option-title">Gmail Integration</div>
-                <div class="source-option-desc">
-                  Connect your Gmail account and we'll automatically fetch and process your emails.
-                  Requires Google OAuth sign-in.
-                </div>
-              </div>
-            </label>
-
-            <label class="source-option ${emailSource === 'hosted' ? 'selected' : ''}" id="hostedOption">
-              <input
-                type="radio"
-                name="emailSource"
-                value="hosted"
-                ${emailSource === 'hosted' ? 'checked' : ''}
-                onchange="selectEmailSource('hosted')"
-              >
-              <div class="source-option-content">
-                <div class="source-option-title">Forwarding Address</div>
-                <div class="source-option-desc">
-                  Get a personal forwarding address. Set up auto-forwarding from your school or other email to send messages here.
-                </div>
-              </div>
-            </label>
-          </div>
-
-          <div class="alias-config ${emailSource === 'hosted' ? 'visible' : ''}" id="aliasConfig">
+          <div class="alias-config visible" id="aliasConfig">
             <label style="font-weight: 500; color: #555; font-size: 14px;">Your forwarding address:</label>
             <div class="alias-input-group">
               <input
@@ -501,12 +464,11 @@ export function renderSettingsContent(options: SettingsContentOptions): string {
 /**
  * Generate the settings JavaScript
  */
-export function renderSettingsScripts(initialRecipients: string[], initialEmailSource: string = 'gmail'): string {
+export function renderSettingsScripts(initialRecipients: string[]): string {
   return `
     <script>
       // Store recipients in memory
       let recipients = ${JSON.stringify(initialRecipients)};
-      let currentEmailSource = '${initialEmailSource}';
       let aliasCheckTimeout = null;
       let lastCheckedAlias = '';
 
@@ -566,27 +528,6 @@ export function renderSettingsScripts(initialRecipients: string[], initialEmailS
         setTimeout(() => {
           msg.style.display = 'none';
         }, 5000);
-      }
-
-      // Email source functions
-      function selectEmailSource(source) {
-        currentEmailSource = source;
-
-        // Update UI
-        document.getElementById('gmailOption').classList.toggle('selected', source === 'gmail');
-        document.getElementById('hostedOption').classList.toggle('selected', source === 'hosted');
-
-        const aliasConfig = document.getElementById('aliasConfig');
-        if (source === 'hosted') {
-          aliasConfig.classList.add('visible');
-          // Check alias if there's a value
-          const aliasInput = document.getElementById('hostedAlias');
-          if (aliasInput.value) {
-            checkAliasAvailability();
-          }
-        } else {
-          aliasConfig.classList.remove('visible');
-        }
       }
 
       function checkAliasAvailability() {
@@ -659,30 +600,28 @@ export function renderSettingsScripts(initialRecipients: string[], initialEmailS
         }, 300);
       }
 
-      async function saveEmailSource() {
-        const source = currentEmailSource;
-        const alias = source === 'hosted' ? document.getElementById('hostedAlias').value.toLowerCase().trim() : null;
+      async function saveAlias() {
+        const alias = document.getElementById('hostedAlias').value.toLowerCase().trim();
 
-        if (source === 'hosted' && !alias) {
+        if (!alias) {
           showMessage('Please enter an alias for your forwarding address', 'error');
           return false;
         }
 
         try {
-          const response = await fetch('/api/settings/email-source', {
+          const response = await fetch('/api/settings/alias', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ source, alias }),
+            body: JSON.stringify({ alias }),
           });
 
           const data = await response.json();
 
           if (!response.ok) {
-            showMessage('Error: ' + (data.error || 'Failed to update email source'), 'error');
+            showMessage('Error: ' + (data.error || 'Failed to save alias'), 'error');
             return false;
           }
 
-          // Update the hosted email display if we got one
           if (data.hostedEmail) {
             const currentDisplay = document.querySelector('.current-hosted-email');
             if (currentDisplay) {
@@ -698,7 +637,7 @@ export function renderSettingsScripts(initialRecipients: string[], initialEmailS
 
           return true;
         } catch (error) {
-          showMessage('Error: Failed to update email source', 'error');
+          showMessage('Error: Failed to save alias', 'error');
           return false;
         }
       }
@@ -722,12 +661,15 @@ export function renderSettingsScripts(initialRecipients: string[], initialEmailS
         submitBtn.textContent = 'Saving...';
 
         try {
-          // First save email source if needed
-          const emailSourceSaved = await saveEmailSource();
-          if (!emailSourceSaved) {
-            submitBtn.disabled = false;
-            submitBtn.textContent = 'Save Settings';
-            return;
+          // First save alias if user has set one
+          const aliasInput = document.getElementById('hostedAlias');
+          if (aliasInput && aliasInput.value.trim()) {
+            const aliasSaved = await saveAlias();
+            if (!aliasSaved) {
+              submitBtn.disabled = false;
+              submitBtn.textContent = 'Save Settings';
+              return;
+            }
           }
 
           // Then save other settings

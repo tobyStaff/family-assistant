@@ -6,20 +6,16 @@ import { requireAdmin } from '../middleware/authorization.js';
 import { generatePersonalizedSummary, type PersonalizedSummary, type ChildSummary, type FamilySummary } from '../utils/personalizedSummaryBuilder.js';
 import { renderPersonalizedEmail, type PersonalizedSummaryWithActions, type TodoWithAction, type EventWithAction, type ChildSummaryWithActions, type FamilySummaryWithActions } from '../templates/personalizedEmailTemplate.js';
 import { sendEmail, buildSesFromAddress, buildSummarySubject } from '../utils/emailSender.js';
-import { getAllOAuthUserIds } from '../db/authDb.js';
 import { getUser, getHostedEmailAlias, getAllUsersWithRoles } from '../db/userDb.js';
 import { getAuth } from '../db/authDb.js';
 import { decrypt } from '../lib/crypto.js';
 import { google } from 'googleapis';
 import type { OAuth2Client } from 'google-auth-library';
 import { cleanupExpiredSessions } from '../db/sessionDb.js';
-import { getEmailSource, getOrCreateDefaultSettings } from '../db/settingsDb.js';
-import { fetchAndStoreEmails, syncProcessedLabels } from '../utils/emailStorageService.js';
+import { getOrCreateDefaultSettings } from '../db/settingsDb.js';
 import { analyzeUnanalyzedEmails } from '../parsers/twoPassAnalyzer.js';
-import { getIncludedSenders, hasSenderFilters } from '../db/senderFilterDb.js';
 import { createActionToken, createViewToken, cleanupExpiredTokens } from '../db/emailActionTokenDb.js';
 import { cleanupPastItems } from '../utils/cleanupPastItems.js';
-import { runOnboardingSequence } from '../utils/onboardingSequence.js';
 import type { Todo } from '../types/todo.js';
 import type { ExtractedEvent } from '../types/extraction.js';
 
@@ -343,106 +339,6 @@ async function dailySummaryPlugin(fastify: FastifyInstance) {
         timeZone: 'UTC',
       },
       {
-        // Daily email fetch job
-        // Cron schedule: Daily at 5:00 AM UTC (before daily summary at 6:00 AM)
-        cronTime: process.env.EMAIL_FETCH_SCHEDULE || '0 0 5 * * *',
-
-        // Job name for logging
-        name: 'daily-email-fetch',
-
-        // Main cron job function
-        onTick: async function () {
-          fastify.log.info('Starting daily email fetch cron job');
-
-          try {
-            // Get all users with stored auth
-            const userIds = getAllOAuthUserIds();
-            fastify.log.info(`Processing email fetch for ${userIds.length} users`);
-
-            let totalFetched = 0;
-            let totalStored = 0;
-            let totalErrors = 0;
-
-            // Process each user
-            for (const userId of userIds) {
-              try {
-                // Skip users whose email source is not Gmail
-                if (getEmailSource(userId) !== 'gmail') {
-                  fastify.log.debug({ userId }, 'Skipping email fetch for non-Gmail user');
-                  continue;
-                }
-
-                // Get user's OAuth2 client
-                const auth = await getUserAuth(userId);
-
-                // Build sender filter query if user has configured filters
-                let senderQuery = '';
-                if (hasSenderFilters(userId)) {
-                  const includedSenders = getIncludedSenders(userId);
-                  if (includedSenders.length > 0) {
-                    senderQuery = `{${includedSenders.map(s => `from:${s}`).join(' OR ')}}`;
-                  }
-                }
-
-                // Fetch and store unprocessed emails (last 3 days by default)
-                const result = await fetchAndStoreEmails(userId, auth, 'last3days', 500, senderQuery);
-
-                totalFetched += result.fetched;
-                totalStored += result.stored;
-                totalErrors += result.errors;
-
-                if (result.fetched > 0 || result.errors > 0) {
-                  fastify.log.info(
-                    {
-                      userId,
-                      fetched: result.fetched,
-                      stored: result.stored,
-                      skipped: result.skipped,
-                      labeled: result.labeled,
-                      errors: result.errors,
-                    },
-                    'Email fetch completed for user'
-                  );
-                }
-
-                // Also sync any labels that failed previously
-                if (result.stored > 0) {
-                  await syncProcessedLabels(userId, auth);
-                }
-              } catch (error) {
-                totalErrors++;
-                fastify.log.error(
-                  { err: error, userId },
-                  'Error fetching emails for user'
-                );
-              }
-            }
-
-            fastify.log.info(
-              {
-                totalUsers: userIds.length,
-                totalFetched,
-                totalStored,
-                totalErrors,
-              },
-              'Daily email fetch cron job completed'
-            );
-          } catch (error) {
-            // Log error but don't crash the server
-            fastify.log.error(
-              { err: error },
-              'Fatal error in daily email fetch cron job'
-            );
-          }
-        },
-
-        // Start immediately when plugin registers
-        start: true,
-
-        // Timezone for cron schedule
-        timeZone: process.env.TZ || 'UTC',
-      },
-      {
         // Daily email analysis job (Two-Pass AI Analysis - Task 2)
         // Cron schedule: Daily at 5:30 AM UTC (after email fetch at 5:00 AM)
         cronTime: process.env.EMAIL_ANALYSIS_SCHEDULE || '0 30 5 * * *',
@@ -602,24 +498,6 @@ async function dailySummaryPlugin(fastify: FastifyInstance) {
         // Timezone for cron schedule
         timeZone: 'UTC',
       },
-      {
-        // Onboarding sequence emailer — sends Days 2-7 emails for trial users
-        // Cron schedule: Daily at 8:00 AM UTC
-        cronTime: '0 0 8 * * *',
-
-        name: 'onboarding-sequence',
-
-        onTick: async function () {
-          try {
-            await runOnboardingSequence(fastify.log);
-          } catch (error) {
-            fastify.log.error({ err: error }, 'Fatal error in onboarding sequence cron job');
-          }
-        },
-
-        start: true,
-        timeZone: 'UTC',
-      },
     ],
   });
 
@@ -681,34 +559,6 @@ async function dailySummaryPlugin(fastify: FastifyInstance) {
     }
   });
 
-  // Add route to manually trigger email fetch (for testing)
-  fastify.get('/admin/trigger-email-fetch', { preHandler: requireAdmin }, async (_request, reply) => {
-    try {
-      fastify.log.info('Manually triggering email fetch job');
-
-      // Find and execute the job
-      const job = fastify.cron.getJobByName('daily-email-fetch');
-
-      if (job) {
-        // Trigger the job manually
-        job.fireOnTick();
-
-        return reply.code(200).send({
-          success: true,
-          message: 'Email fetch job triggered successfully',
-        });
-      } else {
-        return reply.code(500).send({
-          error: 'Email fetch job not found',
-        });
-      }
-    } catch (error) {
-      fastify.log.error({ err: error }, 'Error triggering email fetch');
-      return reply.code(500).send({
-        error: 'Failed to trigger email fetch',
-      });
-    }
-  });
 
   // Add route to manually trigger email analysis (for testing)
   fastify.get('/admin/trigger-email-analysis', { preHandler: requireAdmin }, async (_request, reply) => {
@@ -760,14 +610,6 @@ async function dailySummaryPlugin(fastify: FastifyInstance) {
       timezone: 'UTC',
     },
     'Event sync retry cron job registered'
-  );
-
-  fastify.log.info(
-    {
-      schedule: process.env.EMAIL_FETCH_SCHEDULE || '0 0 5 * * *',
-      timezone: process.env.TZ || 'UTC',
-    },
-    'Daily email fetch cron job registered'
   );
 
   fastify.log.info(

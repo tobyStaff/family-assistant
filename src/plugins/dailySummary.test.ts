@@ -5,9 +5,8 @@
 // Because processUserSummary() is defined inside the onTick closure (not exported),
 // we test the DB/settings functions that drive its skip logic directly:
 //
-//   • getAllOAuthUserIds  — who the fetch + event-sync crons iterate over
+//   • getAllOAuthUserIds  — who the event-sync cron iterates over
 //   • getAllUsersWithRoles — who the summary + analysis crons iterate over
-//   • getEmailSource       — fetch cron skips non-Gmail users
 //   • getOrCreateDefaultSettings — summary cron reads this for skip conditions:
 //       - summary_enabled === false  → skip
 //       - summary_time_utc !== currentHour → skip
@@ -26,8 +25,6 @@ vi.mock('../db/db.js', async () => {
 import { getAllOAuthUserIds } from '../db/authDb.js';
 import { getAllUsersWithRoles } from '../db/userDb.js';
 import {
-  getEmailSource,
-  setEmailSource,
   getOrCreateDefaultSettings,
   getAllEnabledSettings,
   upsertSettings,
@@ -98,7 +95,7 @@ beforeEach(() => {
 // ===========================================================================
 
 describe('cron user selection', () => {
-  describe('getAllOAuthUserIds — fetch + event-sync crons', () => {
+  describe('getAllOAuthUserIds — event-sync cron', () => {
     it('should only return users with an auth row', () => {
       const ids = getAllOAuthUserIds();
       expect(ids).toHaveLength(2);
@@ -128,7 +125,7 @@ describe('cron user selection', () => {
   });
 
   describe('user set difference', () => {
-    it('summary/analysis crons see more users than fetch/event-sync crons', () => {
+    it('summary/analysis crons see more users than event-sync cron', () => {
       const oauthIds = getAllOAuthUserIds();
       const allIds = getAllUsersWithRoles().map(u => u.user_id);
       expect(allIds.length).toBeGreaterThan(oauthIds.length);
@@ -144,66 +141,7 @@ describe('cron user selection', () => {
 });
 
 // ===========================================================================
-// 2. FETCH CRON: email_source filter
-//    The fetch cron skips any user whose getEmailSource() !== 'gmail'
-// ===========================================================================
-
-describe('fetch cron — email_source filter', () => {
-  it('should return gmail when no settings row exists (safe default)', () => {
-    // gmail-user-1 has no settings row yet
-    expect(getEmailSource('gmail-user-1')).toBe('gmail');
-  });
-
-  it('should return gmail when email_source is explicitly set to gmail', () => {
-    insertSettings('gmail-user-1', { emailSource: 'gmail' });
-    expect(getEmailSource('gmail-user-1')).toBe('gmail');
-  });
-
-  it('should return hosted when email_source is set to hosted', () => {
-    insertSettings('hosted-user', { emailSource: 'hosted' });
-    expect(getEmailSource('hosted-user')).toBe('hosted');
-  });
-
-  it('should update to hosted via setEmailSource', () => {
-    // First create a settings row (setEmailSource upserts)
-    setEmailSource('gmail-user-2', 'hosted');
-    expect(getEmailSource('gmail-user-2')).toBe('hosted');
-  });
-
-  it('should update back to gmail via setEmailSource', () => {
-    insertSettings('hosted-user', { emailSource: 'hosted' });
-    setEmailSource('hosted-user', 'gmail');
-    expect(getEmailSource('hosted-user')).toBe('gmail');
-  });
-
-  it('should identify the right users as non-Gmail (fetch skips these)', () => {
-    insertSettings('gmail-user-1', { emailSource: 'gmail' });
-    insertSettings('gmail-user-2', { emailSource: 'gmail' });
-    insertSettings('hosted-user', { emailSource: 'hosted' });
-
-    const oauthIds = getAllOAuthUserIds(); // ['gmail-user-1', 'gmail-user-2']
-    const shouldFetch = oauthIds.filter(id => getEmailSource(id) === 'gmail');
-    const shouldSkip  = oauthIds.filter(id => getEmailSource(id) !== 'gmail');
-
-    expect(shouldFetch).toContain('gmail-user-1');
-    expect(shouldFetch).toContain('gmail-user-2');
-    expect(shouldSkip).toHaveLength(0); // hosted-user not in oauth set anyway
-  });
-
-  it('should skip a Gmail-OAuth user whose email_source has been switched to hosted', () => {
-    // Edge case: user was gmail, then switched to hosted email
-    insertSettings('gmail-user-1', { emailSource: 'hosted' });
-
-    const oauthIds = getAllOAuthUserIds();
-    const shouldFetch = oauthIds.filter(id => getEmailSource(id) === 'gmail');
-
-    expect(shouldFetch).not.toContain('gmail-user-1');
-    expect(shouldFetch).toContain('gmail-user-2');
-  });
-});
-
-// ===========================================================================
-// 3. SUMMARY CRON: processUserSummary skip conditions
+// 2. SUMMARY CRON: processUserSummary skip conditions
 //    processUserSummary() calls getOrCreateDefaultSettings() and skips when:
 //      (a) summary_enabled === false
 //      (b) summary_time_utc !== currentHourUtc

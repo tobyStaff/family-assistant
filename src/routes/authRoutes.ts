@@ -3,7 +3,8 @@ import type { FastifyInstance } from 'fastify';
 import { google } from 'googleapis';
 import { randomBytes } from 'crypto';
 import { storeAuth } from '../db/authDb.js';
-import { upsertUser, getUser, ensureSuperAdminRoles, updateOnboardingStep, setGmailConnected, setCalendarConnected } from '../db/userDb.js';
+import { upsertUser, getUser, ensureSuperAdminRoles, setCalendarConnected } from '../db/userDb.js';
+import { isOnboardingComplete } from '../lib/onboardingState.js';
 import { ensureSubscription } from '../db/subscriptionDb.js';
 import { createSession, deleteSession } from '../db/sessionDb.js';
 import { encrypt } from '../lib/crypto.js';
@@ -17,16 +18,6 @@ import { renderLayout } from '../templates/layout.js';
  * Minimal scopes for initial login (identity only)
  */
 const LOGIN_SCOPES = [
-  'openid',
-  'email',
-  'profile',
-];
-
-/**
- * Full scopes including Gmail/Calendar access (granted during onboarding)
- */
-const GMAIL_READ_SCOPES = [
-  'https://www.googleapis.com/auth/gmail.readonly',
   'openid',
   'email',
   'profile',
@@ -218,49 +209,6 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
   });
 
   /**
-   * GET /auth/google/connect-gmail
-   * Second OAuth flow to grant Gmail/Calendar permissions (during onboarding)
-   */
-  fastify.get('/auth/google/connect-gmail', { preHandler: requireAuth }, async (request, reply) => {
-    try {
-      const state = randomBytes(32).toString('hex');
-
-      (reply as any).setCookie('oauth_state', state, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'lax',
-        maxAge: 600,
-        signed: true,
-        path: '/',
-      });
-
-      // Mark this as a Gmail connection flow (not a fresh login)
-      (reply as any).setCookie('oauth_flow', 'connect-gmail', {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'lax',
-        maxAge: 600,
-        path: '/',
-      });
-
-      const oauth2Client = createOAuth2Client();
-      const authUrl = oauth2Client.generateAuthUrl({
-        access_type: 'offline',
-        prompt: 'consent',
-        scope: GMAIL_READ_SCOPES,
-        include_granted_scopes: true,
-        state: state,
-      });
-
-      fastify.log.info('Redirecting to Google OAuth (connect-gmail, read-only scopes)');
-      return reply.redirect(authUrl);
-    } catch (error) {
-      fastify.log.error({ err: error }, 'Error initiating Gmail connection flow');
-      return reply.redirect('/onboarding?error=connect-failed');
-    }
-  });
-
-  /**
    * GET /auth/google/grant-send
    * Incremental OAuth to add gmail.send permission (before first email)
    */
@@ -389,7 +337,6 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
 
       // Detect which OAuth flow this is
       const oauthFlow = (request as any).cookies?.oauth_flow;
-      const isGmailConnect = oauthFlow === 'connect-gmail';
       const isGrantSend = oauthFlow === 'grant-send';
       const isCalendarConnect = oauthFlow === 'connect-calendar';
 
@@ -417,7 +364,7 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
       const name = payload.name;
       const pictureUrl = payload.picture;
 
-      fastify.log.info({ userId, email, isGmailConnect, isGrantSend, isCalendarConnect, hasRefreshToken: !!tokens.refresh_token }, 'User authenticated successfully');
+      fastify.log.info({ userId, email, isGrantSend, isCalendarConnect, hasRefreshToken: !!tokens.refresh_token }, 'User authenticated successfully');
 
       // Store OAuth tokens if we received a refresh token (Gmail connect flow)
       if (tokens.refresh_token) {
@@ -453,14 +400,6 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
       // Ensure subscription record exists (creates FREE tier for new users)
       ensureSubscription(userId);
 
-      // Handle Gmail connection flow — user already has a session
-      if (isGmailConnect) {
-        setGmailConnected(userId, true);
-        updateOnboardingStep(userId, 3); // Step 3: Gmail connected
-        fastify.log.info({ userId }, 'Gmail connected during onboarding');
-        return reply.redirect('/onboarding');
-      }
-
       // Handle grant-send flow — tokens updated, redirect back to onboarding
       if (isGrantSend) {
         fastify.log.info({ userId }, 'Gmail send permission granted during onboarding');
@@ -475,8 +414,7 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
       }
 
       // Fresh login flow — create session
-      const existingUser = getUser(userId);
-      fastify.log.info({ userId, email, onboardingStep: existingUser?.onboarding_step, gmailConnected: existingUser?.gmail_connected }, 'Login: checking onboarding state');
+      fastify.log.info({ userId, email }, 'Login: checking onboarding state');
 
       // Create session (30 days expiry)
       const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
@@ -494,15 +432,11 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
 
       fastify.log.info({ userId, sessionId }, 'Session created successfully');
 
-      // If new user (onboarding not complete), set step 1 and redirect to onboarding
-      if (!existingUser || (existingUser.onboarding_step ?? 0) < 5) {
-        if (!existingUser || (existingUser.onboarding_step ?? 0) === 0) {
-          updateOnboardingStep(userId, 1); // Step 1: Account created
-        }
+      // Route based on what's still missing — onboarding wizard handles the next-step logic.
+      if (!isOnboardingComplete(userId)) {
         return reply.redirect('/onboarding');
       }
 
-      // Existing fully-onboarded user — go to dashboard
       return reply.redirect('/dashboard');
     } catch (error) {
       fastify.log.error({ err: error }, 'Error handling OAuth callback');
@@ -532,7 +466,7 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
     }
 
     // Redirect to onboarding if not complete
-    if ((realUser.onboarding_step ?? 0) < 5) {
+    if (!isOnboardingComplete(realUserId)) {
       return reply.redirect('/onboarding');
     }
 

@@ -12,7 +12,7 @@ import { generateInboxSummary } from '../utils/summaryQueries.js';
 import { sendViaSES, sendEmail, buildSesFromAddress, buildSummarySubject } from '../utils/emailSender.js';
 import { getOrCreateDefaultSettings } from '../db/settingsDb.js';
 import { saveSummary } from '../db/summaryDb.js';
-import { getAllUsersWithRoles, getUser, getUserWithRoles, resetUserData, getHostedEmailAlias, updateOnboardingStep } from '../db/userDb.js';
+import { getAllUsersWithRoles, getUser, getUserWithRoles, resetUserData, getHostedEmailAlias } from '../db/userDb.js';
 import type { Role } from '../types/roles.js';
 import { renderLayout } from '../templates/layout.js';
 import { renderAdminContent, renderAdminScripts } from '../templates/adminContent.js';
@@ -1226,22 +1226,10 @@ export async function adminRoutes(fastify: FastifyInstance): Promise<void> {
   });
 
   /**
-   * POST /admin/skip-onboarding
-   * Skip remaining onboarding steps and go straight to the dashboard.
-   * Admin only — useful for development and testing.
-   */
-  fastify.post('/admin/skip-onboarding', { preHandler: requireAdmin }, async (request, reply) => {
-    const userId = getUserId(request);
-    updateOnboardingStep(userId, 5);
-    fastify.log.info({ userId }, 'Onboarding skipped by admin');
-    return reply.redirect('/dashboard');
-  });
-
-  /**
    * POST /admin/cron/:job/fire
    * Trigger a named cron job on demand. Supports --force for daily-summary to bypass hour check.
    */
-  const KNOWN_JOBS = ['daily-summary', 'daily-email-fetch', 'daily-email-analysis', 'onboarding-sequence', 'event-sync-retry'] as const;
+  const KNOWN_JOBS = ['daily-summary', 'daily-email-analysis', 'event-sync-retry'] as const;
   type KnownJob = typeof KNOWN_JOBS[number];
 
   const CronFireSchema = z.object({

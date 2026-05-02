@@ -4,9 +4,6 @@ import { z } from 'zod';
 import {
   upsertSettings,
   getOrCreateDefaultSettings,
-  getEmailSource,
-  setEmailSource,
-  type EmailSource,
 } from '../db/settingsDb.js';
 import { getUserId } from '../lib/userContext.js';
 import { requireAuth } from '../middleware/session.js';
@@ -16,7 +13,6 @@ import {
   isHostedAliasAvailable,
   validateHostedAlias,
   setHostedEmailAlias,
-  clearHostedEmailAlias,
   getHostedEmailAlias,
   getHostedEmailAddress,
   getHostedEmailDomain,
@@ -69,8 +65,7 @@ export async function settingsRoutes(fastify: FastifyInstance): Promise<void> {
         const impersonatingUserId = (request as any).impersonatingUserId;
         const effectiveUser = impersonatingUserId ? getUser(impersonatingUserId) : null;
 
-        // Get email source info
-        const emailSource = getEmailSource(userId);
+        // Get hosted email info (hosted is the only source)
         const hostedAlias = getHostedEmailAlias(userId);
         const hostedEmail = hostedAlias ? getHostedEmailAddress(userId) : null;
 
@@ -87,7 +82,6 @@ export async function settingsRoutes(fastify: FastifyInstance): Promise<void> {
           summaryEnabled: settings.summary_enabled,
           summaryTimeUtc: settings.summary_time_utc,
           timezone: settings.timezone,
-          emailSource,
           hostedAlias,
           hostedEmail,
           hostedDomain: getHostedEmailDomain(),
@@ -105,7 +99,7 @@ export async function settingsRoutes(fastify: FastifyInstance): Promise<void> {
           },
         });
 
-        const scripts = renderSettingsScripts(settings.summary_email_recipients, emailSource);
+        const scripts = renderSettingsScripts(settings.summary_email_recipients);
 
         // Render with layout
         const html = renderLayout({
@@ -198,95 +192,50 @@ export async function settingsRoutes(fastify: FastifyInstance): Promise<void> {
   });
 
   // ============================================
-  // EMAIL SOURCE ENDPOINTS
+  // HOSTED ALIAS ENDPOINTS
   // ============================================
 
   /**
-   * GET /api/settings/email-source
-   * Get current email source configuration
-   */
-  fastify.get('/api/settings/email-source', { preHandler: requireAuth }, async (request, reply) => {
-    try {
-      const userId = getUserId(request);
-
-      const emailSource = getEmailSource(userId);
-      const hostedAlias = getHostedEmailAlias(userId);
-      const hostedEmail = hostedAlias ? getHostedEmailAddress(userId) : null;
-
-      return reply.code(200).send({
-        emailSource,
-        hostedAlias,
-        hostedEmail,
-        hostedDomain: getHostedEmailDomain(),
-      });
-    } catch (error) {
-      fastify.log.error({ err: error }, 'Error getting email source');
-      return reply.code(500).send({ error: 'Internal server error' });
-    }
-  });
-
-  /**
-   * POST /api/settings/email-source
-   * Change email source (gmail or hosted)
+   * POST /api/settings/alias
+   * Claim or rename the hosted email alias.
    */
   fastify.post<{
-    Body: { source: EmailSource; alias?: string };
-  }>('/api/settings/email-source', { preHandler: requireAuth }, async (request, reply) => {
+    Body: { alias: string };
+  }>('/api/settings/alias', { preHandler: requireAuth }, async (request, reply) => {
     try {
       const userId = getUserId(request);
-      const { source, alias } = request.body;
+      const { alias } = request.body;
 
-      // Validate source
-      if (source !== 'gmail' && source !== 'hosted') {
-        return reply.code(400).send({ error: 'Invalid source. Must be "gmail" or "hosted"' });
+      if (!alias) {
+        return reply.code(400).send({ error: 'Alias is required' });
       }
 
-      if (source === 'hosted') {
-        // Must provide alias when switching to hosted
-        if (!alias) {
-          return reply.code(400).send({ error: 'Alias is required when switching to hosted email' });
+      const validation = validateHostedAlias(alias);
+      if (!validation.valid) {
+        return reply.code(400).send({ error: validation.error });
+      }
+
+      const currentAlias = getHostedEmailAlias(userId);
+      if (currentAlias?.toLowerCase() !== alias.toLowerCase()) {
+        if (!isHostedAliasAvailable(alias)) {
+          return reply.code(409).send({ error: 'This alias is already taken' });
         }
-
-        // Validate alias format
-        const validation = validateHostedAlias(alias);
-        if (!validation.valid) {
-          return reply.code(400).send({ error: validation.error });
+        const success = setHostedEmailAlias(userId, alias);
+        if (!success) {
+          return reply.code(409).send({ error: 'Failed to claim alias. It may have been taken.' });
         }
-
-        // Check availability (unless user already owns this alias)
-        const currentAlias = getHostedEmailAlias(userId);
-        if (currentAlias?.toLowerCase() !== alias.toLowerCase()) {
-          if (!isHostedAliasAvailable(alias)) {
-            return reply.code(409).send({ error: 'This alias is already taken' });
-          }
-
-          // Claim the alias
-          const success = setHostedEmailAlias(userId, alias);
-          if (!success) {
-            return reply.code(409).send({ error: 'Failed to claim alias. It may have been taken.' });
-          }
-        }
-
         fastify.log.info({ userId, alias }, 'User claimed hosted email alias');
-      } else {
-        // Switching to Gmail - clear hosted alias
-        clearHostedEmailAlias(userId);
-        fastify.log.info({ userId }, 'User switched to Gmail, cleared hosted alias');
       }
 
-      // Update email source preference
-      setEmailSource(userId, source);
-
-      const hostedEmail = source === 'hosted' ? getHostedEmailAddress(userId) : null;
+      const hostedEmail = getHostedEmailAddress(userId);
 
       return reply.code(200).send({
         success: true,
-        emailSource: source,
-        hostedAlias: source === 'hosted' ? alias : null,
+        hostedAlias: alias,
         hostedEmail,
       });
     } catch (error) {
-      fastify.log.error({ err: error }, 'Error updating email source');
+      fastify.log.error({ err: error }, 'Error updating alias');
       return reply.code(500).send({ error: 'Internal server error' });
     }
   });
@@ -338,40 +287,6 @@ export async function settingsRoutes(fastify: FastifyInstance): Promise<void> {
       });
     } catch (error) {
       fastify.log.error({ err: error }, 'Error checking alias availability');
-      return reply.code(500).send({ error: 'Internal server error' });
-    }
-  });
-
-  /**
-   * DELETE /api/settings/email-source/alias
-   * Clear hosted email alias without switching source
-   */
-  fastify.delete('/api/settings/email-source/alias', { preHandler: requireAuth }, async (request, reply) => {
-    try {
-      const userId = getUserId(request);
-
-      const currentAlias = getHostedEmailAlias(userId);
-      if (!currentAlias) {
-        return reply.code(200).send({
-          success: true,
-          message: 'No alias to clear',
-        });
-      }
-
-      clearHostedEmailAlias(userId);
-
-      // Also switch back to Gmail
-      setEmailSource(userId, 'gmail');
-
-      fastify.log.info({ userId, clearedAlias: currentAlias }, 'User cleared hosted email alias');
-
-      return reply.code(200).send({
-        success: true,
-        message: 'Alias cleared and switched to Gmail',
-        clearedAlias: currentAlias,
-      });
-    } catch (error) {
-      fastify.log.error({ err: error }, 'Error clearing alias');
       return reply.code(500).send({ error: 'Internal server error' });
     }
   });

@@ -564,23 +564,6 @@ export function isEmailSuppressed(email: string): boolean {
 }
 
 // ============================================
-// TRIAL USER QUERIES
-// ============================================
-
-/**
- * Get all users currently in a trial (trial_started_at is set, onboarding_step >= 5).
- * Used by the onboarding email sequence cron job.
- */
-export function getUsersInTrial(): Array<{ id: string; email: string; name: string | null; trial_started_at: string }> {
-  return db.prepare(`
-    SELECT user_id as id, email, name, trial_started_at
-    FROM users
-    WHERE trial_started_at IS NOT NULL AND onboarding_step >= 5
-    ORDER BY trial_started_at ASC
-  `).all() as Array<{ id: string; email: string; name: string | null; trial_started_at: string }>;
-}
-
-// ============================================
 // USER RESET (SUPER_ADMIN ONLY)
 // ============================================
 

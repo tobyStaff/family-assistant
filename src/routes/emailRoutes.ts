@@ -21,12 +21,9 @@ import {
 } from '../db/emailAnalysisDb.js';
 import { getUser } from '../db/userDb.js';
 import { analyzeEmail, analyzeUnanalyzedEmails, reanalyzeEmail } from '../parsers/twoPassAnalyzer.js';
-import { getUserId, getUserAuth } from '../lib/userContext.js';
+import { getUserId } from '../lib/userContext.js';
 import { requireAuth } from '../middleware/session.js';
-import { requireAdmin, requireNoImpersonation } from '../middleware/authorization.js';
-import { fetchAndStoreEmails, syncProcessedLabels } from '../utils/emailStorageService.js';
-import type { DateRange } from '../utils/inboxFetcher.js';
-import { getIncludedSenders, hasSenderFilters } from '../db/senderFilterDb.js';
+import { requireAdmin } from '../middleware/authorization.js';
 import type { Role } from '../types/roles.js';
 import { renderLayout } from '../templates/layout.js';
 import { renderEmailsViewContent, renderEmailsViewScripts } from '../templates/emailsViewContent.js';
@@ -91,50 +88,6 @@ export async function emailRoutes(fastify: FastifyInstance): Promise<void> {
     } catch (error: any) {
       fastify.log.error({ err: error, userId, emailId }, 'Error fetching email');
       return reply.code(500).send({ error: 'Failed to fetch email' });
-    }
-  });
-
-  /**
-   * POST /api/emails/fetch
-   * Manually trigger email fetch from Gmail
-   */
-  fastify.post<{
-    Body: {
-      dateRange?: string;
-      maxResults?: number;
-    };
-  }>('/api/emails/fetch', { preHandler: [requireAuth, requireNoImpersonation] }, async (request, reply) => {
-    try {
-      const userId = getUserId(request);
-      const auth = await getUserAuth(request);
-
-      const dateRange = (request.body?.dateRange || 'last3days') as DateRange;
-      const maxResults = request.body?.maxResults || 100;
-
-      // Build sender filter query if user has configured filters
-      let senderQuery = '';
-      if (hasSenderFilters(userId)) {
-        const includedSenders = getIncludedSenders(userId);
-        if (includedSenders.length > 0) {
-          senderQuery = `{${includedSenders.map(s => `from:${s}`).join(' OR ')}}`;
-        }
-      }
-
-      fastify.log.info({ userId, dateRange, maxResults, hasSenderFilter: !!senderQuery }, 'Manual email fetch triggered');
-
-      const result = await fetchAndStoreEmails(userId, auth, dateRange, maxResults, senderQuery);
-
-      // Also sync any pending labels
-      const labelSync = await syncProcessedLabels(userId, auth);
-
-      return reply.code(200).send({
-        success: true,
-        ...result,
-        labelSync,
-      });
-    } catch (error: any) {
-      fastify.log.error({ err: error }, 'Error fetching emails');
-      return reply.code(500).send({ error: 'Failed to fetch emails', message: error.message });
     }
   });
 

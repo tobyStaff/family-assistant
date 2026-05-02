@@ -210,17 +210,6 @@ export function completeOnboarding(userId: string): number {
 }
 
 /**
- * Check if user has completed onboarding.
- * Completion is defined as onboarding_step >= 5 (briefing generated).
- */
-export function hasCompletedOnboarding(userId: string): boolean {
-  const row = db.prepare(`
-    SELECT onboarding_step FROM users WHERE user_id = ?
-  `).get(userId) as { onboarding_step: number } | undefined;
-  return (row?.onboarding_step ?? 0) >= 5;
-}
-
-/**
  * Get all unique school names for a user
  */
 export function getUserSchools(userId: string): string[] {
