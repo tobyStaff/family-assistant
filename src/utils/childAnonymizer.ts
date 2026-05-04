@@ -16,6 +16,7 @@ export interface ChildMapping {
   school_name: string;  // e.g., "Rodborough"
   class_name: string;   // e.g., "Elm", "Lime"
   clubs: string[];      // e.g., ["Rocksteady", "Swimming"]
+  notes: string;        // Free-form user notes
 }
 
 /**
@@ -27,6 +28,7 @@ export interface AnonymizedChildProfile {
   school_name: string;  // "Rodborough"
   class_name: string;   // "Elm"
   clubs: string[];      // ["Rocksteady", "Swimming"]
+  notes: string;        // Free-form notes (anonymized)
 }
 
 /**
@@ -40,11 +42,13 @@ export function createChildMappings(profiles: ChildProfile[]): ChildMapping[] {
     school_name: profile.school_name || 'Unknown',
     class_name: profile.class_name || '',
     clubs: profile.clubs || [],
+    notes: profile.notes || '',
   }));
 }
 
 /**
  * Get anonymized profiles for AI prompt (no real names)
+ * Notes are passed through anonymizeText so any names in freeform notes are replaced.
  */
 export function getAnonymizedProfiles(mappings: ChildMapping[]): AnonymizedChildProfile[] {
   return mappings.map((m) => ({
@@ -53,6 +57,7 @@ export function getAnonymizedProfiles(mappings: ChildMapping[]): AnonymizedChild
     school_name: m.school_name,
     class_name: m.class_name,
     clubs: m.clubs,
+    notes: anonymizeText(m.notes, mappings),
   }));
 }
 
@@ -140,6 +145,9 @@ export function formatProfilesForPrompt(profiles: AnonymizedChildProfile[]): str
       }
       if (p.clubs && p.clubs.length > 0) {
         line += `, Clubs: ${p.clubs.join(', ')}`;
+      }
+      if (p.notes) {
+        line += `, Notes: ${p.notes}`;
       }
       return line;
     })

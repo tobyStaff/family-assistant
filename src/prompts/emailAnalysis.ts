@@ -441,9 +441,13 @@ ALWAYS INCLUDE (add to output):
 - Events matching child's year group (e.g., "Year R to Woodland School" for Reception child)
 - Events matching child's class (if class_name is set)
 - Events matching child's clubs (if clubs are set)
+- Events matching topics in the child's notes (see below)
 - Parent-focused events (Parents Evening, cake sales open to all)
 - Payment deadlines and return-by dates (these affect all families)
 - Ambiguous events - when unsure, INCLUDE
+
+**Using the notes field:**
+Treat the \`Notes\` field on each child as additional context about that child's interests, hobbies, and related topics. Use it to judge relevance — events, opportunities, or todos that align with topics mentioned in a child's notes should be INCLUDED and assigned to that child. Notes are freeform user-provided context, not a strict filter.
 
 **Step 3: Assign child_name to ALL remaining events (IMPORTANT)**
 After filtering, you MUST assign a child_name to every event/todo you include:

@@ -38,6 +38,7 @@ export interface LayoutOptions {
  */
 const NAV_ITEMS: NavItem[] = [
   { href: '/dashboard', icon: '🏠', label: 'Dashboard' },
+  { href: '/inbox', icon: '📥', label: 'Inbox' },
   { href: '/todos-view', icon: '📝', label: 'TODOs' },
   { href: '/events-view', icon: '📅', label: 'Events' },
   { href: '/child-profiles-manage', icon: '👶', label: 'Child Profiles' },

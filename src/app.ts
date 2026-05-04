@@ -11,6 +11,7 @@ import { join } from 'path';
 import { todoRoutes } from './routes/todoRoutes.js';
 import { eventRoutes } from './routes/eventRoutes.js';
 import { emailRoutes } from './routes/emailRoutes.js';
+import { inboxRoutes } from './routes/inboxRoutes.js';
 import { commandProcessorRoutes } from './routes/commandProcessor.js';
 import { authRoutes } from './routes/authRoutes.js';
 import { settingsRoutes } from './routes/settingsRoutes.js';
@@ -107,6 +108,7 @@ export async function buildApp() {
   await fastify.register(todoRoutes);
   await fastify.register(eventRoutes);
   await fastify.register(emailRoutes);
+  await fastify.register(inboxRoutes);
   await fastify.register(emailInboundRoutes);  // Hosted email webhook (no session required)
   await fastify.register(webhookRoutes);        // SNS bounce/complaint webhooks (no session required)
   await fastify.register(commandProcessorRoutes);

@@ -353,12 +353,6 @@ export function renderChildProfilesContent(): string {
       <a href="/onboarding" class="btn btn-outline">
         🔍 Run Analysis Again
       </a>
-      <div class="filter-group">
-        <span style="font-size: 14px; color: #666;">Show:</span>
-        <button class="filter-btn active" onclick="filterProfiles('all')">All</button>
-        <button class="filter-btn" onclick="filterProfiles('active')">Active</button>
-        <button class="filter-btn" onclick="filterProfiles('inactive')">Inactive</button>
-      </div>
     </div>
 
     <div id="loading" class="loading" style="display: none;">
@@ -417,14 +411,6 @@ export function renderChildProfilesContent(): string {
             <textarea id="edit-notes" placeholder="Any additional notes..."></textarea>
           </div>
 
-          <div class="form-group">
-            <div class="checkbox-group">
-              <input type="checkbox" id="edit-is-active" checked>
-              <label for="edit-is-active" style="margin-bottom: 0;">Active enrollment</label>
-            </div>
-            <small>Uncheck if child has graduated or left the school</small>
-          </div>
-
           <div class="modal-actions">
             <button type="submit" class="btn btn-primary" style="flex: 1;">Save Changes</button>
             <button type="button" class="btn btn-outline" onclick="closeModal()" style="flex: 1;">Cancel</button>
@@ -442,7 +428,6 @@ export function renderChildProfilesScripts(): string {
   return `
     <script>
       let profiles = [];
-      let currentFilter = 'all';
       let editingProfileId = null;
 
       // Load profiles on page load
@@ -472,14 +457,7 @@ export function renderChildProfilesScripts(): string {
 
       function renderProfiles() {
         const container = document.getElementById('profiles-container');
-
-        // Filter profiles based on current filter
-        let filteredProfiles = profiles;
-        if (currentFilter === 'active') {
-          filteredProfiles = profiles.filter(p => p.is_active);
-        } else if (currentFilter === 'inactive') {
-          filteredProfiles = profiles.filter(p => !p.is_active);
-        }
+        const filteredProfiles = profiles;
 
         if (filteredProfiles.length === 0) {
           container.innerHTML = \`
@@ -495,15 +473,12 @@ export function renderChildProfilesScripts(): string {
 
         container.innerHTML = '<div class="profiles-grid">' +
           filteredProfiles.map(profile => \`
-            <div class="profile-card \${profile.is_active ? '' : 'inactive'}">
+            <div class="profile-card">
               <div class="profile-header">
                 <div>
                   <div class="profile-name">\${escapeHtml(profile.real_name)}</div>
                   \${profile.display_name ? \`<div class="profile-alias">Alias: \${escapeHtml(profile.display_name)}</div>\` : ''}
                 </div>
-                <span class="status-badge \${profile.is_active ? 'status-active' : 'status-inactive'}">
-                  \${profile.is_active ? 'Active' : 'Inactive'}
-                </span>
               </div>
 
               <div class="profile-details">
@@ -565,24 +540,11 @@ export function renderChildProfilesScripts(): string {
         return div.innerHTML;
       }
 
-      function filterProfiles(filter) {
-        currentFilter = filter;
-
-        // Update button states
-        document.querySelectorAll('.filter-btn').forEach(btn => {
-          btn.classList.remove('active');
-        });
-        event.target.classList.add('active');
-
-        renderProfiles();
-      }
-
       function addChildManually() {
         editingProfileId = null;
         document.getElementById('modal-title').textContent = 'Add Child Manually';
         document.getElementById('edit-form').reset();
         document.getElementById('edit-profile-id').value = '';
-        document.getElementById('edit-is-active').checked = true;
         document.getElementById('edit-modal').classList.add('active');
       }
 
@@ -600,7 +562,6 @@ export function renderChildProfilesScripts(): string {
         document.getElementById('edit-class-name').value = profile.class_name || '';
         document.getElementById('edit-clubs').value = (profile.clubs || []).join(', ');
         document.getElementById('edit-notes').value = profile.notes || '';
-        document.getElementById('edit-is-active').checked = profile.is_active;
         document.getElementById('edit-modal').classList.add('active');
       }
 
@@ -617,41 +578,27 @@ export function renderChildProfilesScripts(): string {
         const clubs = clubsInput ? clubsInput.split(',').map(c => c.trim()).filter(c => c) : [];
         const data = {
           real_name: document.getElementById('edit-real-name').value.trim(),
-          display_name: document.getElementById('edit-display-name').value.trim() || undefined,
-          year_group: document.getElementById('edit-year-group').value.trim() || undefined,
-          school_name: document.getElementById('edit-school-name').value.trim() || undefined,
-          class_name: document.getElementById('edit-class-name').value.trim() || undefined,
-          clubs: clubs.length > 0 ? clubs : undefined,
-          notes: document.getElementById('edit-notes').value.trim() || undefined,
-          is_active: document.getElementById('edit-is-active').checked,
+          display_name: document.getElementById('edit-display-name').value.trim(),
+          year_group: document.getElementById('edit-year-group').value.trim(),
+          school_name: document.getElementById('edit-school-name').value.trim(),
+          class_name: document.getElementById('edit-class-name').value.trim(),
+          clubs: clubs,
+          notes: document.getElementById('edit-notes').value.trim(),
         };
 
         try {
           let response;
           if (profileId) {
-            // Update existing profile
             response = await fetch('/child-profiles/' + profileId, {
               method: 'PUT',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify(data)
             });
           } else {
-            // Create new profile
-            const createData = {
-              profiles: [{
-                ...data,
-                display_name: data.display_name || '',
-                year_group: data.year_group || '',
-                school_name: data.school_name || '',
-                class_name: data.class_name || '',
-                clubs: data.clubs || [],
-                notes: data.notes || ''
-              }]
-            };
-            response = await fetch('/onboarding/confirm', {
+            response = await fetch('/child-profiles', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(createData)
+              body: JSON.stringify(data)
             });
           }
 

@@ -14,6 +14,7 @@ import {
   getChildProfile,
   updateChildProfile,
   deleteChildProfile,
+  createChildProfile,
   createChildProfilesBatch,
 } from '../db/childProfilesDb.js';
 import type { ChildProfile } from '../types/childProfile.js';
@@ -80,7 +81,18 @@ const UpdateProfileSchema = z.object({
   display_name: z.string().optional(),
   year_group: z.string().optional(),
   school_name: z.string().optional(),
-  is_active: z.boolean().optional(),
+  class_name: z.string().optional(),
+  clubs: z.array(z.string()).optional(),
+  notes: z.string().optional(),
+});
+
+const CreateProfileSchema = z.object({
+  real_name: z.string().min(1),
+  display_name: z.string().optional(),
+  year_group: z.string().optional(),
+  school_name: z.string().optional(),
+  class_name: z.string().optional(),
+  clubs: z.array(z.string()).optional(),
   notes: z.string().optional(),
 });
 
@@ -312,6 +324,39 @@ export async function onboardingRoutes(fastify: FastifyInstance): Promise<void> 
       return reply.code(500).send({ error: 'Failed to fetch profiles', message: error.message });
     }
   });
+
+  fastify.post<{ Body: z.infer<typeof CreateProfileSchema> }>(
+    '/child-profiles',
+    { preHandler: requireAuth },
+    async (request, reply) => {
+      const bodyResult = CreateProfileSchema.safeParse(request.body);
+      if (!bodyResult.success) {
+        return reply.code(400).send({ error: 'Invalid request body', details: bodyResult.error.issues });
+      }
+
+      try {
+        const userId = getUserId(request);
+        const profile: ChildProfile = {
+          user_id: userId,
+          real_name: bodyResult.data.real_name,
+          display_name: bodyResult.data.display_name,
+          year_group: bodyResult.data.year_group,
+          school_name: bodyResult.data.school_name,
+          class_name: bodyResult.data.class_name,
+          clubs: bodyResult.data.clubs,
+          notes: bodyResult.data.notes,
+          is_active: true,
+          onboarding_completed: true,
+        };
+        const id = createChildProfile(profile);
+        fastify.log.info({ userId, profileId: id }, 'Child profile created');
+        return reply.code(201).send({ success: true, id });
+      } catch (error: any) {
+        fastify.log.error({ err: error }, 'Error creating child profile');
+        return reply.code(500).send({ error: 'Failed to create profile', message: error.message });
+      }
+    }
+  );
 
   fastify.get<{ Params: { id: string } }>(
     '/child-profiles/:id',
