@@ -70,8 +70,12 @@ export const handler = async (event) => {
       const bodyBytes = await Body.transformToByteArray();
       const parsed = await simpleParser(Buffer.from(bodyBytes));
 
-      // Extract recipient (the alias@inbox.getfamilyassistant.com address)
-      const recipient = mail.destination[0];
+      // Extract recipient (the alias@inbox.getfamilyassistant.com address).
+      // Use receipt.recipients (SMTP envelope RCPT TO matched by the receipt rule),
+      // not mail.destination (the To/Cc/Bcc headers). Gmail auto-forwarding leaves
+      // the original To: header intact and only rewrites the envelope, so headers
+      // would point at the original recipient instead of the alias.
+      const recipient = receipt.recipients?.[0] || mail.destination[0];
 
       // Build webhook payload
       const payload = {
