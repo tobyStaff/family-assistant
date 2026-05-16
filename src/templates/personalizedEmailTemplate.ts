@@ -406,7 +406,7 @@ function renderWorkDone(emailsAnalyzed?: number): string {
 
   return `
     <div class="work-done-text">
-      The Family Assistant AI has summarised <strong>${emailsAnalyzed} emails</strong> into this single briefing, saving you approximately <strong>${timeSaved} minutes</strong>.
+      Family Assistant has summarised <strong>${emailsAnalyzed} emails</strong> into this single briefing, saving you approximately <strong>${timeSaved} minutes</strong>.
     </div>
   `;
 }

@@ -27,6 +27,7 @@ import { emailInboundRoutes } from './routes/emailInboundRoutes.js';
 import { webhookRoutes } from './routes/webhookRoutes.js';
 import dailySummaryPlugin from './plugins/dailySummary.js';
 import metricsPlugin from './plugins/metrics.js';
+import { registerTracking } from './tracking/index.js';
 import { sessionMiddleware } from './middleware/session.js';
 import { requireAdmin } from './middleware/authorization.js';
 
@@ -93,6 +94,10 @@ export async function buildApp() {
   // Register plugins
   await fastify.register(metricsPlugin);
   await fastify.register(dailySummaryPlugin);
+
+  // Tracking module — POST /api/track + tracking_events table.
+  // To remove tracking entirely: delete this line, the import, and src/tracking/.
+  await registerTracking(fastify);
 
   // Register routes (landing and checkout FIRST - public pages)
   await fastify.register(landingRoutes);

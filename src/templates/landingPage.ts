@@ -1,26 +1,135 @@
 // src/templates/landingPage.ts
+import { readFileSync } from 'fs';
+import { dirname, join } from 'path';
+import { fileURLToPath } from 'url';
 import { LANDING_PAGE_CONTENT as content } from './landingPageContent.js';
+import { trackingScript } from '../tracking/index.js';
+
+/**
+ * Compiled Tailwind CSS, inlined into the HTML response.
+ *
+ * Why: PageSpeed flagged the Tailwind Play CDN as the largest single
+ * performance hit on the landing page (124 KiB blocking download +
+ * ~3.9s of runtime JIT work). Pre-compiling the utilities the page
+ * actually uses and inlining them eliminates the blocking request,
+ * the runtime compile, and the LCP delay caused by waiting for the CDN.
+ *
+ * The file is produced by `pnpm build:css` (Tailwind v4 CLI) and read
+ * once at module load. Path resolves to src/styles/ in dev (tsx) and
+ * dist/styles/ in prod (tsc-emitted JS).
+ */
+const COMPILED_CSS_PATH = join(
+  dirname(fileURLToPath(import.meta.url)),
+  '..',
+  'styles',
+  'landing.compiled.css',
+);
+const COMPILED_CSS = readFileSync(COMPILED_CSS_PATH, 'utf-8');
 
 interface LandingPageData {
-  totalEmailsProcessed: number;
   stripeEarlyBirdUrl: string;
   stripeProUrl: string;
   stripeConciergeUrl: string;
 }
 
 /**
- * Format number with commas for display
- */
-function formatNumber(num: number): string {
-  return num.toLocaleString('en-GB');
-}
-
-/**
  * Generate the landing page HTML
  */
 export function generateLandingPage(data: LandingPageData): string {
-  const { totalEmailsProcessed, stripeEarlyBirdUrl, stripeProUrl, stripeConciergeUrl } = data;
+  const { stripeEarlyBirdUrl, stripeProUrl, stripeConciergeUrl } = data;
   const stripeUrls = [stripeEarlyBirdUrl, stripeProUrl, stripeConciergeUrl];
+
+  /**
+   * Email-preview phone mockup. Rendered twice in the hero — once between
+   * the heading and the CTA on mobile, once in the right column on desktop —
+   * each instance hidden at the other breakpoint via lg:hidden / hidden lg:block.
+   * Toggling visibility (instead of reordering a single instance) keeps the
+   * desktop two-column layout simple while putting the visual proof of value
+   * in front of mobile users before the CTA.
+   */
+  const phoneMockupHtml = `
+    <div class="relative mx-auto w-full max-w-sm">
+      <!-- Soft glow background -->
+      <div class="absolute inset-0 bg-trust-blue/10 rounded-[40px] blur-3xl transform scale-90"></div>
+
+      <!-- Phone mockup -->
+      <div class="relative bg-white rounded-[40px] p-3 shadow-ambient">
+        <div class="bg-alabaster rounded-[32px] overflow-hidden">
+          <!-- Email header - Brand blue -->
+          <div class="bg-trust-blue text-white px-5 py-4 relative">
+            <span class="absolute top-3 right-4 text-xs bg-white/20 px-2 py-1 rounded-full">📖 ${content.emailPreview.readTime}</span>
+            <h3 class="font-display font-semibold text-lg text-center">${content.emailPreview.title}</h3>
+            <p class="text-center text-white/80 text-sm">${content.emailPreview.date}</p>
+          </div>
+
+          <!-- Work done summary -->
+          <div class="text-center py-3 px-4 text-xs text-trust-blue/60 italic border-b border-slate-100">
+            Summarised <strong>${content.emailPreview.emailsSummarised} emails</strong>, saving ~<strong>${content.emailPreview.timeSaved} min</strong>
+          </div>
+
+          <!-- Email content preview -->
+          <div class="p-4 space-y-3" style="font-size: 13px;">
+            <!-- Highlight Banner -->
+            <div class="bg-warm-sand border border-amber-300 rounded-xl p-3">
+              <div class="flex items-center gap-2 mb-1">
+                <span>⭐</span>
+                <span class="text-xs font-bold text-amber-700 uppercase tracking-wide">#1 Thing Today</span>
+              </div>
+              <p class="text-sm font-medium text-trust-blue">${content.emailPreview.highlight}</p>
+            </div>
+
+            <!-- Today's Reminders Section -->
+            <div>
+              <div class="flex items-center gap-2 mb-2 pb-1 border-b-2 border-trust-blue">
+                <span>📋</span>
+                <span class="text-xs font-bold text-trust-blue uppercase tracking-wide">Today's Reminders</span>
+              </div>
+              ${content.emailPreview.todayReminders.map(item => `
+              <div class="bg-white rounded-lg p-2 mb-2 border-l-3 border-trust-blue shadow-sm" style="border-left: 3px solid #2A5C82;">
+                <div class="flex items-center justify-between">
+                  <span class="font-medium text-trust-blue">${item.emoji} ${item.title}</span>
+                  ${item.amount ? `<span class="bg-red-500 text-white text-xs px-2 py-0.5 rounded-full">${item.amount}</span>` : ''}
+                </div>
+                <div class="text-xs text-trust-blue/60 mt-0.5">
+                  ${item.time ? `⏰ ${item.time}` : ''} ${item.child ? `👶 ${item.child}` : ''}
+                </div>
+              </div>
+              `).join('')}
+            </div>
+
+            <!-- Evening Reminders -->
+            <div>
+              <div class="flex items-center gap-2 mb-2 pb-1 border-b-2 border-sky">
+                <span>🌙</span>
+                <span class="text-xs font-bold text-trust-blue uppercase tracking-wide">This Evening</span>
+              </div>
+              <div class="grid grid-cols-2 gap-2">
+                ${content.emailPreview.eveningReminders.map(item => `
+                <div class="bg-slate-50 rounded-lg p-2 text-xs">
+                  <span>${item.emoji}</span> ${item.title}
+                </div>
+                `).join('')}
+              </div>
+            </div>
+
+            <!-- Diary Section -->
+            <div class="bg-slate-50 rounded-xl p-3">
+              <div class="flex items-center gap-2 mb-2">
+                <span>📅</span>
+                <span class="text-xs font-bold text-trust-blue uppercase tracking-wide">This Week</span>
+              </div>
+              ${content.emailPreview.diaryItems.map(item => `
+              <div class="flex gap-3 py-1 border-b border-slate-200 last:border-0 text-xs">
+                <span class="font-semibold text-trust-blue w-14">${item.day}</span>
+                <span class="text-trust-blue/70">${item.event}</span>
+              </div>
+              `).join('')}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
 
   return `
 <!DOCTYPE html>
@@ -31,92 +140,29 @@ export function generateLandingPage(data: LandingPageData): string {
   <title>${content.meta.title}</title>
   <meta name="description" content="${content.meta.description}">
 
-  <!-- Fonts -->
-  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <!--
+    Fonts. The @font-face declarations are inlined in the pre-compiled CSS
+    (see src/styles/landing.css), so we no longer need the Google Fonts
+    stylesheet hop. We do still fetch the woff2 files from gstatic; the
+    preconnect warms the TLS connection and the preloads kick off both
+    critical downloads at HTML-parse time rather than waiting for the
+    CSS to parse. URLs are versioned (v38 Fraunces, v12 Plus Jakarta Sans)
+    and rotate occasionally — refresh instructions in landing.css.
+  -->
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="preload" as="font" type="font/woff2" crossorigin
+    href="https://fonts.gstatic.com/s/fraunces/v38/6NU78FyLNQOQZAnv9bYEvDiIdE9Ea92uemAk_WBq8U_9v0c2Wa0KxC9TeP2Xz5c.woff2">
+  <link rel="preload" as="font" type="font/woff2" crossorigin
+    href="https://fonts.gstatic.com/s/plusjakartasans/v12/LDIoaomQNQcsA88c7O9yZ4KMCoOg4Ko20yygg_vb.woff2">
 
-  <!-- Tailwind Play CDN -->
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script>
-    tailwind.config = {
-      theme: {
-        extend: {
-          colors: {
-            'alabaster': '#FAF9F6',
-            'trust-blue': '#2A5C82',
-            'trust-blue-dark': '#1E4562',
-            'sky': '#E3F2FD',
-            'growth-green': '#4CAF50',
-            'warm-sand': '#FFF8E1',
-            'soft-mint': '#E8F5E9',
-          },
-          fontFamily: {
-            'display': ['Fraunces', 'Georgia', 'serif'],
-            'body': ['Plus Jakarta Sans', 'system-ui', 'sans-serif'],
-          },
-          borderRadius: {
-            'snug': '24px',
-          },
-          boxShadow: {
-            'ambient': '0 25px 50px -12px rgba(42, 92, 130, 0.08)',
-            'ambient-hover': '0 25px 50px -12px rgba(42, 92, 130, 0.15)',
-          },
-        },
-      },
-    }
-  </script>
-
-  <style>
-    body {
-      font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
-    }
-    .font-display {
-      font-family: 'Fraunces', Georgia, serif;
-    }
-
-    /* Hover lift animation */
-    .hover-lift {
-      transition: transform 0.2s ease, box-shadow 0.2s ease;
-    }
-    .hover-lift:hover {
-      transform: translateY(-4px);
-      box-shadow: 0 25px 50px -12px rgba(42, 92, 130, 0.15);
-    }
-
-    /* Frosted glass effect */
-    .frosted-glass {
-      background: rgba(255, 255, 255, 0.85);
-      backdrop-filter: blur(12px);
-      -webkit-backdrop-filter: blur(12px);
-    }
-
-    /* Scroll fade-in animation */
-    .fade-in-up {
-      opacity: 0;
-      transform: translateY(20px);
-      transition: opacity 0.6s ease, transform 0.6s ease;
-    }
-    .fade-in-up.visible {
-      opacity: 1;
-      transform: translateY(0);
-    }
-
-    /* Button press effect */
-    .btn-press:active {
-      transform: scale(0.98);
-    }
-  </style>
+  <!-- Pre-compiled Tailwind + custom styles (see src/styles/landing.css) -->
+  <style>${COMPILED_CSS}</style>
+  <!-- Meta Pixel Code -->
+  <script>!function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,document,'script','https://connect.facebook.net/en_US/fbevents.js'); fbq('init', '910736508599064'); fbq('track', 'PageView');</script>
+  <noscript> <img height="1" width="1" src="https://www.facebook.com/tr?id=910736508599064&ev=PageView&noscript=1"/></noscript>
+  <!-- End Meta Pixel Code -->
 </head>
 <body class="bg-alabaster text-trust-blue font-body">
-
-  <!-- Sticky Promo Bar -->
-  <div class="bg-trust-blue text-white py-3 px-4 text-center text-sm font-medium sticky top-0 z-50">
-    <span class="inline-flex items-center gap-2">
-      <span>${content.promoBar.emoji}</span>
-      <span>${content.promoBar.text} <strong>${content.promoBar.highlight}</strong>.</span>
-    </span>
-  </div>
 
   <!-- Header Nav -->
   <header class="py-4 px-6 lg:px-12">
@@ -135,128 +181,50 @@ export function generateLandingPage(data: LandingPageData): string {
         <a href="#pricing" class="text-trust-blue/70 hover:text-trust-blue transition-colors">${content.nav.pricing}</a>
       </div>
 
-      <a href="/auth/google" class="inline-flex items-center gap-2 bg-white border-2 border-trust-blue/20 text-trust-blue px-4 py-2 rounded-xl font-medium hover:border-trust-blue/40 hover:bg-sky/30 transition-all btn-press">
-        <svg class="w-5 h-5" viewBox="0 0 24 24">
-          <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-          <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-          <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
-          <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
-        </svg>
-        ${content.nav.signIn}
-      </a>
     </nav>
   </header>
 
   <!-- Hero Section -->
   <section class="py-12 lg:py-20 px-6 lg:px-12">
     <div class="max-w-7xl mx-auto">
-      <div class="grid lg:grid-cols-2 gap-12 lg:gap-16 items-center">
-        <!-- Left: Headline -->
-        <div class="fade-in-up">
-          <h1 class="font-display text-4xl md:text-5xl lg:text-6xl font-semibold leading-tight mb-6">
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 lg:gap-16 lg:items-center">
+        <!--
+          Left column on desktop / full stack on mobile. Children are sequenced
+          via Tailwind order utilities. Both breakpoints share the same flow now
+          that the subheadline sits directly under the heading on mobile too:
+            mobile:  heading → subheadline → phone (mobile copy) → CTA → counter
+            desktop: heading → subheadline → CTA → counter (phone is in the
+                     right column below; the mobile copy is display:none).
+        -->
+        <div class="flex flex-col gap-6 fade-in-up">
+          <h1 class="order-1 font-display text-3xl md:text-4xl lg:text-6xl font-semibold leading-tight">
             ${content.hero.headline}
           </h1>
-          <p class="text-lg md:text-xl text-trust-blue/70 mb-8 leading-relaxed">
+
+          <p class="order-2 text-lg md:text-xl text-trust-blue/70 leading-relaxed">
             ${content.hero.subheadline}
           </p>
-          <a href="#pricing" class="inline-flex items-center gap-2 bg-trust-blue text-white px-8 py-4 rounded-snug font-semibold text-lg hover:bg-trust-blue-dark transition-colors shadow-ambient hover-lift btn-press">
-            ${content.hero.cta}
-            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 8l4 4m0 0l-4 4m4-4H3"/>
-            </svg>
-          </a>
 
-          <!-- Live Counter -->
-          <div class="mt-8 inline-flex items-center gap-2 text-trust-blue/60">
-            <div class="w-2 h-2 bg-growth-green rounded-full animate-pulse"></div>
-            <span class="font-medium">${formatNumber(totalEmailsProcessed)} ${content.hero.liveCounter}</span>
+          <!-- Mobile-only phone preview, sits between subheadline and CTA -->
+          <div class="order-3 lg:hidden">
+            ${phoneMockupHtml}
           </div>
+
+          <div class="order-4 flex flex-col w-fit gap-2 self-center lg:self-start">
+            <span class="text-sm text-trust-blue/60 font-medium text-center">${content.hero.ctaCaption}</span>
+            <button id="signin-trigger" type="button" class="inline-flex items-center gap-2 bg-trust-blue text-white px-8 py-4 rounded-snug font-semibold text-lg hover:bg-trust-blue-dark transition-colors shadow-ambient hover-lift btn-press cursor-pointer">
+              ${content.hero.cta}
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 8l4 4m0 0l-4 4m4-4H3"/>
+              </svg>
+            </button>
+          </div>
+
         </div>
 
-        <!-- Right: Email Preview Mockup -->
-        <div class="fade-in-up relative">
-          <!-- Phone frame -->
-          <div class="relative mx-auto w-full max-w-sm">
-            <!-- Soft glow background -->
-            <div class="absolute inset-0 bg-trust-blue/10 rounded-[40px] blur-3xl transform scale-90"></div>
-
-            <!-- Phone mockup -->
-            <div class="relative bg-white rounded-[40px] p-3 shadow-ambient">
-              <div class="bg-alabaster rounded-[32px] overflow-hidden">
-                <!-- Email header - Brand blue -->
-                <div class="bg-trust-blue text-white px-5 py-4 relative">
-                  <span class="absolute top-3 right-4 text-xs bg-white/20 px-2 py-1 rounded-full">📖 ${content.emailPreview.readTime}</span>
-                  <h3 class="font-display font-semibold text-lg text-center">${content.emailPreview.title}</h3>
-                  <p class="text-center text-white/80 text-sm">${content.emailPreview.date}</p>
-                </div>
-
-                <!-- Work done summary -->
-                <div class="text-center py-3 px-4 text-xs text-trust-blue/60 italic border-b border-slate-100">
-                  Summarised <strong>${content.emailPreview.emailsSummarised} emails</strong>, saving ~<strong>${content.emailPreview.timeSaved} min</strong>
-                </div>
-
-                <!-- Email content preview -->
-                <div class="p-4 space-y-3" style="font-size: 13px;">
-                  <!-- Highlight Banner -->
-                  <div class="bg-warm-sand border border-amber-300 rounded-xl p-3">
-                    <div class="flex items-center gap-2 mb-1">
-                      <span>⭐</span>
-                      <span class="text-xs font-bold text-amber-700 uppercase tracking-wide">#1 Thing Today</span>
-                    </div>
-                    <p class="text-sm font-medium text-trust-blue">${content.emailPreview.highlight}</p>
-                  </div>
-
-                  <!-- Today's Reminders Section -->
-                  <div>
-                    <div class="flex items-center gap-2 mb-2 pb-1 border-b-2 border-trust-blue">
-                      <span>📋</span>
-                      <span class="text-xs font-bold text-trust-blue uppercase tracking-wide">Today's Reminders</span>
-                    </div>
-                    ${content.emailPreview.todayReminders.map(item => `
-                    <div class="bg-white rounded-lg p-2 mb-2 border-l-3 border-trust-blue shadow-sm" style="border-left: 3px solid #2A5C82;">
-                      <div class="flex items-center justify-between">
-                        <span class="font-medium text-trust-blue">${item.emoji} ${item.title}</span>
-                        ${item.amount ? `<span class="bg-red-500 text-white text-xs px-2 py-0.5 rounded-full">${item.amount}</span>` : ''}
-                      </div>
-                      <div class="text-xs text-trust-blue/60 mt-0.5">
-                        ${item.time ? `⏰ ${item.time}` : ''} ${item.child ? `👶 ${item.child}` : ''}
-                      </div>
-                    </div>
-                    `).join('')}
-                  </div>
-
-                  <!-- Evening Reminders -->
-                  <div>
-                    <div class="flex items-center gap-2 mb-2 pb-1 border-b-2 border-sky">
-                      <span>🌙</span>
-                      <span class="text-xs font-bold text-trust-blue uppercase tracking-wide">This Evening</span>
-                    </div>
-                    <div class="grid grid-cols-2 gap-2">
-                      ${content.emailPreview.eveningReminders.map(item => `
-                      <div class="bg-slate-50 rounded-lg p-2 text-xs">
-                        <span>${item.emoji}</span> ${item.title}
-                      </div>
-                      `).join('')}
-                    </div>
-                  </div>
-
-                  <!-- Diary Section -->
-                  <div class="bg-slate-50 rounded-xl p-3">
-                    <div class="flex items-center gap-2 mb-2">
-                      <span>📅</span>
-                      <span class="text-xs font-bold text-trust-blue uppercase tracking-wide">This Week</span>
-                    </div>
-                    ${content.emailPreview.diaryItems.map(item => `
-                    <div class="flex gap-3 py-1 border-b border-slate-200 last:border-0 text-xs">
-                      <span class="font-semibold text-trust-blue w-14">${item.day}</span>
-                      <span class="text-trust-blue/70">${item.event}</span>
-                    </div>
-                    `).join('')}
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
+        <!-- Desktop-only phone preview, right column -->
+        <div class="fade-in-up relative hidden lg:block">
+          ${phoneMockupHtml}
         </div>
       </div>
     </div>
@@ -376,7 +344,7 @@ export function generateLandingPage(data: LandingPageData): string {
           .map(
             (tier, index) => `
         <!-- ${tier.name} Tier -->
-        <div class="${tier.highlighted ? 'relative ' : ''}bg-white rounded-snug p-8 shadow-ambient hover-lift fade-in-up${tier.highlighted ? ' border-2 border-trust-blue' : ''}">
+        <div class="${tier.highlighted ? 'relative ' : ''}bg-white rounded-snug p-8 shadow-ambient${(tier as any).disabled ? ' opacity-60' : ' hover-lift'} fade-in-up${tier.highlighted ? ' border-2 border-trust-blue' : ''}">
           ${
             tier.badge
               ? `
@@ -413,9 +381,17 @@ export function generateLandingPage(data: LandingPageData): string {
               .join('')}
           </ul>
 
-          <a href="/api/checkout?plan=${tier.tier || ['earlyBird', 'professional', 'concierge'][index]}" class="block w-full ${tier.highlighted ? 'bg-trust-blue text-white hover:bg-trust-blue-dark' : 'bg-trust-blue/10 text-trust-blue hover:bg-trust-blue/20'} text-center py-3 rounded-xl font-semibold transition-colors btn-press">
+          ${(tier as any).disabled
+            ? `
+          <span class="block w-full bg-trust-blue/5 text-trust-blue/40 text-center py-3 rounded-xl font-semibold cursor-not-allowed">
+            ${tier.cta}
+          </span>
+          `
+            : `
+          <a href="${(tier as any).ctaHref || `/api/checkout?plan=${tier.tier || ['earlyBird', 'professional', 'concierge'][index]}`}" class="block w-full ${tier.highlighted ? 'bg-trust-blue text-white hover:bg-trust-blue-dark' : 'bg-trust-blue/10 text-trust-blue hover:bg-trust-blue/20'} text-center py-3 rounded-xl font-semibold transition-colors btn-press">
             ${tier.cta}
           </a>
+          `}
 
           ${tier.slotsRemaining ? `<p class="text-center text-xs text-trust-blue/50 mt-4">${tier.slotsRemaining}</p>` : ''}
         </div>
@@ -481,6 +457,37 @@ export function generateLandingPage(data: LandingPageData): string {
     </div>
   </footer>
 
+  <!-- Sign-in modal -->
+  <dialog id="signin-modal" aria-labelledby="signin-modal-title"
+    class="rounded-snug bg-white shadow-ambient max-w-md w-[calc(100vw-2rem)] m-auto">
+    <div class="relative p-6 md:p-8">
+      <button id="signin-modal-close" type="button" aria-label="${content.signInModal.closeLabel}"
+        class="absolute top-3 right-3 w-9 h-9 flex items-center justify-center rounded-full text-trust-blue/60 hover:text-trust-blue hover:bg-sky/40 transition-colors cursor-pointer">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+        </svg>
+      </button>
+
+      <h2 id="signin-modal-title" class="font-display text-2xl font-semibold leading-tight mb-5 pr-8">
+        ${content.signInModal.title}
+      </h2>
+
+      <div class="space-y-3 text-trust-blue/80 leading-relaxed mb-6">
+        ${content.signInModal.bodyParagraphs.map(paragraph => `<p>${paragraph}</p>`).join('')}
+      </div>
+
+      <a href="/auth/google" class="inline-flex w-full items-center justify-center gap-3 bg-white border-2 border-trust-blue/20 text-trust-blue px-6 py-3 rounded-snug font-semibold text-lg hover:border-trust-blue/40 hover:bg-sky/30 transition-all shadow-ambient btn-press">
+        <svg class="w-5 h-5" viewBox="0 0 24 24">
+          <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+          <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+          <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+          <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+        </svg>
+        ${content.signInModal.signInButton}
+      </a>
+    </div>
+  </dialog>
+
   <!-- Scroll Animation Script -->
   <script>
     // Intersection Observer for fade-in animations
@@ -513,8 +520,24 @@ export function generateLandingPage(data: LandingPageData): string {
         }
       });
     });
+
+    // Sign-in modal — native <dialog> supplies ESC-to-close + focus trap
+    const signinModal = document.getElementById('signin-modal');
+    const signinTrigger = document.getElementById('signin-trigger');
+    const signinClose = document.getElementById('signin-modal-close');
+    if (signinModal && signinTrigger) {
+      signinTrigger.addEventListener('click', () => signinModal.showModal());
+      if (signinClose) {
+        signinClose.addEventListener('click', () => signinModal.close());
+      }
+      // Click on the backdrop area (outside the inner card) closes the modal.
+      signinModal.addEventListener('click', (e) => {
+        if (e.target === signinModal) signinModal.close();
+      });
+    }
   </script>
 
+  ${trackingScript}
 </body>
 </html>
 `;

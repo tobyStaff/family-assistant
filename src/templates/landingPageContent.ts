@@ -4,14 +4,14 @@
 export const LANDING_PAGE_CONTENT = {
   // Meta & SEO
   meta: {
-    title: "Never dig through a 4-page school newsletter again",
+    title: "The 60-second morning brief for busy parents.",
     description:
-      "Family Assistant AI automatically sifts your inbox, reads every attachment, and summarises the actions into a 60-second morning brief. Stop hunting for dates and reclaim your focus.",
+      "Everything you need to remember for school today, delivered to your inbox at 7:00 AM.",
   },
 
   // Brand
   brand: {
-    name: 'Family Assistant AI',
+    name: 'Family Assistant',
     tagline:
       'Built by a parent, for parents. Reclaim your headspace from school admin overload.',
   },
@@ -32,10 +32,22 @@ export const LANDING_PAGE_CONTENT = {
 
   // Hero Section
   hero: {
-    headline: "Never dig through a 4-page school newsletter again",
-    subheadline: "Family Assistant AI automatically sifts your inbox, reads every attachment, and summarises the actions into a 60-second morning brief. Stop hunting for dates and reclaim your focus.",
-    cta: 'Link your Inbox now',
-    liveCounter: 'admin hours recovered for busy parents',
+    headline: "The 60-second morning brief for busy parents.",
+    subheadline: "Everything you need to remember for school today, delivered to your inbox at 7:00 AM.",
+    cta: 'Get started',
+    ctaCaption: 'Try for free for 7 days',
+  },
+
+  // Sign-in modal — shown when the hero "Get started" button is clicked
+  signInModal: {
+    title: 'One sign-in, two inboxes',
+    bodyParagraphs: [
+      "We use Google sign-in so your assistant can read your inbox and turn it into a 60-second morning brief. That's the only thing it ever does with your Gmail.",
+      "When you sign up, you also get your own private forwarding address: <strong>you@inbox.getfamilyassistant.com</strong>.",
+      "Forward school newsletters, club emails, or photos of permission slips to that address and your assistant handles them. Your main Gmail stays untouched — the assistant only ever acts on what you choose to forward.",
+    ],
+    signInButton: 'Sign in with Gmail',
+    closeLabel: 'Close',
   },
 
   // Email Preview Mockup - matches actual daily briefing format
@@ -95,10 +107,6 @@ export const LANDING_PAGE_CONTENT = {
       {
         title: 'One-Tap Summaries',
         text: 'Need the full context? Every briefing item includes a "Quick Summary" link so you can read the highlights of a 10-page document in 10 seconds.'
-      },
-      {
-        title: 'Calendar Conflict Detection',
-        text: 'If a school play clashes with your work meeting, we’ll flag it in your morning briefing.'
       }
     ]
   },
@@ -129,12 +137,13 @@ export const LANDING_PAGE_CONTENT = {
           '<strong>Daily Brief</strong> — 7 days a week',
           'Track up to <strong>20 school senders</strong>',
           '<strong>Deep Attachment Analysis</strong> — PDFs & newsletters',
-          'Share with <strong>2 recipients</strong>',
+          'Share with <strong>1 recipient</strong>',
           '<strong>Custom Training</strong> — tell us what to ignore',
-          'Gmail integration',
+          '<strong>Hosted email address</strong> — [you]@inbox.getfamilyassistant.com',
         ],
-        cta: 'Start 7-Day Trial',
-        slotsRemaining: null,
+        cta: 'Free trial',
+        ctaHref: '/auth/google',
+        slotsRemaining: 'Only 8 slots left',
         highlighted: true,
       },
       {
@@ -146,14 +155,13 @@ export const LANDING_PAGE_CONTENT = {
         badge: 'For Busy Commuters',
         features: [
           'Everything in Organized, plus:',
-          '<strong>Hosted email address</strong> — [you]@inbox.getfamilyassistant.com',
-          '<strong>Calendar Sync</strong> — events to Google/Outlook',
           '<strong>AI Vision</strong> — snap photos of flyers',
           '<strong>Unlimited Senders</strong> — every club & tutor covered',
           '<strong>4 Family Personas</strong> — distinct briefings per child',
         ],
-        cta: 'Start 7-Day Trial',
-        slotsRemaining: null,
+        cta: 'Free trial',
+        ctaHref: '/auth/google',
+        slotsRemaining: 'Only 10 slots left',
         highlighted: false,
       },
       {
@@ -170,9 +178,10 @@ export const LANDING_PAGE_CONTENT = {
           '<strong>Autopilot Tasks</strong> — pre-filled forms & payment queues',
           '<strong>Priority Support</strong> — direct line to the founder',
         ],
-        cta: 'Start 7-Day Trial',
+        cta: 'Coming soon',
         slotsRemaining: null,
         highlighted: false,
+        disabled: true,
       },
     ],
   },
@@ -204,6 +213,6 @@ export const LANDING_PAGE_CONTENT = {
         { label: 'Contact Us', href: 'mailto:hello@familyfilter.ai' },
       ],
     },
-    copyright: 'Family Filter AI. All rights reserved.',
+    copyright: 'Family Assistant. All rights reserved.',
   },
 };
